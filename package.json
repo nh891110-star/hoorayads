@@ -1,0 +1,28 @@
+{
+  "name": "tiktok-ads-agent-poc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Private POC scaffold for a TikTok Ads ChatGPT app based on the creative-first PRD flow.",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "dev": "tsx src/http-server.ts",
+    "dev:tools": "tsx src/server.ts",
+    "preview": "python3 -m http.server 4173 -d web",
+    "start": "node --import tsx src/http-server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^0.1.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

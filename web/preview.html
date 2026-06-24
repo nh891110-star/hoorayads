@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TikTok Ads Agent POC Preview</title>
+    <link rel="stylesheet" href="./widget.css">
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      window.__POC_PREVIEW_STATE__ = {
+        screen: "draft",
+        headline: "Smart+ campaign draft is ready for review",
+        summary:
+          "This preview now matches the broader TikTok ChatGPT App PRD: scrape, storyboard, render, account selection, Smart+ draft, then publish.",
+        primaryCta: "Approve parameters",
+        secondaryCta: "Adjust budget",
+        timeline: [
+          { id: "scrape", label: "Product scraped", status: "done", owner: "chatgpt" },
+          { id: "storyboard", label: "Storyboard approved", status: "done", owner: "user" },
+          { id: "render", label: "Video rendering", status: "done", owner: "chatgpt" },
+          { id: "account", label: "Ad account + identity", status: "done", owner: "tiktok" },
+          { id: "publish", label: "Publish", status: "current", owner: "user" }
+        ],
+        product: {
+          title: "CloudSoft Compression Pillow",
+          price: "$49",
+          destination: "https://merchant.example/products/cloudsoft-pillow",
+          platform: "Direct product URL"
+        },
+        readiness: {
+          accountConnection: "Selected: Little Shop H CA",
+          identity: "Connected",
+          payment: "Ready",
+          video: "Watermarked preview complete",
+          recommendedObjective: "Smart+ Web Conversions"
+        },
+        draft: {
+          name: "CloudSoft Pillow | Smart+ | CA",
+          objective: "Web Conversions",
+          fields: [
+            { label: "Daily budget", value: "$80", editable: true },
+            { label: "Country", value: "CA", editable: true },
+            { label: "Optimization goal", value: "Landing page views", editable: true },
+            { label: "Bidding strategy", value: "Maximum delivery", editable: true }
+          ],
+          warnings: [
+            "Only the final publish step should trigger real write calls.",
+            "If payment or policy blocks publish, return a plain-language next action instead of a raw API error."
+          ]
+        }
+      };
+    </script>
+    <script type="module" src="./widget.js"></script>
+  </body>
+  </html>

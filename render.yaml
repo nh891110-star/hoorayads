@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: tiktok-ads-agent-poc
+    runtime: node
+    plan: starter
+    buildCommand: pnpm install --frozen-lockfile
+    startCommand: pnpm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: TIKTOK_APP_ENV
+        value: dev
+      - key: TIKTOK_APP_ID
+        sync: false
+      - key: TIKTOK_APP_SECRET
+        sync: false
+      - key: TIKTOK_REDIRECT_URI
+        sync: false
+      - key: TIKTOK_ADVERTISER_AUTH_URL
+        sync: false
