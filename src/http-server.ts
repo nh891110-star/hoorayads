@@ -127,9 +127,10 @@ async function handleDelete(req: Request, res: Response) {
   await transport.handleRequest(req, res);
 }
 
-app.post("/mcp", handlePost);
-app.get("/mcp", handleGet);
-app.delete("/mcp", handleDelete);
+const mcpEndpoints = ["/mcp", "/mcp-v2"];
+app.post(mcpEndpoints, handlePost);
+app.get(mcpEndpoints, handleGet);
+app.delete(mcpEndpoints, handleDelete);
 app.use(
   "/assets",
   express.static(join(currentDir, "../web/assets"), {
@@ -143,6 +144,7 @@ app.get("/health", (_req: Request, res: Response) => {
     ok: true,
     name: "tiktok-ads-agent-poc",
     mcpEndpoint: "/mcp",
+    mcpEndpointV2: "/mcp-v2",
     sessions: Object.keys(transports).length,
     tikTokConfig: getTikTokConfigSummary(),
     tikTokMcpAuth: getTikTokMcpAuthSummary()
