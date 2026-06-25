@@ -25,6 +25,8 @@ import {
   getVideoStatusOutput,
   loadCreativeOptionsInput,
   loadCreativeOptionsOutput,
+  openTikTokAdsWorkspaceInput,
+  openTikTokAdsWorkspaceOutput,
   planAccountSetupInput,
   planAccountSetupOutput,
   publishCampaignInput,
@@ -82,8 +84,9 @@ const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
 const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
-const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v8.html";
+const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v9.html";
 const LEGACY_WIDGET_URIS = [
+  "ui://widget/tiktok-ads-workspace-v8.html",
   "ui://widget/tiktok-ads-workspace-v7.html",
   "ui://widget/tiktok-ads-workspace-v6.html",
   "ui://widget/tiktok-ads-workspace-v5.html"
@@ -720,7 +723,7 @@ export function createTikTokAdsPocServer() {
     { name: "tiktok-ads-agent-poc", version: "0.3.0" },
     {
       instructions:
-        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review. Every rendered card is a hard gate. When showing a card, write exactly one short sentence before the card that explains what the card lets the user edit or decide and which CTA advances the flow. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. If a card is blocked or insufficient, keep the text minimal and let the card show the blocker. Wait for an explicit user action before moving forward: either the user clicks a UI CTA or writes a clear chat confirmation for that exact step. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user clicks or asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. If the user provides a Store URL and wants product ideas, call scan_store_products; treat Pick product as a substep inside Product, not a separate main launch step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview."
+        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review. If the user asks to open Hooray TikTok Ads, create TikTok ads, launch ads, continue an ad workflow, inspect ad readiness, or set up reporting, first call open_tiktok_ads_workspace to open or resume the Hooray TikTok Ads workspace. If the user includes a product URL or store URL, pass it to open_tiktok_ads_workspace so the Start card is prefilled, but still wait for the user to click Confirm. Every rendered card is a hard gate. When showing a card, write exactly one short sentence before the card that explains what the card lets the user edit or decide and which CTA advances the flow. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. If a card is blocked or insufficient, keep the text minimal and let the card show the blocker. Wait for an explicit user action before moving forward: either the user clicks a UI CTA or writes a clear chat confirmation for that exact step. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user clicks or asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. If the user provides a Store URL and wants product ideas, call scan_store_products; treat Pick product as a substep inside Product, not a separate main launch step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview."
     }
   );
 
@@ -852,6 +855,72 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       }
     ]
   });
+  const workspaceEntryState = (args: {
+    productUrl?: string;
+    reset?: boolean;
+    storeUrl?: string;
+  }): Record<string, unknown> => {
+    const shouldStartAtProduct = Boolean(args.reset || args.productUrl || args.storeUrl);
+    const baseState = shouldStartAtProduct ? previewState : (currentWorkspaceState() as ToolViewModel);
+    const productUrl = args.productUrl || "";
+    const storeUrl = args.storeUrl || "";
+
+    if (!productUrl && !storeUrl) {
+      return baseState as unknown as Record<string, unknown>;
+    }
+
+    return {
+      ...baseState,
+      screen: "product",
+      headline: "What do you want to promote?",
+      primaryCta: "Confirm",
+      uiDraft: {
+        mode: storeUrl && !productUrl ? "store" : "product",
+        productUrl,
+        storeUrl
+      }
+    };
+  };
+
+  server.registerTool(
+    "open_tiktok_ads_workspace",
+    withRenderToolMeta({
+      title: "Open Hooray TikTok Ads workspace",
+      description:
+        "Primary entrypoint for Hooray TikTok Ads. Use this whenever the user wants to create, continue, review, or report on TikTok ads. It opens or resumes the interactive workspace without advancing the flow; optional productUrl or storeUrl only prefill the Start card.",
+      inputSchema: openTikTokAdsWorkspaceInput,
+      outputSchema: openTikTokAdsWorkspaceOutput,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false
+      }
+    }),
+    async ({
+      productUrl,
+      reset,
+      storeUrl
+    }: {
+      entryReason?: string;
+      productUrl?: string;
+      reset?: boolean;
+      storeUrl?: string;
+    }) => {
+      const nextWidgetState = workspaceEntryState({ productUrl, reset, storeUrl });
+
+      return {
+        structuredContent: {
+          widgetState: nextWidgetState
+        },
+        content: [{ type: "text", text: cardGuidanceText(nextWidgetState) }],
+        _meta: {
+          ...RESULT_RENDER_META,
+          source: "workspace-entry",
+          uiActionToken: state.uiActionToken
+        }
+      };
+    }
+  );
 
   server.registerTool(
     "render_tiktok_ads_workspace",

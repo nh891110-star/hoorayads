@@ -1,5 +1,5 @@
 const root = document.getElementById("app-root") || document.getElementById("app");
-const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.3" };
+const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.4" };
 const PROTOCOL_VERSION = "2025-11-21";
 
 let initializeRequestId = null;

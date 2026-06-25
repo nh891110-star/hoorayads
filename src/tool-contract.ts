@@ -27,6 +27,18 @@ export const renderTikTokAdsWorkspaceOutput = {
   widgetState: z.record(z.any())
 };
 
+export const openTikTokAdsWorkspaceInput = {
+  ...userActionGateInput,
+  entryReason: z.string().optional(),
+  productUrl: z.string().url().optional(),
+  reset: z.boolean().optional(),
+  storeUrl: z.string().url().optional()
+};
+
+export const openTikTokAdsWorkspaceOutput = {
+  widgetState: z.record(z.any())
+};
+
 export const updateProductImagesInput = {
   ...userActionGateInput,
   productUrl: z.string().url(),
