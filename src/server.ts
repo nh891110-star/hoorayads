@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -190,6 +191,7 @@ type LaunchState = {
   currentDraft: DraftSessionState;
   currentProduct: SessionProductState;
   currentVideoJob: VideoJobState;
+  uiActionToken: string;
 };
 
 const initialProductState: SessionProductState = {
@@ -214,7 +216,14 @@ const sharedLaunchState: LaunchState = {
     product: { ...initialProductState },
     status: "idle",
     style: "ugc"
-  }
+  },
+  uiActionToken: randomUUID()
+};
+
+type InteractionControl = {
+  expectedStep?: string;
+  interactionToken?: string;
+  userAction?: "ui_click" | "chat_confirmed";
 };
 
 type ImageReferenceInput = string | { source?: "url" | "upload"; value: string };
@@ -770,6 +779,19 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
     return previewState as unknown as Record<string, unknown>;
   };
+  const isUserDrivenAction = (args?: InteractionControl) =>
+    args?.interactionToken === state.uiActionToken || args?.userAction === "chat_confirmed";
+  const waitForUserActionState = (detail: string): ToolViewModel => ({
+    ...(currentWorkspaceState() as ToolViewModel),
+    blockers: [
+      {
+        id: "waiting-for-user-action",
+        title: "Waiting for your action",
+        detail,
+        severity: "low"
+      }
+    ]
+  });
 
   server.registerTool(
     "render_tiktok_ads_workspace",
@@ -795,7 +817,8 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         content: [{ type: "text", text: "Rendering the interactive Hooray TikTok Ads workspace." }],
         _meta: {
           ...RESULT_RENDER_META,
-          source: "render-tool"
+          source: "render-tool",
+          uiActionToken: state.uiActionToken
         }
       };
     }
@@ -814,7 +837,21 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         destructiveHint: false
       }
     }),
-    async () => {
+    async (args: InteractionControl) => {
+      if (!isUserDrivenAction(args)) {
+        return {
+          structuredContent: {
+            accountCount: 0,
+            widgetState: waitForUserActionState("Approve the preview in the workspace before account setup starts.")
+          },
+          content: [{ type: "text", text: "Waiting for the user to approve the preview before loading advertiser accounts." }],
+          _meta: {
+            ...RESULT_WIDGET_META,
+            source: "state-machine-gate"
+          }
+        };
+      }
+
       try {
         const result = await listTikTokAdvertiserAccounts();
 
@@ -1205,17 +1242,27 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         destructiveHint: false
       }
     }),
-    async ({
-      productTitle,
-      productDescription,
-      feedback,
-      landingPageUrl
-    }: {
+    async (args: {
       productTitle: string;
       productDescription: string;
       landingPageUrl: string;
       feedback?: string;
-    }) => {
+    } & InteractionControl) => {
+      if (!isUserDrivenAction(args)) {
+        return {
+          structuredContent: {
+            sceneCount: 0,
+            widgetState: waitForUserActionState("Confirm the product in the workspace before generating storyboard options.")
+          },
+          content: [{ type: "text", text: "Waiting for the user to confirm the product before generating a storyboard." }],
+          _meta: {
+            ...RESULT_WIDGET_META,
+            source: "state-machine-gate"
+          }
+        };
+      }
+
+      const { productTitle, productDescription, feedback, landingPageUrl } = args;
       const nextProduct = updateCurrentProduct({
         ...deriveCreativeBrief(productDescription, feedback),
         title: productTitle,
@@ -1249,7 +1296,22 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         destructiveHint: false
       }
     }),
-    async () => {
+    async (args: InteractionControl) => {
+      if (!isUserDrivenAction(args)) {
+        return {
+          structuredContent: {
+            approvalId: "",
+            status: "pending",
+            widgetState: waitForUserActionState("Choose a storyboard in the workspace before approving ad inputs.")
+          },
+          content: [{ type: "text", text: "Waiting for the user to choose a storyboard before approving ad inputs." }],
+          _meta: {
+            ...RESULT_WIDGET_META,
+            source: "state-machine-gate"
+          }
+        };
+      }
+
       const approvedProduct = getCurrentProduct();
       state.currentApprovalId = `approval_${Date.now().toString(36)}`;
       state.approvalSnapshots[state.currentApprovalId] = {
@@ -1305,13 +1367,26 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         destructiveHint: false
       }
     }),
-    async ({
-      approvalId,
-      renderingStyle
-    }: {
+    async (args: {
       approvalId: string;
       renderingStyle: "ugc" | "product_demo" | "founder_story";
-    }) => {
+    } & InteractionControl) => {
+      if (!isUserDrivenAction(args)) {
+        return {
+          structuredContent: {
+            jobId: "missing_job",
+            status: "pending",
+            widgetState: waitForUserActionState("Use the workspace CTA before starting another video render.")
+          },
+          content: [{ type: "text", text: "Waiting for the user to request another video render from the workspace." }],
+          _meta: {
+            ...RESULT_WIDGET_META,
+            source: "state-machine-gate"
+          }
+        };
+      }
+
+      const { approvalId, renderingStyle } = args;
       state.currentApprovalId = approvalId;
       const renderJob =
         state.currentVideoJob.jobId && state.currentVideoJob.approvalId === approvalId && state.currentVideoJob.status === "pending"
@@ -1356,7 +1431,22 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         destructiveHint: false
       }
     }),
-    async ({ jobId }: { jobId: string }) => {
+    async (args: { jobId: string } & InteractionControl) => {
+      if (!isUserDrivenAction(args)) {
+        return {
+          structuredContent: {
+            status: "pending",
+            widgetState: waitForUserActionState("Click Check render status in the workspace before moving to video preview.")
+          },
+          content: [{ type: "text", text: "Waiting for the user to check render status from the workspace." }],
+          _meta: {
+            ...RESULT_WIDGET_META,
+            source: "state-machine-gate"
+          }
+        };
+      }
+
+      const { jobId } = args;
       if (state.currentVideoJob.jobId !== jobId) {
         const error: RenderError = {
           code: "RENDER_JOB_NOT_FOUND",

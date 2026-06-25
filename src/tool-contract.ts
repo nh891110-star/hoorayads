@@ -1,6 +1,13 @@
 import { z } from "zod";
 
+const userActionGateInput = {
+  expectedStep: z.string().optional(),
+  interactionToken: z.string().optional(),
+  userAction: z.enum(["ui_click", "chat_confirmed"]).optional()
+};
+
 export const scrapeProductInput = {
+  ...userActionGateInput,
   url: z.string().url()
 };
 
@@ -11,6 +18,7 @@ export const scrapeProductOutput = {
 };
 
 export const renderTikTokAdsWorkspaceInput = {
+  ...userActionGateInput,
   reason: z.string().optional(),
   widgetState: z.record(z.any()).optional()
 };
@@ -20,6 +28,7 @@ export const renderTikTokAdsWorkspaceOutput = {
 };
 
 export const updateProductImagesInput = {
+  ...userActionGateInput,
   productUrl: z.string().url(),
   images: z
     .array(
@@ -42,6 +51,7 @@ export const updateProductImagesOutput = {
 };
 
 export const overrideProductDetailsInput = {
+  ...userActionGateInput,
   title: z.string(),
   productUrl: z.string().url(),
   price: z.string().optional(),
@@ -55,6 +65,7 @@ export const overrideProductDetailsOutput = {
 };
 
 export const generateStoryboardInput = {
+  ...userActionGateInput,
   productTitle: z.string(),
   productDescription: z.string(),
   landingPageUrl: z.string().url(),
@@ -67,6 +78,7 @@ export const generateStoryboardOutput = {
 };
 
 export const approveAdInputsInput = {
+  ...userActionGateInput,
   approvalNotes: z.string().optional(),
   approvedStoryboardVersion: z.string(),
   approvedImageCount: z.number().min(1).max(3)
@@ -80,6 +92,7 @@ export const approveAdInputsOutput = {
 };
 
 export const generateVideoInput = {
+  ...userActionGateInput,
   approvalId: z.string(),
   renderingStyle: z.enum(["ugc", "product_demo", "founder_story"]).default("ugc")
 };
@@ -103,6 +116,7 @@ export const generateVideoOutput = {
 };
 
 export const getVideoStatusInput = {
+  ...userActionGateInput,
   jobId: z.string()
 };
 
@@ -123,14 +137,18 @@ export const getVideoStatusOutput = {
   widgetState: z.record(z.any())
 };
 
-export const getAdAccountsInput = {};
+export const getAdAccountsInput = {
+  ...userActionGateInput
+};
 
 export const getAdAccountsOutput = {
   accountCount: z.number(),
   widgetState: z.record(z.any())
 };
 
-export const planAccountSetupInput = {};
+export const planAccountSetupInput = {
+  ...userActionGateInput
+};
 
 export const planAccountSetupOutput = {
   stage: z.enum(["needs_authorization", "account_selection", "setup_review"]),
@@ -138,6 +156,7 @@ export const planAccountSetupOutput = {
 };
 
 export const verifyOrConnectTikTokIdentityInput = {
+  ...userActionGateInput,
   advertiserId: z.string()
 };
 
@@ -149,6 +168,7 @@ export const verifyOrConnectTikTokIdentityOutput = {
 };
 
 export const verifyPaymentMethodInput = {
+  ...userActionGateInput,
   advertiserId: z.string()
 };
 
@@ -158,6 +178,7 @@ export const verifyPaymentMethodOutput = {
 };
 
 export const choosePromotedProductInput = {
+  ...userActionGateInput,
   productLabel: z.string().optional(),
   productSource: z.enum(["website", "tiktok_shop", "lead_generation", "app"]).default("website"),
   productUrl: z.string().url().optional()
@@ -169,6 +190,7 @@ export const choosePromotedProductOutput = {
 };
 
 export const scanStoreProductsInput = {
+  ...userActionGateInput,
   resultMode: z.enum(["loading", "results"]).default("results"),
   storeUrl: z.string().url()
 };
@@ -193,6 +215,7 @@ export const scanStoreProductsOutput = {
 };
 
 export const loadCreativeOptionsInput = {
+  ...userActionGateInput,
   advertiserId: z.string().optional(),
   identityAuthorizedBcId: z.string().optional(),
   identityId: z.string().optional(),
@@ -206,6 +229,7 @@ export const loadCreativeOptionsOutput = {
 };
 
 export const createSmartplusCampaignInput = {
+  ...userActionGateInput,
   advertiserId: z.string(),
   productUrl: z.string().url(),
   generatedVideoJobId: z.string(),
@@ -236,6 +260,7 @@ export const createSmartplusCampaignOutput = {
 };
 
 export const approveCampaignParametersInput = {
+  ...userActionGateInput,
   campaignId: z.string()
 };
 
@@ -246,6 +271,7 @@ export const approveCampaignParametersOutput = {
 };
 
 export const publishCampaignInput = {
+  ...userActionGateInput,
   approvalId: z.string(),
   campaignId: z.string()
 };
@@ -256,6 +282,7 @@ export const publishCampaignOutput = {
 };
 
 export const setupReportingDigestInput = {
+  ...userActionGateInput,
   advertiserId: z.string(),
   cadence: z.enum(["daily", "weekly", "monthly"]).default("weekly"),
   deliveryMode: z.enum(["chatgpt_digest", "async_export", "webhook"]).default("chatgpt_digest"),

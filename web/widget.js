@@ -600,24 +600,33 @@ function renderStateToElement(target, state) {
 }
 
 function renderState(state) {
-  currentState = state || null;
+  const uiActionToken = state?.uiActionToken || currentState?.uiActionToken;
+  const nextState = state && uiActionToken ? { ...state, uiActionToken } : state || null;
+  currentState = nextState;
   try {
-    window.openai?.setWidgetState?.(state || null);
+    window.openai?.setWidgetState?.(nextState || null);
   } catch {
     // Host persistence is best-effort; local previews do not provide window.openai.
   }
-  renderStateToElement(root, state);
+  renderStateToElement(root, nextState);
 }
 
 function extractWidgetState(toolResult) {
-  return (
+  const widgetState =
     toolResult?.structuredContent?.widgetState ||
     toolResult?.result?.structuredContent?.widgetState ||
     toolResult?.mcp_tool_result?.structuredContent?.widgetState ||
     toolResult?.toolResult?.structuredContent?.widgetState ||
     toolResult?.widgetState ||
-    null
-  );
+    null;
+  const uiActionToken =
+    toolResult?._meta?.uiActionToken ||
+    toolResult?.result?._meta?.uiActionToken ||
+    toolResult?.mcp_tool_result?._meta?.uiActionToken ||
+    currentState?.uiActionToken;
+
+  if (!widgetState) return null;
+  return uiActionToken ? { ...widgetState, uiActionToken } : widgetState;
 }
 
 function showLocalMessage(message) {
@@ -646,7 +655,15 @@ async function callToolAndRender(name, args) {
   renderState(currentState);
 
   try {
-    const result = await window.openai.callTool(name, args);
+    const result = await window.openai.callTool(name, {
+      ...(args || {}),
+      ...(currentState?.uiActionToken
+        ? {
+            interactionToken: currentState.uiActionToken,
+            userAction: "ui_click"
+          }
+        : {})
+    });
     const widgetState = extractWidgetState(result);
     if (widgetState) {
       renderState(widgetState);
@@ -825,7 +842,10 @@ function bindInteractions(target, state) {
 function maybeReadToolResult(message) {
   if (!message || message.jsonrpc !== "2.0") return null;
   if (message.method !== "ui/notifications/tool-result") return null;
-  return message.params?.structuredContent?.widgetState || message.params?._meta?.widgetState || null;
+  const widgetState = message.params?.structuredContent?.widgetState || message.params?._meta?.widgetState || null;
+  const uiActionToken = message.params?._meta?.uiActionToken || currentState?.uiActionToken;
+  if (!widgetState) return null;
+  return uiActionToken ? { ...widgetState, uiActionToken } : widgetState;
 }
 
 function postToHost(message) {
