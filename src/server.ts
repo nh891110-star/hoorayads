@@ -82,7 +82,7 @@ const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
 const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
-const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v5.html";
+const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v6.html";
 const WIDGET_DOMAIN = "https://mcp.hoorayads.org";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.HOORAY_PUBLIC_BASE_URL || WIDGET_DOMAIN).replace(
   /\/$/,

@@ -1,5 +1,5 @@
 const root = document.getElementById("app-root") || document.getElementById("app");
-const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.0" };
+const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.1" };
 const PROTOCOL_VERSION = "2025-11-21";
 
 let initializeRequestId = null;
@@ -629,6 +629,22 @@ function extractWidgetState(toolResult) {
   return uiActionToken ? { ...widgetState, uiActionToken } : widgetState;
 }
 
+function readHostWidgetState() {
+  const host = window.openai || {};
+  const metadataState = extractWidgetState(host.toolResponseMetadata);
+  const outputState = extractWidgetState({
+    structuredContent: host.toolOutput,
+    _meta:
+      host.toolResponseMetadata?.mcp_tool_result?._meta ||
+      host.toolResponseMetadata?.result?._meta ||
+      host.toolResponseMetadata?._meta ||
+      host.toolResponseMetadata
+  });
+  const persistedState = host.widgetState && typeof host.widgetState === "object" ? host.widgetState : null;
+
+  return metadataState || outputState || persistedState || window.__POC_PREVIEW_STATE__ || null;
+}
+
 function showLocalMessage(message) {
   const panel = root?.querySelector(".panel-body");
   if (!panel) return;
@@ -655,14 +671,13 @@ async function callToolAndRender(name, args) {
   renderState(currentState);
 
   try {
+    const actionMeta = {
+      userAction: "ui_click",
+      ...(currentState?.uiActionToken ? { interactionToken: currentState.uiActionToken } : {})
+    };
     const result = await window.openai.callTool(name, {
       ...(args || {}),
-      ...(currentState?.uiActionToken
-        ? {
-            interactionToken: currentState.uiActionToken,
-            userAction: "ui_click"
-          }
-        : {})
+      ...actionMeta
     });
     const widgetState = extractWidgetState(result);
     if (widgetState) {
@@ -908,5 +923,14 @@ window.addEventListener(
   { passive: true }
 );
 
+window.addEventListener(
+  "openai:set_globals",
+  () => {
+    const state = readHostWidgetState();
+    if (state) renderState(state);
+  },
+  { passive: true }
+);
+
 sendInitialize();
-renderState(window.__POC_PREVIEW_STATE__);
+renderState(readHostWidgetState());
