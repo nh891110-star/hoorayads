@@ -53,12 +53,13 @@ import {
   previewState,
   productSelectionResult,
   publishResult,
+  renderCompleteResult,
   renderPendingResult,
   reportingSetupResult,
   scrapeResult,
   storyboardResult
 } from "./mock-data.js";
-import type { ProductContext } from "./mock-data.js";
+import type { ProductContext, VideoPreview } from "./mock-data.js";
 import { getTikTokAppConfig } from "./config.js";
 import {
   createSmartPlusCampaignDraft,
@@ -71,8 +72,12 @@ const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
 const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
-const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v4.html";
+const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v5.html";
 const WIDGET_DOMAIN = "https://mcp.hoorayads.org";
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.HOORAY_PUBLIC_BASE_URL || WIDGET_DOMAIN).replace(
+  /\/$/,
+  ""
+);
 const WIDGET_DESCRIPTION =
   "Interactive TikTok Ads workspace for account setup, product intake, creative review, campaign drafting, publish, and reporting.";
 const TOOL_WIDGET_META = {
@@ -129,6 +134,7 @@ type VideoJobState = {
   approvalId: string | null;
   jobId: string | null;
   pollCount: number;
+  preview?: VideoPreview;
   product: SessionProductState;
   error?: RenderError;
   status: RenderStatus;
@@ -378,6 +384,48 @@ export function createTikTokAdsPocServer() {
       recommendedObjective: "Fix creative inputs first"
     }
   });
+  const makeVideoPreview = (
+    jobId: string,
+    product: SessionProductState,
+    style: "ugc" | "product_demo" | "founder_story"
+  ): VideoPreview => {
+    const encodedJobId = encodeURIComponent(jobId);
+    const encodedProduct = encodeURIComponent(product.title);
+    const styleLabel = style.replaceAll("_", "-");
+
+    return {
+      canCreateCampaign: true,
+      creativeAssetId: `creative_asset_${jobId}`,
+      durationSeconds: 8,
+      height: 960,
+      jobId,
+      previewUrl: `${PUBLIC_BASE_URL}/assets/mock-render-preview.mp4?jobId=${encodedJobId}&style=${styleLabel}&product=${encodedProduct}`,
+      status: "preview_ready",
+      thumbnailUrl: `${PUBLIC_BASE_URL}/assets/mock-render-poster.svg?jobId=${encodedJobId}&product=${encodedProduct}`,
+      videoId: `preview_video_${jobId}`,
+      width: 540
+    };
+  };
+  const videoPreviewFields = (preview: VideoPreview) => ({
+    canCreateCampaign: preview.canCreateCampaign,
+    creativeAssetId: preview.creativeAssetId,
+    durationSeconds: preview.durationSeconds,
+    height: preview.height,
+    previewUrl: preview.previewUrl,
+    thumbnailUrl: preview.thumbnailUrl,
+    tiktokVideoId: preview.tiktokVideoId,
+    videoId: preview.videoId,
+    width: preview.width
+  });
+  const previewResourceLink = (preview: VideoPreview) =>
+    ({
+      type: "resource_link" as const,
+      uri: preview.previewUrl,
+      name: "Rendered TikTok preview MP4",
+      title: "Rendered TikTok preview",
+      description: "Playable preview asset generated for review before campaign setup.",
+      mimeType: "video/mp4"
+    });
   const startVideoRender = (
     approvalId: string,
     style: "ugc" | "product_demo" | "founder_story" = "ugc"
@@ -385,10 +433,12 @@ export function createTikTokAdsPocServer() {
     const jobId = `video_job_${approvalId.replace(/^approval_/, "")}`;
     const approvedProduct = state.approvalSnapshots[approvalId]?.product || getCurrentProduct();
     const error = isRenderableProduct(approvedProduct) ? undefined : productContextError(approvalId);
+    const preview = error ? undefined : makeVideoPreview(jobId, approvedProduct, style);
     state.currentVideoJob = {
       approvalId,
       jobId,
       pollCount: 0,
+      ...(preview ? { preview } : {}),
       product: { ...approvedProduct },
       ...(error ? { error } : {}),
       status: error ? "failed" : "pending",
@@ -1027,22 +1077,29 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
       if (state.currentVideoJob.status === "complete") {
         updateCurrentProduct(state.currentVideoJob.product);
-        const nextWorkspace = await loadAdvertiserWorkspace();
+        const preview =
+          state.currentVideoJob.preview ||
+          makeVideoPreview(jobId, state.currentVideoJob.product, state.currentVideoJob.style);
+        state.currentVideoJob.preview = preview;
 
         return {
           structuredContent: {
             status: "complete",
-            widgetState: nextWorkspace.widgetState
+            ...videoPreviewFields(preview),
+            widgetState: renderCompleteResult(state.currentVideoJob.product, preview)
           },
           content: [
             {
               type: "text",
-              text: nextWorkspace.text
-            }
+              text:
+                "Video preview is ready. Show the preview to the user and wait for approval before moving into advertiser account or Smart+ campaign setup."
+            },
+            previewResourceLink(preview)
           ],
           _meta: {
             [RESOURCE_URI_META_KEY]: WIDGET_URI,
-            source: nextWorkspace.source
+            source: "guided-experience",
+            videoPreview: preview
           }
         };
       }

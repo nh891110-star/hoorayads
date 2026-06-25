@@ -99,6 +99,20 @@ export type ReportPlan = {
   notes: string[];
 };
 
+export type VideoPreview = {
+  canCreateCampaign: boolean;
+  creativeAssetId: string;
+  durationSeconds: number;
+  height: number;
+  jobId: string;
+  previewUrl: string;
+  status: "preview_ready" | "uploaded_to_tiktok";
+  thumbnailUrl: string;
+  tiktokVideoId?: string;
+  videoId: string;
+  width: number;
+};
+
 export type ToolViewModel = {
   screen: "onboarding" | "product" | "creative" | "render" | "accounts" | "draft" | "publish" | "reporting";
   phaseLabel?: string;
@@ -145,6 +159,7 @@ export type ToolViewModel = {
     campaignId: string;
     nextCheckIn: string;
   };
+  videoPreview?: VideoPreview;
   reportPlan?: ReportPlan;
   auth?: {
     status: "connected" | "needs_authorization";
@@ -679,6 +694,58 @@ export function renderPendingResult(product?: Partial<ProductContext>): ToolView
     readiness: baseReadiness({
       video: "Preview rendering in progress"
     })
+  };
+}
+
+export function renderCompleteResult(product: Partial<ProductContext> | undefined, videoPreview: VideoPreview): ToolViewModel {
+  const currentProduct = toProductContext(product);
+
+  return {
+    ...creativeWorkspaceResult({ product: currentProduct }),
+    screen: "render",
+    phaseLabel: "Video preview",
+    headline: "Rendered video preview is ready",
+    summary:
+      "Review the generated TikTok-style preview before campaign setup. This is the safety checkpoint where the advertiser confirms the product, hook, pacing, and CTA before any TikTok Ads objects are created.",
+    primaryCta: "Use this video for campaign setup",
+    secondaryCta: "Render another version",
+    timeline: makeTimeline("render"),
+    checklist: [
+      { id: "concept", label: "Storyboard approved", detail: "The hook, product framing, and CTA were approved before rendering.", status: "done" },
+      { id: "preview", label: "Preview video ready", detail: "Watch the generated preview and confirm it is launch-worthy.", status: "current" },
+      { id: "campaign", label: "Continue to campaign setup", detail: "After preview approval, attach the asset context to the Smart+ draft flow.", status: "todo" }
+    ],
+    highlights: [
+      { label: "Preview", value: `${videoPreview.durationSeconds}s vertical`, tone: "good" },
+      { label: "Asset", value: videoPreview.videoId, tone: "accent" },
+      { label: "TikTok upload", value: videoPreview.tiktokVideoId ? "Ready" : "Needed before publish", tone: videoPreview.tiktokVideoId ? "good" : "warn" }
+    ],
+    readiness: baseReadiness({
+      video: "Preview ready for review"
+    }),
+    blockers: videoPreview.tiktokVideoId
+      ? []
+      : [
+          {
+            id: "tiktok-upload",
+            title: "Preview is not a TikTok-hosted video yet",
+            detail:
+              "The app can show the rendered preview now. Before final ad creative creation or publish, the renderer still needs to upload the MP4 to TikTok and return a real TikTok video_id.",
+            severity: "medium"
+          }
+        ],
+    product: {
+      title: currentProduct.title,
+      price: currentProduct.price,
+      destination: currentProduct.destination,
+      platform: currentProduct.platform,
+      imageCount: currentProduct.imageCount,
+      creativeBriefTitle: currentProduct.creativeBriefTitle,
+      creativeBriefHook: currentProduct.creativeBriefHook,
+      creativeBriefFormat: currentProduct.creativeBriefFormat,
+      creativeBriefObjective: currentProduct.creativeBriefObjective
+    },
+    videoPreview
   };
 }
 

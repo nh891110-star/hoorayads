@@ -585,6 +585,94 @@ body {
   text-decoration: none;
 }
 
+.video-preview-panel {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(0, 224, 214, 0.16), transparent 34%),
+    radial-gradient(circle at 88% 82%, rgba(255, 33, 86, 0.14), transparent 32%),
+    rgba(255, 255, 255, 0.9);
+}
+
+.video-preview-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) 1fr;
+  gap: 22px;
+  align-items: stretch;
+}
+
+.video-frame {
+  padding: 10px;
+  border-radius: 32px;
+  background:
+    linear-gradient(135deg, var(--tiktok-cyan), var(--accent-pink)) border-box,
+    #08080a padding-box;
+  box-shadow: 0 28px 70px rgba(8, 8, 10, 0.22);
+}
+
+.video-player {
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  border: 0;
+  border-radius: 24px;
+  background: #08080a;
+  object-fit: cover;
+}
+
+.video-inspector {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  padding: 20px;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(16, 19, 26, 0.08);
+}
+
+.video-inspector h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(24px, 4vw, 40px);
+  line-height: 0.98;
+}
+
+.video-inspector p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.preview-pill {
+  width: fit-content;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #08080a;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.meta-list.compact {
+  gap: 8px;
+}
+
+.preview-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  color: #08080a;
+  background: var(--tiktok-cyan);
+  font-weight: 900;
+  text-decoration: none;
+}
+
 .publish-banner {
   margin-top: 16px;
   padding: 16px;
@@ -643,6 +731,10 @@ body {
   }
 
   .checklist-item {
+    grid-template-columns: 1fr;
+  }
+
+  .video-preview-grid {
     grid-template-columns: 1fr;
   }
 }

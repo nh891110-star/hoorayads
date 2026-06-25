@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="960" viewBox="0 0 540 960" role="img" aria-label="Hooray TikTok Ads generated preview poster">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#050505"/>
+      <stop offset="0.48" stop-color="#101012"/>
+      <stop offset="1" stop-color="#1b060a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#25f4ee"/>
+      <stop offset="1" stop-color="#fe2c55"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="540" height="960" fill="url(#bg)"/>
+  <circle cx="86" cy="170" r="128" fill="#25f4ee" opacity="0.22" filter="url(#glow)"/>
+  <circle cx="474" cy="730" r="156" fill="#fe2c55" opacity="0.20" filter="url(#glow)"/>
+  <rect x="54" y="84" width="432" height="792" rx="36" fill="#0b0b0e" stroke="url(#accent)" stroke-width="2"/>
+  <rect x="82" y="122" width="376" height="512" rx="30" fill="#17171c"/>
+  <path d="M155 500c34-58 73-87 118-87 45 0 84 29 118 87" fill="none" stroke="#25f4ee" stroke-width="14" stroke-linecap="round"/>
+  <rect x="132" y="210" width="276" height="172" rx="38" fill="#ffffff" opacity="0.92"/>
+  <path d="M176 326c40-42 73-63 99-63s56 21 89 63" fill="none" stroke="#0b0b0e" stroke-width="18" stroke-linecap="round"/>
+  <circle cx="188" cy="262" r="22" fill="#fe2c55"/>
+  <circle cx="352" cy="262" r="22" fill="#25f4ee"/>
+  <text x="86" y="704" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800">Generated preview</text>
+  <text x="86" y="750" fill="#c7c7ce" font-family="Arial, Helvetica, sans-serif" font-size="24">Review before campaign setup</text>
+  <g transform="translate(86 788)">
+    <rect width="168" height="52" rx="26" fill="#25f4ee"/>
+    <polygon points="68,16 68,36 88,26" fill="#050505"/>
+    <text x="100" y="34" fill="#050505" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" text-anchor="middle">PLAY</text>
+  </g>
+</svg>

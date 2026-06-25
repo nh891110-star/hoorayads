@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import cors from "cors";
 import express, { type Request, type Response } from "express";
@@ -14,6 +16,7 @@ const port = process.env.PORT
   : process.env.MCP_PORT
     ? Number.parseInt(process.env.MCP_PORT, 10)
     : 3010;
+const currentDir = dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json({ limit: "5mb" }));
 
@@ -127,6 +130,13 @@ async function handleDelete(req: Request, res: Response) {
 app.post("/mcp", handlePost);
 app.get("/mcp", handleGet);
 app.delete("/mcp", handleDelete);
+app.use(
+  "/assets",
+  express.static(join(currentDir, "../web/assets"), {
+    immutable: true,
+    maxAge: "1h"
+  })
+);
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({

@@ -402,6 +402,41 @@ function renderProductMeta(state) {
   `;
 }
 
+function renderVideoPreview(state) {
+  const preview = state.videoPreview;
+  if (!preview?.previewUrl) return "";
+
+  return `
+    <section class="panel video-preview-panel" style="margin-top:20px;">
+      <div class="section-topline">
+        <h2>Video preview</h2>
+        <p>Watch this before campaign setup. The app should only continue after the advertiser approves the preview.</p>
+      </div>
+      <div class="video-preview-grid">
+        <div class="video-frame">
+          <video class="video-player" controls playsinline preload="metadata" poster="${escapeHtml(preview.thumbnailUrl || "")}">
+            <source src="${escapeHtml(preview.previewUrl)}" type="video/mp4" />
+            Your browser does not support video preview playback.
+          </video>
+        </div>
+        <div class="video-inspector">
+          <div class="preview-pill">${escapeHtml(preview.status || "preview_ready")}</div>
+          <h3>${escapeHtml(state.product?.title || "Generated TikTok preview")}</h3>
+          <p>This render is ready for creative review. It is not a publish action and it has not created a TikTok ad yet.</p>
+          <div class="meta-list compact">
+            <div class="meta-item"><strong>Duration</strong><span>${escapeHtml(String(preview.durationSeconds || ""))}s</span></div>
+            <div class="meta-item"><strong>Format</strong><span>${escapeHtml(String(preview.width || 540))} x ${escapeHtml(String(preview.height || 960))}</span></div>
+            <div class="meta-item"><strong>Preview ID</strong><span>${escapeHtml(preview.videoId || "pending")}</span></div>
+            <div class="meta-item"><strong>Asset ID</strong><span>${escapeHtml(preview.creativeAssetId || "pending")}</span></div>
+            <div class="meta-item"><strong>TikTok video ID</strong><span>${escapeHtml(preview.tiktokVideoId || "Upload needed before publish")}</span></div>
+          </div>
+          <a class="preview-link" href="${escapeHtml(preview.previewUrl)}" target="_blank" rel="noreferrer">Open MP4 preview</a>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 export function renderStateToElement(target, state) {
   if (!target || !state) return;
 
@@ -437,6 +472,7 @@ export function renderStateToElement(target, state) {
       </section>
 
       ${renderAuth(state)}
+      ${renderVideoPreview(state)}
       ${state.product ? `<section class="panel" style="margin-top:20px;"><h2>Promoted product</h2>${renderProductMeta(state)}</section>` : ""}
       ${state.blockers?.length ? `<section class="panel" style="margin-top:20px;"><h2>What still needs attention</h2>${renderBlockers(state)}</section>` : ""}
       ${renderOptionGroups(state)}

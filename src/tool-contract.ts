@@ -78,9 +78,18 @@ export const generateVideoInput = {
 export const generateVideoOutput = {
   jobId: z.string(),
   status: z.enum(["pending", "complete", "failed"]),
+  canCreateCampaign: z.boolean().optional(),
+  creativeAssetId: z.string().optional(),
+  durationSeconds: z.number().optional(),
   errorCode: z.string().optional(),
   errorMessage: z.string().optional(),
+  height: z.number().optional(),
+  previewUrl: z.string().url().optional(),
   retryable: z.boolean().optional(),
+  thumbnailUrl: z.string().url().optional(),
+  tiktokVideoId: z.string().optional(),
+  videoId: z.string().optional(),
+  width: z.number().optional(),
   widgetState: z.record(z.any())
 };
 
@@ -90,9 +99,18 @@ export const getVideoStatusInput = {
 
 export const getVideoStatusOutput = {
   status: z.enum(["pending", "complete", "failed"]),
+  canCreateCampaign: z.boolean().optional(),
+  creativeAssetId: z.string().optional(),
+  durationSeconds: z.number().optional(),
   errorCode: z.string().optional(),
   errorMessage: z.string().optional(),
+  height: z.number().optional(),
+  previewUrl: z.string().url().optional(),
   retryable: z.boolean().optional(),
+  thumbnailUrl: z.string().url().optional(),
+  tiktokVideoId: z.string().optional(),
+  videoId: z.string().optional(),
+  width: z.number().optional(),
   widgetState: z.record(z.any())
 };
 
