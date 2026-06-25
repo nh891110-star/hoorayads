@@ -149,12 +149,17 @@ textarea {
 }
 
 .panel-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
   gap: 12px;
   align-items: center;
   padding: 16px 28px;
   border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(12px);
 }
 
 .next-note {
@@ -349,7 +354,8 @@ textarea {
 
 .choice-card.selected,
 .storyboard-card.selected,
-.product-card.selected {
+.product-card.selected,
+.account-card.selected {
   border-color: rgba(0, 200, 200, 0.72);
   background: #f4fffe;
   box-shadow: 0 10px 24px rgba(0, 200, 200, 0.08);
@@ -566,7 +572,8 @@ textarea {
 
 .action-chip[data-action],
 .product-card[data-select-candidate],
-.storyboard-card[data-select-storyboard] {
+.storyboard-card[data-select-storyboard],
+.account-card[data-select-account] {
   cursor: pointer;
 }
 
@@ -697,6 +704,21 @@ textarea {
   padding: 9px 0;
   border-bottom: 1px solid var(--line);
   font-size: 13px;
+}
+
+.inspector-edit-row {
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: start;
+}
+
+.compact-textarea {
+  min-height: 68px;
+  font-size: 13px;
+}
+
+.editable-mini-card {
+  display: grid;
+  gap: 8px;
 }
 
 .inspector-row:last-child {

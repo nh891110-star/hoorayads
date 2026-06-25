@@ -97,7 +97,10 @@ export const approveAdInputsOutput = {
 export const generateVideoInput = {
   ...userActionGateInput,
   approvalId: z.string(),
-  renderingStyle: z.enum(["ugc", "product_demo", "founder_story"]).default("ugc")
+  renderingStyle: z.enum(["ugc", "product_demo", "founder_story"]).default("ugc"),
+  creativeBriefTitle: z.string().optional(),
+  creativeBriefHook: z.string().optional(),
+  creativeBriefObjective: z.string().optional()
 };
 
 export const generateVideoOutput = {
@@ -264,7 +267,12 @@ export const createSmartplusCampaignOutput = {
 
 export const approveCampaignParametersInput = {
   ...userActionGateInput,
-  campaignId: z.string()
+  campaignId: z.string(),
+  campaignName: z.string().optional(),
+  targetCountryCode: z.string().length(2).optional(),
+  adgroupDailyBudget: z.number().positive().optional(),
+  optimizationGoal: z.string().optional(),
+  biddingStrategy: z.string().optional()
 };
 
 export const approveCampaignParametersOutput = {

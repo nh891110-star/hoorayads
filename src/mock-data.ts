@@ -202,6 +202,7 @@ export type ToolViewModel = {
   publish?: {
     state: string;
     campaignId: string;
+    approvalId?: string;
     nextCheckIn: string;
   };
   videoPreview?: VideoPreview;
@@ -214,6 +215,7 @@ export type ToolViewModel = {
     authorizationUrl?: string;
     redirectUri?: string;
   };
+  uiSelection?: Record<string, unknown>;
 };
 
 export type ProductContext = {

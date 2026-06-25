@@ -1,5 +1,5 @@
 const root = document.getElementById("app-root") || document.getElementById("app");
-const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.2" };
+const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.3" };
 const PROTOCOL_VERSION = "2025-11-21";
 
 let initializeRequestId = null;
@@ -60,6 +60,11 @@ function getSelectedCandidate(state) {
 function getSelectedStoryboardIndex(state) {
   const value = Number(state.uiSelection?.selectedStoryboardIndex ?? 0);
   return Number.isFinite(value) ? value : 0;
+}
+
+function getSelectedAccount(state) {
+  const accounts = state.accounts || [];
+  return accounts.find((account) => account.advertiserId === state.uiSelection?.selectedAdvertiserId) || accounts[0] || null;
 }
 
 function productActionArgs(state, feedback) {
@@ -131,11 +136,68 @@ function readStoryboardFromDom(state = {}) {
   return angles;
 }
 
+function readPreviewEditsFromDom(state = {}) {
+  const product = { ...(state.product || {}) };
+  root?.querySelectorAll("[data-preview-field]").forEach((input) => {
+    const field = input.getAttribute("data-preview-field");
+    const value = input.value.trim();
+    if (field === "creativeBriefTitle") product.creativeBriefTitle = value;
+    if (field === "creativeBriefHook") product.creativeBriefHook = value;
+    if (field === "creativeBriefObjective") product.creativeBriefObjective = value;
+  });
+  return product;
+}
+
+function makeDraftFromReviewDom(state = {}) {
+  const productTitle = state.product?.title || "Product";
+  return {
+    name: `${productTitle} | Smart+`,
+    objective: "Smart+ traffic",
+    fields: [
+      { label: "Daily budget", value: "$50", editable: true },
+      { label: "Country", value: "US", editable: true },
+      { label: "Optimization goal", value: "Clicks", editable: true },
+      { label: "Bidding strategy", value: "Maximum delivery", editable: true }
+    ],
+    warnings: []
+  };
+}
+
+function readReviewDraftFromDom(state = {}) {
+  const hasReviewInputs = Boolean(root?.querySelector("[data-review-field], [data-review-campaign-name]"));
+  const draft = state.draft
+    ? {
+        ...state.draft,
+        fields: (state.draft.fields || []).map((field) => ({ ...field }))
+      }
+    : hasReviewInputs
+      ? makeDraftFromReviewDom(state)
+      : null;
+  if (!draft) return draft;
+
+  root?.querySelectorAll("[data-review-field]").forEach((input) => {
+    const label = input.getAttribute("data-review-field");
+    let field = draft.fields.find((item) => item.label === label);
+    if (!field && label) {
+      field = { label, value: "", editable: true };
+      draft.fields.push(field);
+    }
+    if (field) field.value = input.value.trim();
+  });
+
+  const nameInput = root?.querySelector("[data-review-campaign-name]");
+  if (nameInput) draft.name = nameInput.value.trim();
+  return draft;
+}
+
 function hydrateEditableState(state = {}) {
   const nextState = { ...(state || {}) };
   nextState.uiDraft = readDraftFromDom(nextState);
   if (nextState.product) nextState.product = readProductFromDom(nextState);
   if (nextState.angles?.length) nextState.angles = readStoryboardFromDom(nextState);
+  if (nextState.screen === "render" && nextState.product) nextState.product = readPreviewEditsFromDom(nextState);
+  const reviewDraft = readReviewDraftFromDom(nextState);
+  if (reviewDraft) nextState.draft = reviewDraft;
   return nextState;
 }
 
@@ -156,19 +218,23 @@ function actionForPrimary(state) {
   if (state.screen === "creative") return { type: "approve_storyboard" };
   if (state.screen === "render" && !state.videoPreview) return { type: "check_render_status" };
   if (state.screen === "render") return { type: "approve_preview" };
-  if (["onboarding", "accounts"].includes(state.screen || "")) return { type: "continue_account_setup" };
-  if (["draft", "publish"].includes(state.screen || "")) return { type: "approve_launch_settings" };
+  if (["onboarding", "accounts"].includes(state.screen || "")) {
+    if (state.accounts?.length) return { type: "verify_selected_account" };
+    return { type: "continue_account_setup" };
+  }
+  if (state.screen === "draft") {
+    if (state.publish?.approvalId || state.uiSelection?.campaignApprovalId) return { type: "publish_campaign" };
+    if (state.primaryCta === "Create Smart+ draft" || !campaignIdFromState(state)) return { type: "create_smartplus_draft" };
+    return { type: "approve_launch_settings" };
+  }
+  if (state.screen === "publish") return { type: "save_reporting_plan" };
   if (state.screen === "reporting") return { type: "save_reporting_plan" };
   return null;
 }
 
 function actionForSecondary(state) {
   if (state.storeDiscovery?.status === "ready") return { type: "rescan_store" };
-  if (state.screen === "product" && state.product) return { type: "edit_product_details" };
   if (state.screen === "creative") return { type: "regenerate_storyboard" };
-  if (state.screen === "render") return { type: "edit_storyboard" };
-  if (["onboarding", "accounts"].includes(state.screen || "")) return { type: "change_account" };
-  if (["draft", "publish"].includes(state.screen || "")) return { type: "edit_campaign_details" };
   return null;
 }
 
@@ -267,7 +333,7 @@ function renderActions(state) {
     <div class="panel-actions">
       <span class="next-note">${escapeHtml(getNextNote(state))}</span>
       <div class="button-row">
-        ${secondary ? renderActionButton(secondaryAction, secondary, "secondary") : ""}
+        ${secondary && secondaryAction ? renderActionButton(secondaryAction, secondary, "secondary") : ""}
         ${renderActionButton(primaryAction, primary, "primary")}
       </div>
     </div>
@@ -444,7 +510,6 @@ function renderStoryboard(state) {
         )
         .join("")}
     </div>
-    <div class="chat-edit"><strong>Chat edit also works:</strong> “Make option B more premium,” “Use a stronger hook,” or “Replace scene 2 with the black bag image.”</div>
   `;
 }
 
@@ -475,10 +540,18 @@ function renderVideoPreview(state) {
       </div>
       <div class="inspector">
         <div class="label">Creative inspector</div>
-        <div class="value">${escapeHtml(preview.durationSeconds || 12)}s vertical video · ${escapeHtml(state.product?.creativeBriefTitle || state.product?.title || "Generated preview")}</div>
+        <label class="field-label" for="preview-title-field">Video title</label>
+        <input id="preview-title-field" class="text-input product-edit-input" data-preview-field="creativeBriefTitle" type="text" value="${escapeHtml(state.product?.creativeBriefTitle || state.product?.title || "Generated preview")}">
         <div class="inspector-list">
-          <div class="inspector-row"><span class="label">Hook</span><span>${escapeHtml(state.product?.creativeBriefHook || "Product benefit in the first seconds.")}</span></div>
-          <div class="inspector-row"><span class="label">CTA</span><span>${escapeHtml(state.product?.creativeBriefObjective || "Shop now")}</span></div>
+          <div class="inspector-row inspector-edit-row">
+            <label class="field-label" for="preview-hook-field">Hook</label>
+            <textarea id="preview-hook-field" class="textarea-input compact-textarea" data-preview-field="creativeBriefHook" rows="3">${escapeHtml(state.product?.creativeBriefHook || "Product benefit in the first seconds.")}</textarea>
+          </div>
+          <div class="inspector-row inspector-edit-row">
+            <label class="field-label" for="preview-cta-field">CTA</label>
+            <input id="preview-cta-field" class="text-input compact-input" data-preview-field="creativeBriefObjective" type="text" value="${escapeHtml(state.product?.creativeBriefObjective || "Shop now")}">
+          </div>
+          <div class="inspector-row"><span class="label">Length</span><span>${escapeHtml(preview.durationSeconds || 12)}s vertical video</span></div>
           <div class="inspector-row"><span class="label">Source</span><span>Product page images + approved storyboard</span></div>
           <div class="inspector-row"><span class="label">Status</span><span>Draft only · not live · no campaign created</span></div>
         </div>
@@ -487,7 +560,6 @@ function renderVideoPreview(state) {
         </div>
       </div>
     </div>
-    <div class="chat-edit"><strong>Chat also works:</strong> “Create another version with a faster opening,” or “Make the video feel more premium.”</div>
   `;
 }
 
@@ -544,8 +616,8 @@ function renderAdvertiserAccounts(state) {
       ${state.accounts
         .slice(0, 3)
         .map(
-          (account) => `
-            <article class="account-card">
+          (account, index) => `
+            <article class="account-card ${account.advertiserId === state.uiSelection?.selectedAdvertiserId || (!state.uiSelection?.selectedAdvertiserId && index === 0) ? "selected" : ""}" data-select-account="${escapeHtml(account.advertiserId)}">
               <div class="storyboard-top">
                 <div>
                   <div class="label">${escapeHtml(account.advertiserRole || "Advertiser")}</div>
@@ -572,6 +644,7 @@ function renderReview(state) {
   const country = readDraftField(state, "Country", "United States");
   const goal = readDraftField(state, "Optimization goal", "Website visits");
   const campaignType = state.draft?.objective || "Smart+ traffic";
+  const campaignName = state.draft?.name || `${state.product?.title || "Product"} | Smart+`;
 
   return `
     <div class="summary-card preview-row">
@@ -579,24 +652,36 @@ function renderReview(state) {
       <div>
         <div class="label">Preview ready</div>
         <div class="value">${escapeHtml(state.product?.creativeBriefTitle || "12s vertical video")} · Smart+ draft attached</div>
-        <p class="meta">Weekly report: spend, clicks, CPC, conversions, creative fatigue.</p>
-        <div class="asset-actions">
-          <button class="action-chip" type="button" data-action="${encodeAction({ type: "edit_storyboard" })}">Edit video</button>
-          <button class="action-chip" type="button" data-action="${encodeAction({ type: "edit_campaign_details", field: "budget" })}">Change budget</button>
-          <button class="action-chip" type="button" data-action="${encodeAction({ type: "edit_campaign_details", field: "report" })}">Edit report</button>
-        </div>
+        <p class="meta">Review the campaign details below before any spend starts.</p>
       </div>
     </div>
     <div class="review-grid">
+      <label class="mini-grid-card editable-mini-card">
+        <span class="field-label">Campaign name</span>
+        <input class="text-input compact-input" data-review-campaign-name type="text" value="${escapeHtml(campaignName)}">
+      </label>
       <div class="mini-grid-card"><div class="label">Campaign type</div><div class="value">${escapeHtml(campaignType)}</div></div>
-      <div class="mini-grid-card"><div class="label">Goal</div><div class="value">${escapeHtml(goal)}</div></div>
-      <div class="mini-grid-card"><div class="label">Market</div><div class="value">${escapeHtml(country)}</div></div>
-      <div class="mini-grid-card"><div class="label">Budget</div><div class="value">${escapeHtml(budget)}</div></div>
+      <label class="mini-grid-card editable-mini-card">
+        <span class="field-label">Landing page</span>
+        <input class="text-input compact-input" data-product-field="destination" type="url" inputmode="url" value="${escapeHtml(state.product?.destination || "")}">
+      </label>
+      <label class="mini-grid-card editable-mini-card">
+        <span class="field-label">Goal</span>
+        <input class="text-input compact-input" data-review-field="Optimization goal" type="text" value="${escapeHtml(goal)}">
+      </label>
+      <label class="mini-grid-card editable-mini-card">
+        <span class="field-label">Market</span>
+        <input class="text-input compact-input" data-review-field="Country" type="text" value="${escapeHtml(country)}">
+      </label>
+      <label class="mini-grid-card editable-mini-card">
+        <span class="field-label">Budget</span>
+        <input class="text-input compact-input" data-review-field="Daily budget" type="text" value="${escapeHtml(budget)}">
+      </label>
     </div>
     ${
       state.draft?.warnings?.length
         ? `<div class="chat-edit"><strong>Before publish:</strong> ${state.draft.warnings.map(escapeHtml).join(" ")}</div>`
-        : `<div class="chat-edit"><strong>Chat edit also works:</strong> “Lower budget to $30/day,” “Pause reporting for now,” or “Make the video more luxury.”</div>`
+        : ""
     }
   `;
 }
@@ -682,6 +767,7 @@ function renderState(state) {
     // Host persistence is best-effort; local previews do not provide window.openai.
   }
   renderStateToElement(root, nextState);
+  notifyHostHeight();
 }
 
 function extractWidgetState(toolResult) {
@@ -768,10 +854,83 @@ async function callToolAndRender(name, args) {
   }
 }
 
+function notifyHostHeight() {
+  if (!window.openai?.notifyIntrinsicHeight) return;
+  const run = () => {
+    const height = Math.ceil(
+      root?.getBoundingClientRect?.().height ||
+        document.documentElement?.scrollHeight ||
+        document.body?.scrollHeight ||
+        0
+    );
+    try {
+      window.openai.notifyIntrinsicHeight({ height });
+    } catch {
+      // Some hosts expose a no-argument notifier instead.
+    }
+    try {
+      window.openai.notifyIntrinsicHeight();
+    } catch {
+      // Height reporting is best-effort.
+    }
+  };
+
+  if (window.requestAnimationFrame) {
+    window.requestAnimationFrame(run);
+  } else {
+    setTimeout(run, 0);
+  }
+}
+
 function campaignIdFromState(state) {
   const campaignField = state.draft?.fields?.find((field) => field.label.toLowerCase() === "campaign id");
   const campaignId = campaignField?.value;
   return campaignId && !campaignId.toLowerCase().includes("pending") ? campaignId : "";
+}
+
+function draftFieldValue(state, label, fallback = "") {
+  const field = state.draft?.fields?.find((item) => item.label.toLowerCase() === label.toLowerCase());
+  return field?.value || fallback;
+}
+
+function parseBudget(value) {
+  const amount = Number(String(value || "").replace(/[^0-9.]/g, ""));
+  return Number.isFinite(amount) && amount > 0 ? amount : 50;
+}
+
+function normalizeCountryCode(value) {
+  const trimmed = String(value || "").trim().toUpperCase();
+  if (/^[A-Z]{2}$/.test(trimmed)) return trimmed;
+  if (trimmed.includes("UNITED STATES") || trimmed === "USA") return "US";
+  if (trimmed.includes("CANADA")) return "CA";
+  return "US";
+}
+
+function createSmartPlusArgsFromState(state) {
+  const selectedAccount = getSelectedAccount(state);
+  const advertiserId = state.accountSetup?.selectedAdvertiserId || selectedAccount?.advertiserId;
+  const productUrl = state.product?.destination;
+  const generatedVideoJobId = state.renderJob?.jobId || state.videoPreview?.jobId;
+  const campaignName = state.draft?.name || `${state.product?.title || "Product"} | Smart+`;
+  const goal = draftFieldValue(state, "Optimization goal", "Clicks");
+  const bidding = draftFieldValue(state, "Bidding strategy", "Maximum delivery");
+
+  if (!advertiserId || !productUrl || !generatedVideoJobId) return null;
+
+  return {
+    advertiserId,
+    productUrl,
+    generatedVideoJobId,
+    campaignName,
+    targetCountryCode: normalizeCountryCode(draftFieldValue(state, "Country", "US")),
+    adgroupDailyBudget: parseBudget(draftFieldValue(state, "Daily budget", "$50")),
+    optimizationGoal: /landing/i.test(goal) ? "landing_page_views" : "clicks",
+    biddingStrategy: /cost/i.test(bidding) ? "cost_cap" : "maximum_delivery",
+    ...(state.accountSetup?.selectedIdentityId ? { identityId: state.accountSetup.selectedIdentityId } : {}),
+    ...(state.videoPreview?.tiktokVideoId ? { videoId: state.videoPreview.tiktokVideoId } : {}),
+    adText: state.product?.creativeBriefHook || `Shop ${state.product?.title || "this product"}`,
+    callToAction: "SHOP_NOW"
+  };
 }
 
 async function handleAction(action, state) {
@@ -868,7 +1027,10 @@ async function handleAction(action, state) {
     }
     await callToolAndRender("generate_video", {
       approvalId,
-      renderingStyle: "product_demo"
+      renderingStyle: "product_demo",
+      creativeBriefTitle: liveState.product?.creativeBriefTitle,
+      creativeBriefHook: liveState.product?.creativeBriefHook,
+      creativeBriefObjective: liveState.product?.creativeBriefObjective
     });
     return;
   }
@@ -883,18 +1045,67 @@ async function handleAction(action, state) {
     return;
   }
 
+  if (action.type === "verify_selected_account") {
+    const account = getSelectedAccount(liveState);
+    if (!account?.advertiserId) {
+      showLocalMessage("Choose an advertiser account before continuing.");
+      return;
+    }
+    await callToolAndRender("verify_or_connect_tiktok_identity", {
+      advertiserId: account.advertiserId
+    });
+    return;
+  }
+
+  if (action.type === "create_smartplus_draft") {
+    const args = createSmartPlusArgsFromState(liveState);
+    if (!args) {
+      showLocalMessage("Approve the preview and finish account setup before creating a Smart+ draft.");
+      return;
+    }
+    await callToolAndRender("create_smartplus_campaign", args);
+    return;
+  }
+
   if (action.type === "approve_launch_settings") {
     const campaignId = campaignIdFromState(liveState);
     if (!campaignId) {
       await sendChatPrompt("Create a Smart+ draft before approving launch settings.");
       return;
     }
-    await callToolAndRender("approve_campaign_parameters", { campaignId });
+    await callToolAndRender("approve_campaign_parameters", {
+      campaignId,
+      campaignName: liveState.draft?.name,
+      targetCountryCode: normalizeCountryCode(draftFieldValue(liveState, "Country", "US")),
+      adgroupDailyBudget: parseBudget(draftFieldValue(liveState, "Daily budget", "$50")),
+      optimizationGoal: draftFieldValue(liveState, "Optimization goal", "Clicks"),
+      biddingStrategy: draftFieldValue(liveState, "Bidding strategy", "Maximum delivery")
+    });
+    return;
+  }
+
+  if (action.type === "publish_campaign") {
+    const campaignId = campaignIdFromState(liveState);
+    const approvalId = liveState.uiSelection?.campaignApprovalId || liveState.publish?.approvalId;
+    if (!campaignId || !approvalId) {
+      showLocalMessage("Approve launch settings before publishing.");
+      return;
+    }
+    await callToolAndRender("publish_campaign", { campaignId, approvalId });
     return;
   }
 
   if (action.type === "save_reporting_plan") {
-    await sendChatPrompt("Save this reporting plan for the campaign.");
+    const advertiserId =
+      liveState.accountSetup?.selectedAdvertiserId ||
+      getSelectedAccount(liveState)?.advertiserId ||
+      "selected_advertiser";
+    await callToolAndRender("setup_reporting_digest", {
+      advertiserId,
+      cadence: "weekly",
+      deliveryMode: "chatgpt_digest",
+      focus: "conversion"
+    });
     return;
   }
 
@@ -947,6 +1158,22 @@ function bindInteractions(target, state) {
   });
 
   target.querySelectorAll("[data-draft-url]").forEach((input) => {
+    input.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    input.addEventListener("focus", () => {
+      const mode = input.closest("[data-start-mode]")?.getAttribute("data-start-mode") === "store" ? "store" : "product";
+      target.querySelectorAll("[data-start-mode]").forEach((card) => {
+        card.classList.toggle("selected", card.getAttribute("data-start-mode") === mode);
+      });
+      persistStateWithoutRender({
+        ...(currentState || state || {}),
+        uiDraft: {
+          ...readDraftFromDom(currentState || state || {}),
+          mode
+        }
+      });
+    });
     input.addEventListener("input", () => {
       persistStateWithoutRender({
         ...(currentState || state || {}),
@@ -969,6 +1196,41 @@ function bindInteractions(target, state) {
       persistStateWithoutRender({
         ...(currentState || state || {}),
         angles: readStoryboardFromDom(currentState || state || {})
+      });
+    });
+  });
+
+  target.querySelectorAll("[data-preview-field]").forEach((input) => {
+    input.addEventListener("input", () => {
+      persistStateWithoutRender({
+        ...(currentState || state || {}),
+        product: readPreviewEditsFromDom(currentState || state || {})
+      });
+    });
+  });
+
+  target.querySelectorAll("[data-review-field], [data-review-campaign-name]").forEach((input) => {
+    input.addEventListener("input", () => {
+      persistStateWithoutRender({
+        ...(currentState || state || {}),
+        draft: readReviewDraftFromDom(currentState || state || {})
+      });
+    });
+  });
+
+  target.querySelectorAll("[data-select-account]").forEach((element) => {
+    element.addEventListener("click", () => {
+      const selectedAdvertiserId = element.getAttribute("data-select-account");
+      if (!selectedAdvertiserId) return;
+      target.querySelectorAll("[data-select-account]").forEach((card) => {
+        card.classList.toggle("selected", card.getAttribute("data-select-account") === selectedAdvertiserId);
+      });
+      persistStateWithoutRender({
+        ...(currentState || state || {}),
+        uiSelection: {
+          ...((currentState || state || {}).uiSelection || {}),
+          selectedAdvertiserId
+        }
       });
     });
   });
