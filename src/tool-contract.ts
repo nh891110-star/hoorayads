@@ -10,6 +10,15 @@ export const scrapeProductOutput = {
   widgetState: z.record(z.any())
 };
 
+export const renderTikTokAdsWorkspaceInput = {
+  reason: z.string().optional(),
+  widgetState: z.record(z.any()).optional()
+};
+
+export const renderTikTokAdsWorkspaceOutput = {
+  widgetState: z.record(z.any())
+};
+
 export const updateProductImagesInput = {
   productUrl: z.string().url(),
   images: z

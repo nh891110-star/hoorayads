@@ -28,6 +28,8 @@ import {
   planAccountSetupOutput,
   publishCampaignInput,
   publishCampaignOutput,
+  renderTikTokAdsWorkspaceInput,
+  renderTikTokAdsWorkspaceOutput,
   overrideProductDetailsInput,
   overrideProductDetailsOutput,
   scrapeProductInput,
@@ -556,7 +558,7 @@ export function createTikTokAdsPocServer() {
     { name: "tiktok-ads-agent-poc", version: "0.3.0" },
     {
       instructions:
-        "Guide the advertiser through account setup, promoted-product choice, creative selection or generation, Smart+ draft review, publish, and reporting setup. Keep responses visual, specific, and beginner-safe."
+        "Guide the advertiser through account setup, promoted-product choice, creative selection or generation, Smart+ draft review, publish, and reporting setup. After any tool returns widgetState, call render_tiktok_ads_workspace with that widgetState to display the interactive ChatGPT App UI."
     }
   );
 
@@ -601,6 +603,63 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         }
       ]
     })
+  );
+
+  const currentWorkspaceState = (): Record<string, unknown> => {
+    if (state.currentVideoJob.status === "complete" && state.currentVideoJob.preview) {
+      return renderCompleteResult(state.currentVideoJob.product, state.currentVideoJob.preview) as unknown as Record<string, unknown>;
+    }
+
+    if (state.currentVideoJob.status === "pending") {
+      return renderPendingResult(state.currentVideoJob.product) as unknown as Record<string, unknown>;
+    }
+
+    if (state.currentDraft) {
+      return draftResult({
+        adId: state.currentDraft.adId,
+        adgroupId: state.currentDraft.adgroupId,
+        campaignId: state.currentDraft.campaignId,
+        createdAtStage: state.currentDraft.creationState,
+        product: getCurrentProduct(),
+        warnings: state.currentDraft.warnings
+      }) as unknown as Record<string, unknown>;
+    }
+
+    if (getCurrentProduct().destination !== initialProductState.destination) {
+      return scrapeResult(getCurrentProduct().destination, getCurrentProduct()) as unknown as Record<string, unknown>;
+    }
+
+    return previewState as unknown as Record<string, unknown>;
+  };
+
+  server.registerTool(
+    "render_tiktok_ads_workspace",
+    withWidgetToolMeta({
+      title: "Render TikTok Ads workspace",
+      description:
+        "Use this after any Hooray TikTok Ads tool returns widgetState. It renders the interactive ChatGPT App component from the supplied widgetState.",
+      inputSchema: renderTikTokAdsWorkspaceInput,
+      outputSchema: renderTikTokAdsWorkspaceOutput,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false
+      }
+    }),
+    async ({ widgetState }: { reason?: string; widgetState?: Record<string, unknown> }) => {
+      const nextWidgetState = widgetState || currentWorkspaceState();
+
+      return {
+        structuredContent: {
+          widgetState: nextWidgetState
+        },
+        content: [{ type: "text", text: "Rendering the interactive Hooray TikTok Ads workspace." }],
+        _meta: {
+          ...RESULT_WIDGET_META,
+          source: "render-tool"
+        }
+      };
+    }
   );
 
   server.registerTool(
@@ -686,7 +745,8 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     "scrape_product",
     withWidgetToolMeta({
       title: "Scrape product",
-      description: "Extract product details and reference images from a product URL, then prepare the first user review checkpoint.",
+      description:
+        "Extract product details and reference images from a product URL, then prepare the first user review checkpoint. After this returns, call render_tiktok_ads_workspace with the returned widgetState.",
       inputSchema: scrapeProductInput,
       outputSchema: scrapeProductOutput,
       annotations: {
@@ -871,7 +931,8 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     "generate_storyboard",
     withWidgetToolMeta({
       title: "Generate storyboard",
-      description: "Draft a two-scene TikTok storyboard from the approved product inputs and return it for review.",
+      description:
+        "Draft a two-scene TikTok storyboard from the approved product inputs and return it for review. After this returns, call render_tiktok_ads_workspace with the returned widgetState.",
       inputSchema: generateStoryboardInput,
       outputSchema: generateStoryboardOutput,
       annotations: {
