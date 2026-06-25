@@ -72,8 +72,26 @@ const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace.html";
+const WIDGET_DESCRIPTION =
+  "Interactive TikTok Ads workspace for account setup, product intake, creative review, campaign drafting, publish, and reporting.";
+const TOOL_WIDGET_META = {
+  "openai/outputTemplate": WIDGET_URI,
+  "openai/widgetAccessible": false
+} as const;
 
-type SessionProductState = Required<ProductContext> & {
+function withWidgetToolMeta<T extends object>(definition: T): T & { _meta: Record<string, unknown> } {
+  return {
+    ...definition,
+    _meta: {
+      ...TOOL_WIDGET_META,
+      ...("_meta" in definition && definition._meta && typeof definition._meta === "object"
+        ? (definition._meta as Record<string, unknown>)
+        : {})
+    }
+  };
+}
+
+type SessionProductState = ProductContext & {
   imageCount: number;
   notes?: string;
 };
@@ -88,12 +106,59 @@ type DraftSessionState = {
   warnings: string[];
 } | null;
 
+type RenderError = {
+  code: string;
+  message: string;
+  retryable: boolean;
+};
+
+type ApprovalSnapshot = {
+  approvalId: string;
+  product: SessionProductState;
+  approvedAt: string;
+};
+
+type VideoJobState = {
+  approvalId: string | null;
+  jobId: string | null;
+  pollCount: number;
+  product: SessionProductState;
+  error?: RenderError;
+  status: RenderStatus;
+  style: "ugc" | "product_demo" | "founder_story";
+};
+
+type LaunchState = {
+  approvalSnapshots: Record<string, ApprovalSnapshot>;
+  currentApprovalId: string | null;
+  currentCampaignApprovalId: string | null;
+  currentDraft: DraftSessionState;
+  currentProduct: SessionProductState;
+  currentVideoJob: VideoJobState;
+};
+
 const initialProductState: SessionProductState = {
   title: "Promoted product",
   price: "Pending merchant price",
   destination: "Pending user input",
   platform: "Direct product URL",
   imageCount: 0
+};
+
+const sharedLaunchState: LaunchState = {
+  approvalSnapshots: {},
+  currentApprovalId: null,
+  currentCampaignApprovalId: null,
+  currentDraft: null,
+  currentProduct: { ...initialProductState },
+  currentVideoJob: {
+    approvalId: null,
+    jobId: null,
+    pollCount: 0,
+    product: { ...initialProductState },
+    status: "idle",
+    style: "ugc"
+  }
 };
 
 function titleCaseProductToken(token: string): string {
@@ -185,49 +250,107 @@ function platformForProductSource(source: "website" | "tiktok_shop" | "lead_gene
   return "App install flow";
 }
 
+function deriveCreativeBrief(productDescription: string, feedback?: string): Partial<SessionProductState> {
+  const text = `${productDescription} ${feedback || ""}`.toLowerCase();
+  const asksForLifestyle =
+    text.includes("fashion") ||
+    text.includes("lifestyle") ||
+    text.includes("style") ||
+    text.includes("outfit") ||
+    text.includes("do not pain") ||
+    text.includes("not pain");
+
+  if (asksForLifestyle) {
+    return {
+      creativeBriefFormat: "Lifestyle product showcase",
+      creativeBriefHook: "Open on the bag styled with a clean everyday outfit, then show the texture, silhouette, and easy carry moment.",
+      creativeBriefObjective: "Landing page views",
+      creativeBriefSummary:
+        "Lead with styling and desirability rather than a problem/solution frame. Keep the CTA polished and product-forward.",
+      creativeBriefTitle: "Fashion lifestyle showcase"
+    };
+  }
+
+  if (text.includes("proof") || text.includes("social") || text.includes("review")) {
+    return {
+      creativeBriefFormat: "Social proof cut",
+      creativeBriefHook: "Open with a believable proof cue, then show why the product is worth clicking now.",
+      creativeBriefObjective: "Web Conversions",
+      creativeBriefSummary: "Use social proof and product detail together so the ad feels credible before the CTA.",
+      creativeBriefTitle: "Proof-first social clip"
+    };
+  }
+
+  return {
+    creativeBriefFormat: "2-scene UGC",
+    creativeBriefHook: "Start with the problem, then pivot hard into the product payoff with one spoken line and one tactile reveal.",
+    creativeBriefObjective: "Web Conversions",
+    creativeBriefSummary: "Use the default direct-response UGC lane when the user has not specified a stronger creative direction.",
+    creativeBriefTitle: "Pain-to-comfort UGC"
+  };
+}
+
 export function createTikTokAdsPocServer() {
   const tikTokConfig = getTikTokAppConfig();
-  let currentProduct: SessionProductState = { ...initialProductState };
-  let currentApprovalId: string | null = null;
-  let currentDraft: DraftSessionState = null;
-  let currentCampaignApprovalId: string | null = null;
-  let currentVideoJob: {
-    approvalId: string | null;
-    jobId: string | null;
-    pollCount: number;
-    status: RenderStatus;
-    style: "ugc" | "product_demo" | "founder_story";
-  } = {
-    approvalId: null,
-    jobId: null,
-    pollCount: 0,
-    status: "idle",
-    style: "ugc"
-  };
+  const state = sharedLaunchState;
 
-  const getCurrentProduct = (): SessionProductState => ({ ...currentProduct });
+  const getCurrentProduct = (): SessionProductState => ({ ...state.currentProduct });
   const updateCurrentProduct = (updates: Partial<SessionProductState>): SessionProductState => {
-    currentProduct = {
-      ...currentProduct,
+    state.currentProduct = {
+      ...state.currentProduct,
       ...updates
     };
 
     return getCurrentProduct();
   };
+  const isRenderableProduct = (product: SessionProductState): boolean =>
+    product.title !== initialProductState.title &&
+    product.destination !== initialProductState.destination &&
+    /^https?:\/\//.test(product.destination);
+  const productContextError = (approvalId: string): RenderError => ({
+    code: "PRODUCT_CONTEXT_MISSING",
+    message: `Video rendering could not start because approval ${approvalId} is not linked to a complete product title and landing page. Review or override product details, then approve again.`,
+    retryable: true
+  });
+  const makeRenderErrorState = (product: SessionProductState, error: RenderError) => ({
+    ...renderPendingResult(product),
+    headline: "Creative render needs attention",
+    summary: error.message,
+    primaryCta: error.retryable ? "Retry render" : "Review launch flow",
+    secondaryCta: "Edit product details",
+    blockers: [
+      {
+        severity: error.retryable ? "warning" : "critical",
+        title: error.code,
+        detail: error.message
+      }
+    ],
+    readiness: {
+      accountConnection: "Not checked yet",
+      identity: "Not checked yet",
+      payment: "Not checked yet",
+      video: "Render failed",
+      recommendedObjective: "Fix creative inputs first"
+    }
+  });
   const startVideoRender = (
     approvalId: string,
     style: "ugc" | "product_demo" | "founder_story" = "ugc"
   ) => {
     const jobId = `video_job_${approvalId.replace(/^approval_/, "")}`;
-    currentVideoJob = {
+    const approvedProduct = state.approvalSnapshots[approvalId]?.product || getCurrentProduct();
+    const error = isRenderableProduct(approvedProduct) ? undefined : productContextError(approvalId);
+    state.currentVideoJob = {
       approvalId,
       jobId,
       pollCount: 0,
-      status: "pending",
+      product: { ...approvedProduct },
+      ...(error ? { error } : {}),
+      status: error ? "failed" : "pending",
       style
     };
 
-    return { ...currentVideoJob };
+    return { ...state.currentVideoJob };
   };
   const loadAdvertiserWorkspace = async () => {
     try {
@@ -245,7 +368,7 @@ export function createTikTokAdsPocServer() {
         return {
           source: "config-error",
           text: result.message,
-          widgetState: accountErrorResult(result.message)
+          widgetState: accountErrorResult(result.message, getCurrentProduct())
         } as const;
       }
 
@@ -277,7 +400,7 @@ export function createTikTokAdsPocServer() {
           return {
             source: "config-error",
             text: identityResult.message,
-            widgetState: accountErrorResult(identityResult.message)
+            widgetState: accountErrorResult(identityResult.message, getCurrentProduct())
           } as const;
         }
 
@@ -322,7 +445,7 @@ export function createTikTokAdsPocServer() {
       return {
         source: "tiktok-mcp-error",
         text: `Video render completed, but advertiser setup could not be loaded: ${message}`,
-        widgetState: accountErrorResult(message)
+        widgetState: accountErrorResult(message, getCurrentProduct())
       } as const;
     }
   };
@@ -356,6 +479,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 <script type="module">${widgetJs}</script>
           `.trim(),
           _meta: {
+            "openai/widgetDescription": WIDGET_DESCRIPTION,
             "openai/widgetPrefersBorder": true,
             "openai/widgetCSP": {
               connect_domains: [],
@@ -369,7 +493,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "plan_account_setup",
-    {
+    withWidgetToolMeta({
       title: "Plan account setup",
       description: "Guide the advertiser through TikTok authorization, advertiser selection, identity readiness, and billing handoff.",
       inputSchema: planAccountSetupInput,
@@ -379,7 +503,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async () => {
       try {
         const result = await listTikTokAdvertiserAccounts();
@@ -402,7 +526,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           return {
             structuredContent: {
               stage: "needs_authorization",
-              widgetState: accountErrorResult(result.message)
+              widgetState: accountErrorResult(result.message, getCurrentProduct())
             },
             content: [{ type: "text", text: result.message }],
             _meta: {
@@ -434,7 +558,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         return {
           structuredContent: {
             stage: "needs_authorization",
-            widgetState: accountErrorResult(message)
+            widgetState: accountErrorResult(message, getCurrentProduct())
           },
           content: [{ type: "text", text: `Could not load the account setup workspace: ${message}` }],
           _meta: {
@@ -448,7 +572,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "scrape_product",
-    {
+    withWidgetToolMeta({
       title: "Scrape product",
       description: "Extract product details and reference images from a product URL, then prepare the first user review checkpoint.",
       inputSchema: scrapeProductInput,
@@ -458,7 +582,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({ url }: { url: string }) => {
       const nextProduct = updateCurrentProduct(inferProductFromUrl(url));
 
@@ -480,7 +604,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "update_product_images",
-    {
+    withWidgetToolMeta({
       title: "Update product images",
       description: "Replace or add product reference images before storyboard generation.",
       inputSchema: updateProductImagesInput,
@@ -490,7 +614,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({ images, productUrl }: { images: Array<{ source: "url" | "upload"; value: string }>; productUrl: string }) => {
       const nextProduct = updateCurrentProduct({
         destination: productUrl,
@@ -513,7 +637,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "override_product_details",
-    {
+    withWidgetToolMeta({
       title: "Override product details",
       description: "Correct scraped product metadata without restarting the current launch flow.",
       inputSchema: overrideProductDetailsInput,
@@ -523,7 +647,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({
       title,
       productUrl,
@@ -561,7 +685,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "choose_promoted_product",
-    {
+    withWidgetToolMeta({
       title: "Choose promoted product",
       description: "Guide the advertiser into the right promoted-product path before creative or campaign setup begins.",
       inputSchema: choosePromotedProductInput,
@@ -571,7 +695,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({
       productLabel,
       productSource,
@@ -610,7 +734,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "generate_storyboard",
-    {
+    withWidgetToolMeta({
       title: "Generate storyboard",
       description: "Draft a two-scene TikTok storyboard from the approved product inputs and return it for review.",
       inputSchema: generateStoryboardInput,
@@ -620,9 +744,11 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({
       productTitle,
+      productDescription,
+      feedback,
       landingPageUrl
     }: {
       productTitle: string;
@@ -631,6 +757,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       feedback?: string;
     }) => {
       const nextProduct = updateCurrentProduct({
+        ...deriveCreativeBrief(productDescription, feedback),
         title: productTitle,
         destination: landingPageUrl
       });
@@ -651,7 +778,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "approve_ad_inputs",
-    {
+    withWidgetToolMeta({
       title: "Approve ad inputs",
       description: "Record approval for the scraped product details, reviewed images, and storyboard before video generation.",
       inputSchema: approveAdInputsInput,
@@ -661,22 +788,38 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async () => {
-      currentApprovalId = "approval_poc_001";
-      const renderJob = startVideoRender(currentApprovalId, "ugc");
+      const approvedProduct = getCurrentProduct();
+      state.currentApprovalId = `approval_${Date.now().toString(36)}`;
+      state.approvalSnapshots[state.currentApprovalId] = {
+        approvalId: state.currentApprovalId,
+        product: approvedProduct,
+        approvedAt: new Date().toISOString()
+      };
+      const renderJob = startVideoRender(state.currentApprovalId, "ugc");
+      const renderError = renderJob.error;
 
       return {
         structuredContent: {
-          approvalId: currentApprovalId,
+          approvalId: state.currentApprovalId,
           jobId: renderJob.jobId || undefined,
-          status: "pending",
-          widgetState: renderPendingResult(getCurrentProduct())
+          status: renderJob.status === "idle" ? "pending" : renderJob.status,
+          ...(renderError
+            ? {
+                errorCode: renderError.code,
+                errorMessage: renderError.message,
+                retryable: renderError.retryable
+              }
+            : {}),
+          widgetState: renderError ? makeRenderErrorState(renderJob.product, renderError) : renderPendingResult(renderJob.product)
         },
         content: [
           {
             type: "text",
-            text: "Inputs approved and video rendering started automatically. This still has not submitted anything to TikTok Ads yet; campaign creation begins after render and advertiser setup."
+            text: renderError
+              ? renderError.message
+              : "Inputs approved and video rendering started automatically. This still has not submitted anything to TikTok Ads yet; campaign creation begins after render and advertiser setup."
           }
         ],
         _meta: {
@@ -689,7 +832,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "generate_video",
-    {
+    withWidgetToolMeta({
       title: "Generate video",
       description: "Kick off a TikTok ad video render and return a job ID that ChatGPT can poll.",
       inputSchema: generateVideoInput,
@@ -699,7 +842,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({
       approvalId,
       renderingStyle
@@ -707,19 +850,27 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       approvalId: string;
       renderingStyle: "ugc" | "product_demo" | "founder_story";
     }) => {
-      currentApprovalId = approvalId;
+      state.currentApprovalId = approvalId;
       const renderJob =
-        currentVideoJob.jobId && currentVideoJob.approvalId === approvalId && currentVideoJob.status === "pending"
-          ? { ...currentVideoJob }
+        state.currentVideoJob.jobId && state.currentVideoJob.approvalId === approvalId && state.currentVideoJob.status === "pending"
+          ? { ...state.currentVideoJob }
           : startVideoRender(approvalId, renderingStyle);
+      const renderError = renderJob.error;
 
       return {
         structuredContent: {
           jobId: renderJob.jobId || "video_job_poc_001",
-          status: "pending",
-          widgetState: renderPendingResult(getCurrentProduct())
+          status: renderJob.status === "idle" ? "pending" : renderJob.status,
+          ...(renderError
+            ? {
+                errorCode: renderError.code,
+                errorMessage: renderError.message,
+                retryable: renderError.retryable
+              }
+            : {}),
+          widgetState: renderError ? makeRenderErrorState(renderJob.product, renderError) : renderPendingResult(renderJob.product)
         },
-        content: [{ type: "text", text: "Video generation started. Poll for completion instead of blocking." }],
+        content: [{ type: "text", text: renderError ? renderError.message : "Video generation started. Poll for completion instead of blocking." }],
         _meta: {
           [RESOURCE_URI_META_KEY]: WIDGET_URI,
           source: "guided-experience"
@@ -730,7 +881,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "get_video_status",
-    {
+    withWidgetToolMeta({
       title: "Get video status",
       description: "Return whether the video render is still pending, complete, or failed.",
       inputSchema: getVideoStatusInput,
@@ -740,15 +891,24 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({ jobId }: { jobId: string }) => {
-      if (currentVideoJob.jobId !== jobId) {
+      if (state.currentVideoJob.jobId !== jobId) {
+        const error: RenderError = {
+          code: "RENDER_JOB_NOT_FOUND",
+          message: `Render job ${jobId} was not found in this launch session. Start a new render from the approved creative state.`,
+          retryable: true
+        };
+
         return {
           structuredContent: {
             status: "failed",
-            widgetState: renderPendingResult(getCurrentProduct())
+            errorCode: error.code,
+            errorMessage: error.message,
+            retryable: error.retryable,
+            widgetState: makeRenderErrorState(getCurrentProduct(), error)
           },
-          content: [{ type: "text", text: "The requested render job was not found in this launch session. Start a new render from the approved creative state." }],
+          content: [{ type: "text", text: error.message }],
           _meta: {
             [RESOURCE_URI_META_KEY]: WIDGET_URI,
             source: "guided-experience"
@@ -756,13 +916,39 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         };
       }
 
-      currentVideoJob.pollCount += 1;
+      if (state.currentVideoJob.status === "failed") {
+        const error =
+          state.currentVideoJob.error ||
+          ({
+            code: "RENDER_FAILED",
+            message: "Video rendering failed, but the renderer did not return a detailed error reason.",
+            retryable: true
+          } satisfies RenderError);
 
-      if (currentVideoJob.status === "pending" && currentVideoJob.pollCount >= 1) {
-        currentVideoJob.status = "complete";
+        return {
+          structuredContent: {
+            status: "failed",
+            errorCode: error.code,
+            errorMessage: error.message,
+            retryable: error.retryable,
+            widgetState: makeRenderErrorState(state.currentVideoJob.product, error)
+          },
+          content: [{ type: "text", text: error.message }],
+          _meta: {
+            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            source: "guided-experience"
+          }
+        };
       }
 
-      if (currentVideoJob.status === "complete") {
+      state.currentVideoJob.pollCount += 1;
+
+      if (state.currentVideoJob.status === "pending" && state.currentVideoJob.pollCount >= 1) {
+        state.currentVideoJob.status = "complete";
+      }
+
+      if (state.currentVideoJob.status === "complete") {
+        updateCurrentProduct(state.currentVideoJob.product);
         const nextWorkspace = await loadAdvertiserWorkspace();
 
         return {
@@ -786,7 +972,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       return {
         structuredContent: {
           status: "pending",
-          widgetState: renderPendingResult(getCurrentProduct())
+          widgetState: renderPendingResult(state.currentVideoJob.product)
         },
         content: [
           {
@@ -804,7 +990,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "load_creative_options",
-    {
+    withWidgetToolMeta({
       title: "Load creative options",
       description: "Show whether the advertiser should reuse existing TikTok content or generate fresh creative inside the guided flow.",
       inputSchema: loadCreativeOptionsInput,
@@ -814,7 +1000,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({ productLabel }: { productLabel?: string }) => {
       const nextProduct = productLabel
         ? updateCurrentProduct({
@@ -840,7 +1026,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "get_ad_accounts",
-    {
+    withWidgetToolMeta({
       title: "Get ad accounts",
       description: "List the advertiser accounts available to the authenticated TikTok user.",
       inputSchema: getAdAccountsInput,
@@ -850,7 +1036,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async () => {
       try {
         const result = await listTikTokAdvertiserAccounts();
@@ -878,7 +1064,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           return {
             structuredContent: {
               accountCount: 0,
-              widgetState: accountErrorResult(result.message)
+              widgetState: accountErrorResult(result.message, getCurrentProduct())
             },
             content: [{ type: "text", text: result.message }],
             _meta: {
@@ -918,7 +1104,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         return {
           structuredContent: {
             accountCount: 0,
-            widgetState: accountErrorResult(message)
+            widgetState: accountErrorResult(message, getCurrentProduct())
           },
           content: [{ type: "text", text: `Could not load advertiser accounts: ${message}` }],
           _meta: {
@@ -932,7 +1118,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "verify_or_connect_tiktok_identity",
-    {
+    withWidgetToolMeta({
       title: "Verify or connect TikTok identity",
       description: "Check whether the selected ad account has a usable TikTok identity and provide a connect path if not.",
       inputSchema: verifyOrConnectTikTokIdentityInput,
@@ -942,7 +1128,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({ advertiserId }: { advertiserId: string }) => {
       try {
         const result = await verifyTikTokAdvertiserIdentity(advertiserId);
@@ -974,7 +1160,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               status: "needs_authorization",
               authorizationUrl: tikTokConfig.advertiserAuthUrl || "https://ads.tiktok.com/mcp",
               redirectUri: tikTokConfig.redirectUri,
-              widgetState: accountErrorResult(result.message)
+              widgetState: accountErrorResult(result.message, getCurrentProduct())
             },
             content: [{ type: "text", text: result.message }],
             _meta: {
@@ -1009,7 +1195,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             status: "needs_authorization",
             authorizationUrl: tikTokConfig.advertiserAuthUrl,
             redirectUri: tikTokConfig.redirectUri,
-            widgetState: accountErrorResult(message)
+            widgetState: accountErrorResult(message, getCurrentProduct())
           },
           content: [
             {
@@ -1061,7 +1247,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "verify_payment_method",
-    {
+    withWidgetToolMeta({
       title: "Verify payment method",
       description: "Confirm that the selected advertiser has a payment path before publish.",
       inputSchema: verifyPaymentMethodInput,
@@ -1071,7 +1257,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async () => {
       const accountsResult = await listTikTokAdvertiserAccounts();
 
@@ -1093,7 +1279,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         return {
           structuredContent: {
             status: "missing",
-            widgetState: accountErrorResult(accountsResult.message)
+            widgetState: accountErrorResult(accountsResult.message, getCurrentProduct())
           },
           content: [{ type: "text", text: accountsResult.message }],
           _meta: {
@@ -1119,7 +1305,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "create_smartplus_campaign",
-    {
+    withWidgetToolMeta({
       title: "Create Smart+ campaign",
       description: "Create a Smart+ draft campaign from the generated video and reviewed campaign inputs.",
       inputSchema: createSmartplusCampaignInput,
@@ -1129,10 +1315,10 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async (args) => {
-      currentDraft = null;
-      currentCampaignApprovalId = null;
+      state.currentDraft = null;
+      state.currentCampaignApprovalId = null;
       updateCurrentProduct({
         destination: args.productUrl
       });
@@ -1185,7 +1371,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         const biddingStrategyLabel =
           args.biddingStrategy === "maximum_delivery" ? "Maximum delivery" : "Cost cap";
 
-        currentDraft = {
+        state.currentDraft = {
           adId: result.data.adId,
           adgroupId: result.data.adgroupId,
           campaignId: result.data.campaignId,
@@ -1261,7 +1447,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "approve_campaign_parameters",
-    {
+    withWidgetToolMeta({
       title: "Approve campaign parameters",
       description: "Record final user approval for the draft campaign settings before publish.",
       inputSchema: approveCampaignParametersInput,
@@ -1271,9 +1457,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({ campaignId }: { campaignId: string }) => {
-      if (!currentDraft || !currentDraft.campaignId || currentDraft.campaignId !== campaignId) {
+      if (!state.currentDraft || !state.currentDraft.campaignId || state.currentDraft.campaignId !== campaignId) {
         return {
           structuredContent: {
             approvalId: "",
@@ -1292,19 +1478,19 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         };
       }
 
-      currentCampaignApprovalId = `campaign_approval_${campaignId}`;
+      state.currentCampaignApprovalId = `campaign_approval_${campaignId}`;
 
       return {
         structuredContent: {
-          approvalId: currentCampaignApprovalId,
+          approvalId: state.currentCampaignApprovalId,
           status: "approved",
           widgetState: draftResult({
-            adId: currentDraft.adId,
-            adgroupId: currentDraft.adgroupId,
-            campaignId: currentDraft.campaignId,
-            createdAtStage: currentDraft.creationState,
+            adId: state.currentDraft.adId,
+            adgroupId: state.currentDraft.adgroupId,
+            campaignId: state.currentDraft.campaignId,
+            createdAtStage: state.currentDraft.creationState,
             product: getCurrentProduct(),
-            warnings: currentDraft.warnings
+            warnings: state.currentDraft.warnings
           })
         },
         content: [{ type: "text", text: "Campaign parameters approved. The app may now publish." }],
@@ -1318,7 +1504,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "publish_campaign",
-    {
+    withWidgetToolMeta({
       title: "Publish campaign",
       description: "Publish the approved campaign and return a post-launch summary.",
       inputSchema: publishCampaignInput,
@@ -1328,7 +1514,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({
       approvalId,
       campaignId
@@ -1337,17 +1523,17 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       campaignId: string;
     }) => {
       if (
-        !currentDraft ||
-        !currentDraft.campaignId ||
-        currentDraft.campaignId !== campaignId ||
-        !currentCampaignApprovalId ||
-        currentCampaignApprovalId !== approvalId
+        !state.currentDraft ||
+        !state.currentDraft.campaignId ||
+        state.currentDraft.campaignId !== campaignId ||
+        !state.currentCampaignApprovalId ||
+        state.currentCampaignApprovalId !== approvalId
       ) {
         return {
           structuredContent: {
             publishState: "needs_review",
             widgetState: draftResult({
-              createdAtStage: currentDraft?.creationState || "needs_more_inputs",
+              createdAtStage: state.currentDraft?.creationState || "needs_more_inputs",
               product: getCurrentProduct(),
               warnings: [
                 "Publish is blocked until a Smart+ draft exists and the same draft has been explicitly approved in this session."
@@ -1378,7 +1564,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "setup_reporting_digest",
-    {
+    withWidgetToolMeta({
       title: "Setup reporting digest",
       description: "Guide the advertiser into a lightweight reporting lane after launch, from in-chat digests to async exports or webhooks.",
       inputSchema: setupReportingDigestInput,
@@ -1388,7 +1574,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         openWorldHint: false,
         destructiveHint: false
       }
-    },
+    }),
     async ({
       advertiserId,
       cadence,

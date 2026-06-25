@@ -71,6 +71,9 @@ export const generateVideoInput = {
 export const generateVideoOutput = {
   jobId: z.string(),
   status: z.enum(["pending", "complete", "failed"]),
+  errorCode: z.string().optional(),
+  errorMessage: z.string().optional(),
+  retryable: z.boolean().optional(),
   widgetState: z.record(z.any())
 };
 
@@ -80,6 +83,9 @@ export const getVideoStatusInput = {
 
 export const getVideoStatusOutput = {
   status: z.enum(["pending", "complete", "failed"]),
+  errorCode: z.string().optional(),
+  errorMessage: z.string().optional(),
+  retryable: z.boolean().optional(),
   widgetState: z.record(z.any())
 };
 

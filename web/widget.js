@@ -1,4 +1,9 @@
 const root = document.getElementById("app-root") || document.getElementById("app");
+const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.1.0" };
+const PROTOCOL_VERSION = "2025-11-21";
+
+let initializeRequestId = null;
+let initializedWithHost = false;
 
 function escapeHtml(value) {
   return String(value)
@@ -377,6 +382,22 @@ function renderProductMeta(state) {
         <span class="stat-label">Price</span>
         <span class="stat-value">${escapeHtml(state.product.price)}</span>
       </div>
+      ${
+        state.product.imageCount !== undefined
+          ? `<div class="stat">
+              <span class="stat-label">Images</span>
+              <span class="stat-value">${escapeHtml(String(state.product.imageCount))}</span>
+            </div>`
+          : ""
+      }
+      ${
+        state.product.creativeBriefTitle
+          ? `<div class="stat">
+              <span class="stat-label">Creative direction</span>
+              <span class="stat-value">${escapeHtml(state.product.creativeBriefTitle)}</span>
+            </div>`
+          : ""
+      }
     </div>
   `;
 }
@@ -440,14 +461,71 @@ function maybeReadToolResult(message) {
   return message.params?.structuredContent?.widgetState || message.params?._meta?.widgetState || null;
 }
 
+function postToHost(message) {
+  if (!window.parent || window.parent === window) return;
+  window.parent.postMessage(
+    {
+      jsonrpc: "2.0",
+      ...message
+    },
+    "*"
+  );
+}
+
+function sendInitialize() {
+  if (initializedWithHost || initializeRequestId || !window.parent || window.parent === window) return;
+
+  initializeRequestId = `init-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  postToHost({
+    id: initializeRequestId,
+    method: "ui/initialize",
+    params: {
+      appInfo: APP_INFO,
+      appCapabilities: {},
+      protocolVersion: PROTOCOL_VERSION
+    }
+  });
+}
+
+function maybeHandleInitializeResponse(message) {
+  if (!message || message.jsonrpc !== "2.0") return false;
+  if (!initializeRequestId || message.id !== initializeRequestId || !message.result) return false;
+
+  initializedWithHost = true;
+  initializeRequestId = null;
+
+  postToHost({
+    method: "ui/notifications/initialized",
+    params: {}
+  });
+
+  return true;
+}
+
+function maybeHandleTeardownRequest(message) {
+  if (!message || message.jsonrpc !== "2.0") return false;
+  if (message.method !== "ui/resource-teardown" || message.id === undefined || message.id === null) return false;
+
+  postToHost({
+    id: message.id,
+    result: {}
+  });
+
+  return true;
+}
+
 window.addEventListener(
   "message",
   (event) => {
     if (event.source !== window.parent) return;
+    if (maybeHandleInitializeResponse(event.data)) return;
+    if (maybeHandleTeardownRequest(event.data)) return;
     const state = maybeReadToolResult(event.data);
     if (state) renderState(state);
   },
   { passive: true }
 );
 
+sendInitialize();
 renderState(window.__POC_PREVIEW_STATE__);

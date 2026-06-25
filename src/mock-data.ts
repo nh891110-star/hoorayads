@@ -118,6 +118,11 @@ export type ToolViewModel = {
     price: string;
     destination: string;
     platform: string;
+    imageCount?: number;
+    creativeBriefTitle?: string;
+    creativeBriefHook?: string;
+    creativeBriefFormat?: string;
+    creativeBriefObjective?: string;
   };
   readiness?: {
     accountConnection: string;
@@ -149,7 +154,13 @@ export type ToolViewModel = {
 };
 
 export type ProductContext = {
+  creativeBriefFormat?: string;
+  creativeBriefHook?: string;
+  creativeBriefObjective?: string;
+  creativeBriefSummary?: string;
+  creativeBriefTitle?: string;
   destination: string;
+  imageCount?: number;
   platform: string;
   price: string;
   title: string;
@@ -496,7 +507,8 @@ export function scrapeResult(url: string, product?: Partial<ProductContext>): To
       title: currentProduct.title,
       price: currentProduct.price || "Pending extraction",
       destination: currentProduct.destination,
-      platform: currentProduct.platform || "Direct product URL"
+      platform: currentProduct.platform || "Direct product URL",
+      imageCount: currentProduct.imageCount
     },
     readiness: baseReadiness({
       video: "Storyboard starts after image review"
@@ -513,6 +525,15 @@ export function creativeWorkspaceResult(options?: {
     ...options?.product,
     title: options?.productLabel || options?.product?.title
   });
+  const creativeBriefTitle = product.creativeBriefTitle || "Pain-to-comfort UGC";
+  const creativeBriefHook =
+    product.creativeBriefHook ||
+    "Start with the problem, then pivot hard into the product payoff with one spoken line and one tactile reveal.";
+  const creativeBriefFormat = product.creativeBriefFormat || "2-scene UGC";
+  const creativeBriefObjective = product.creativeBriefObjective || "Web Conversions";
+  const creativeBriefSummary =
+    product.creativeBriefSummary ||
+    `Hook the viewer with the problem first, then reveal ${product.title} as the relief moment.`;
 
   return {
     screen: "creative",
@@ -563,11 +584,11 @@ export function creativeWorkspaceResult(options?: {
     creativeAssets: [
       {
         id: "asset-1",
-        title: "Pain-to-comfort UGC",
+        title: creativeBriefTitle,
         source: "Generated storyboard",
-        description: `Hook the viewer with the problem first, then reveal ${product.title} as the relief moment.`,
+        description: creativeBriefSummary,
         status: "recommended",
-        meta: ["Best for conversion", "2-scene vertical video", "Direct CTA"]
+        meta: ["User-guided direction", creativeBriefFormat, "Direct CTA"]
       },
       {
         id: "asset-2",
@@ -589,10 +610,10 @@ export function creativeWorkspaceResult(options?: {
     angles: [
       {
         id: "hook-01",
-        title: "Pain-to-comfort switch",
-        hook: "Start with the problem, then pivot hard into the product payoff with one spoken line and one tactile reveal.",
-        format: "2-scene UGC",
-        targetObjective: "Web Conversions"
+        title: creativeBriefTitle,
+        hook: creativeBriefHook,
+        format: creativeBriefFormat,
+        targetObjective: creativeBriefObjective
       },
       {
         id: "hook-02",
@@ -603,7 +624,7 @@ export function creativeWorkspaceResult(options?: {
       }
     ],
     highlights: [
-      { label: "Preferred lane", value: "Generate new creative", tone: "accent" },
+      { label: "Creative direction", value: creativeBriefTitle, tone: "accent" },
       { label: "Reuse lane", value: "Existing TikTok post if identity is connected" },
       { label: "Approval rule", value: "Never render or publish before explicit review", tone: "good" }
     ],
@@ -855,7 +876,7 @@ export function liveAccountResult(options: {
   };
 }
 
-export function accountErrorResult(detail: string): ToolViewModel {
+export function accountErrorResult(detail: string, product?: Partial<ProductContext>): ToolViewModel {
   return {
     screen: "onboarding",
     phaseLabel: "Setup issue",
@@ -879,7 +900,8 @@ export function accountErrorResult(detail: string): ToolViewModel {
         detail,
         severity: "high"
       }
-    ]
+    ],
+    product: toProductContext(product)
   };
 }
 
