@@ -193,6 +193,12 @@ a {
   color: var(--ink);
 }
 
+.btn:disabled,
+.action-chip:disabled {
+  cursor: wait;
+  opacity: 0.56;
+}
+
 .rail {
   padding: 18px 16px;
 }
@@ -480,6 +486,12 @@ a {
   font-size: 12px;
   font-weight: 900;
   text-decoration: none;
+}
+
+.action-chip[data-action],
+.product-card[data-select-candidate],
+.storyboard-card[data-select-storyboard] {
+  cursor: pointer;
 }
 
 .chat-edit {

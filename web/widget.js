@@ -4,6 +4,8 @@ const PROTOCOL_VERSION = "2025-11-21";
 
 let initializeRequestId = null;
 let initializedWithHost = false;
+let currentState = null;
+let isActionPending = false;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -27,6 +29,84 @@ function compactUrl(value) {
   } catch {
     return value || "";
   }
+}
+
+function isValidUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function encodeAction(action) {
+  return encodeURIComponent(JSON.stringify(action || {}));
+}
+
+function decodeAction(value) {
+  try {
+    return JSON.parse(decodeURIComponent(value || ""));
+  } catch {
+    return {};
+  }
+}
+
+function getSelectedCandidate(state) {
+  const candidates = state.storeDiscovery?.candidates || [];
+  return candidates.find((candidate) => candidate.id === state.storeDiscovery?.selectedCandidateId) || candidates[0] || null;
+}
+
+function getSelectedStoryboardIndex(state) {
+  const value = Number(state.uiSelection?.selectedStoryboardIndex ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function productActionArgs(state, feedback) {
+  const product = state.product || {};
+  const landingPageUrl = product.destination;
+
+  if (!product.title || !isValidUrl(landingPageUrl)) return null;
+
+  return {
+    productTitle: product.title,
+    productDescription:
+      feedback ||
+      product.creativeBriefHook ||
+      product.creativeBriefTitle ||
+      `Storyboard for ${product.title}`,
+    landingPageUrl,
+    ...(feedback ? { feedback } : {})
+  };
+}
+
+function actionForPrimary(state) {
+  if (state.storeDiscovery?.status === "loading") return null;
+  if (state.storeDiscovery?.status === "ready") return { type: "use_store_candidate" };
+  if (state.screen === "product" && !state.product) return { type: "ask_for_link" };
+  if (state.screen === "product") return { type: "confirm_product" };
+  if (state.screen === "creative") return { type: "approve_storyboard" };
+  if (state.screen === "render" && !state.videoPreview) return { type: "check_render_status" };
+  if (state.screen === "render") return { type: "approve_preview" };
+  if (["onboarding", "accounts"].includes(state.screen || "")) return { type: "continue_account_setup" };
+  if (["draft", "publish"].includes(state.screen || "")) return { type: "approve_launch_settings" };
+  if (state.screen === "reporting") return { type: "save_reporting_plan" };
+  return null;
+}
+
+function actionForSecondary(state) {
+  if (state.storeDiscovery?.status === "ready") return { type: "rescan_store" };
+  if (state.screen === "product" && state.product) return { type: "edit_product_details" };
+  if (state.screen === "creative") return { type: "regenerate_storyboard" };
+  if (state.screen === "render") return { type: "edit_storyboard" };
+  if (["onboarding", "accounts"].includes(state.screen || "")) return { type: "change_account" };
+  if (["draft", "publish"].includes(state.screen || "")) return { type: "edit_campaign_details" };
+  return null;
+}
+
+function renderActionButton(action, label, kind = "primary") {
+  const disabled = !action || isActionPending;
+  return `<button class="btn ${escapeHtml(kind)}" type="button" ${disabled ? "disabled" : `data-action="${encodeAction(action)}"`}>${escapeHtml(label)}</button>`;
 }
 
 function getFlowState(state = {}) {
@@ -112,12 +192,15 @@ function renderActions(state) {
 
   const primary = state.primaryCta || "Continue";
   const secondary = state.secondaryCta || "";
+  const primaryAction = actionForPrimary(state);
+  const secondaryAction = actionForSecondary(state);
+
   return `
     <div class="panel-actions">
       <span class="next-note">${escapeHtml(getNextNote(state))}</span>
       <div class="button-row">
-        ${secondary ? `<button class="btn secondary" type="button">${escapeHtml(secondary)}</button>` : ""}
-        <button class="btn primary" type="button">${escapeHtml(primary)}</button>
+        ${secondary ? renderActionButton(secondaryAction, secondary, "secondary") : ""}
+        ${renderActionButton(primaryAction, primary, "primary")}
       </div>
     </div>
   `;
@@ -176,7 +259,7 @@ function renderStoreDiscovery(state) {
       ${(discovery.candidates || [])
         .map(
           (candidate) => `
-            <article class="product-card ${candidate.id === discovery.selectedCandidateId ? "selected" : ""}">
+            <article class="product-card ${candidate.id === discovery.selectedCandidateId ? "selected" : ""}" data-select-candidate="${escapeHtml(candidate.id)}">
               <div class="product-thumb" aria-hidden="true"></div>
               <div class="storyboard-top">
                 <div>
@@ -237,6 +320,7 @@ function renderProductConfirm(state) {
 }
 
 function renderStoryboard(state) {
+  const selectedIndex = getSelectedStoryboardIndex(state);
   const angles = state.angles?.length
     ? state.angles.slice(0, 2)
     : [
@@ -259,7 +343,7 @@ function renderStoryboard(state) {
       ${angles
         .map(
           (angle, index) => `
-            <article class="storyboard-card ${index === 0 ? "selected" : ""}">
+            <article class="storyboard-card ${index === selectedIndex ? "selected" : ""}" data-select-storyboard="${index}">
               <div class="storyboard-top">
                 <div>
                   <div class="label">Option ${index === 0 ? "A" : "B"}</div>
@@ -278,9 +362,9 @@ function renderStoryboard(state) {
               </ul>
               <div class="meta">Best for: ${escapeHtml(angle.targetObjective || "website visits")} · Format: ${escapeHtml(angle.format || "vertical video")}</div>
               <div class="story-actions">
-                <button class="action-chip" type="button">Edit hook</button>
-                <button class="action-chip" type="button">Swap image</button>
-                <button class="action-chip" type="button">Change CTA</button>
+                <button class="action-chip" type="button" data-action="${encodeAction({ type: "regenerate_storyboard", feedback: `Rewrite option ${index === 0 ? "A" : "B"} with a stronger first-two-second hook.` })}">Edit hook</button>
+                <button class="action-chip" type="button" data-action="${encodeAction({ type: "edit_storyboard" })}">Swap image</button>
+                <button class="action-chip" type="button" data-action="${encodeAction({ type: "regenerate_storyboard", feedback: `Change option ${index === 0 ? "A" : "B"} to use a clearer shop-now CTA.` })}">Change CTA</button>
               </div>
             </article>
           `
@@ -326,7 +410,7 @@ function renderVideoPreview(state) {
           <div class="inspector-row"><span class="label">Status</span><span>Draft only · not live · no campaign created</span></div>
         </div>
         <div class="asset-actions">
-          <button class="action-chip" type="button">Create another video</button>
+          <button class="action-chip" type="button" data-action="${encodeAction({ type: "create_another_video" })}">Create another video</button>
         </div>
       </div>
     </div>
@@ -424,9 +508,9 @@ function renderReview(state) {
         <div class="value">${escapeHtml(state.product?.creativeBriefTitle || "12s vertical video")} · Smart+ draft attached</div>
         <p class="meta">Weekly report: spend, clicks, CPC, conversions, creative fatigue.</p>
         <div class="asset-actions">
-          <button class="action-chip" type="button">Edit video</button>
-          <button class="action-chip" type="button">Change budget</button>
-          <button class="action-chip" type="button">Edit report</button>
+          <button class="action-chip" type="button" data-action="${encodeAction({ type: "edit_storyboard" })}">Edit video</button>
+          <button class="action-chip" type="button" data-action="${encodeAction({ type: "edit_campaign_details", field: "budget" })}">Change budget</button>
+          <button class="action-chip" type="button" data-action="${encodeAction({ type: "edit_campaign_details", field: "report" })}">Edit report</button>
         </div>
       </div>
     </div>
@@ -511,10 +595,231 @@ function renderStateToElement(target, state) {
       </section>
     </main>
   `;
+
+  bindInteractions(target, safeState);
 }
 
 function renderState(state) {
+  currentState = state || null;
+  try {
+    window.openai?.setWidgetState?.(state || null);
+  } catch {
+    // Host persistence is best-effort; local previews do not provide window.openai.
+  }
   renderStateToElement(root, state);
+}
+
+function extractWidgetState(toolResult) {
+  return (
+    toolResult?.structuredContent?.widgetState ||
+    toolResult?.result?.structuredContent?.widgetState ||
+    toolResult?.mcp_tool_result?.structuredContent?.widgetState ||
+    toolResult?.toolResult?.structuredContent?.widgetState ||
+    toolResult?.widgetState ||
+    null
+  );
+}
+
+function showLocalMessage(message) {
+  const panel = root?.querySelector(".panel-body");
+  if (!panel) return;
+  const existing = panel.querySelector(".local-action-note");
+  if (existing) existing.remove();
+  panel.insertAdjacentHTML("beforeend", `<div class="chat-edit local-action-note"><strong>Action:</strong> ${escapeHtml(message)}</div>`);
+}
+
+async function sendChatPrompt(prompt) {
+  if (window.openai?.sendFollowUpMessage) {
+    await window.openai.sendFollowUpMessage({ prompt });
+    return;
+  }
+  showLocalMessage(prompt);
+}
+
+async function callToolAndRender(name, args) {
+  if (!window.openai?.callTool) {
+    showLocalMessage(`This button will call ${name} in ChatGPT. Local preview cannot execute MCP tools.`);
+    return null;
+  }
+
+  isActionPending = true;
+  renderState(currentState);
+
+  try {
+    const result = await window.openai.callTool(name, args);
+    const widgetState = extractWidgetState(result);
+    if (widgetState) {
+      renderState(widgetState);
+    } else {
+      showLocalMessage(`${name} completed, but did not return a widget state.`);
+    }
+    return result;
+  } catch (error) {
+    showLocalMessage(error instanceof Error ? error.message : `Could not run ${name}.`);
+    return null;
+  } finally {
+    isActionPending = false;
+    if (currentState) renderState(currentState);
+  }
+}
+
+function campaignIdFromState(state) {
+  const campaignField = state.draft?.fields?.find((field) => field.label.toLowerCase() === "campaign id");
+  const campaignId = campaignField?.value;
+  return campaignId && !campaignId.toLowerCase().includes("pending") ? campaignId : "";
+}
+
+async function handleAction(action, state) {
+  if (!action?.type) return;
+
+  if (action.type === "ask_for_link") {
+    await sendChatPrompt("Please ask me for either a product URL or a store URL before continuing.");
+    return;
+  }
+
+  if (action.type === "use_store_candidate") {
+    const candidate = getSelectedCandidate(state);
+    if (!candidate) {
+      showLocalMessage("Select a product first.");
+      return;
+    }
+    await callToolAndRender("override_product_details", {
+      title: candidate.title,
+      productUrl: candidate.productUrl,
+      platform: "Store URL scan",
+      notes: `Recommended as ${candidate.confidence}. Best TikTok angle: ${candidate.angle}`
+    });
+    return;
+  }
+
+  if (action.type === "rescan_store") {
+    await callToolAndRender("scan_store_products", {
+      storeUrl: state.storeDiscovery?.storeUrl || "https://yourstore.com",
+      resultMode: "results"
+    });
+    return;
+  }
+
+  if (action.type === "confirm_product" || action.type === "regenerate_storyboard") {
+    const args = productActionArgs(state, action.feedback || (action.type === "regenerate_storyboard" ? "Generate two fresh storyboard options." : undefined));
+    if (!args) {
+      await sendChatPrompt("Please confirm or edit the product title and product URL before making storyboards.");
+      return;
+    }
+    await callToolAndRender("generate_storyboard", args);
+    return;
+  }
+
+  if (action.type === "approve_storyboard") {
+    await callToolAndRender("approve_ad_inputs", {
+      approvedStoryboardVersion: `v${getSelectedStoryboardIndex(state) + 1}`,
+      approvedImageCount: Math.max(1, Math.min(3, Number(state.product?.imageCount || 1))),
+      approvalNotes: `User selected storyboard option ${getSelectedStoryboardIndex(state) + 1}.`
+    });
+    return;
+  }
+
+  if (action.type === "check_render_status") {
+    const jobId = state.renderJob?.jobId || state.videoPreview?.jobId;
+    if (!jobId) {
+      showLocalMessage("Render job is missing. Approve a storyboard again to start video generation.");
+      return;
+    }
+    await callToolAndRender("get_video_status", { jobId });
+    return;
+  }
+
+  if (action.type === "create_another_video") {
+    const approvalId = state.renderJob?.approvalId;
+    if (!approvalId) {
+      await sendChatPrompt("Create another video version from the approved storyboard.");
+      return;
+    }
+    await callToolAndRender("generate_video", {
+      approvalId,
+      renderingStyle: "product_demo"
+    });
+    return;
+  }
+
+  if (action.type === "approve_preview") {
+    await callToolAndRender("get_ad_accounts", {});
+    return;
+  }
+
+  if (action.type === "continue_account_setup") {
+    await callToolAndRender("get_ad_accounts", {});
+    return;
+  }
+
+  if (action.type === "approve_launch_settings") {
+    const campaignId = campaignIdFromState(state);
+    if (!campaignId) {
+      await sendChatPrompt("Create a Smart+ draft before approving launch settings.");
+      return;
+    }
+    await callToolAndRender("approve_campaign_parameters", { campaignId });
+    return;
+  }
+
+  if (action.type === "save_reporting_plan") {
+    await sendChatPrompt("Save this reporting plan for the campaign.");
+    return;
+  }
+
+  if (action.type === "edit_product_details") {
+    await sendChatPrompt("I want to edit the product details before storyboarding.");
+    return;
+  }
+
+  if (action.type === "edit_storyboard") {
+    await sendChatPrompt("I want to edit this storyboard/video before continuing.");
+    return;
+  }
+
+  if (action.type === "change_account") {
+    await sendChatPrompt("I want to choose a different TikTok advertiser account.");
+    return;
+  }
+
+  if (action.type === "edit_campaign_details") {
+    await sendChatPrompt(`I want to edit ${action.field || "campaign details"} before launch.`);
+  }
+}
+
+function bindInteractions(target, state) {
+  target.querySelectorAll("[data-action]").forEach((element) => {
+    element.addEventListener("click", () => {
+      handleAction(decodeAction(element.getAttribute("data-action")), currentState || state);
+    });
+  });
+
+  target.querySelectorAll("[data-select-candidate]").forEach((element) => {
+    element.addEventListener("click", () => {
+      const candidateId = element.getAttribute("data-select-candidate");
+      if (!candidateId || !currentState?.storeDiscovery) return;
+      renderState({
+        ...currentState,
+        storeDiscovery: {
+          ...currentState.storeDiscovery,
+          selectedCandidateId: candidateId
+        }
+      });
+    });
+  });
+
+  target.querySelectorAll("[data-select-storyboard]").forEach((element) => {
+    element.addEventListener("click", () => {
+      const selectedStoryboardIndex = Number(element.getAttribute("data-select-storyboard") || 0);
+      renderState({
+        ...(currentState || state),
+        uiSelection: {
+          ...((currentState || state).uiSelection || {}),
+          selectedStoryboardIndex
+        }
+      });
+    });
+  });
 }
 
 function maybeReadToolResult(message) {

@@ -89,7 +89,15 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.HOORAY_PUBLI
 );
 const WIDGET_DESCRIPTION =
   "Interactive TikTok Ads workspace for account setup, product intake, creative review, campaign drafting, publish, and reporting.";
-const TOOL_WIDGET_META = {
+const TOOL_DATA_META = {
+  ui: {
+    visibility: ["model", "app"]
+  },
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Updating TikTok Ads workspace...",
+  "openai/toolInvocation/invoked": "TikTok Ads workspace updated."
+} as const;
+const TOOL_RENDER_META = {
   ui: {
     resourceUri: WIDGET_URI,
     visibility: ["model", "app"]
@@ -100,6 +108,11 @@ const TOOL_WIDGET_META = {
   "openai/toolInvocation/invoked": "TikTok Ads workspace ready."
 } as const;
 const RESULT_WIDGET_META = {
+  ui: {
+    visibility: ["model", "app"]
+  }
+} as const;
+const RESULT_RENDER_META = {
   [RESOURCE_URI_META_KEY]: WIDGET_URI,
   ui: {
     resourceUri: WIDGET_URI
@@ -111,7 +124,19 @@ function withWidgetToolMeta<T extends object>(definition: T): T & { _meta: Recor
   return {
     ...definition,
     _meta: {
-      ...TOOL_WIDGET_META,
+      ...TOOL_DATA_META,
+      ...("_meta" in definition && definition._meta && typeof definition._meta === "object"
+        ? (definition._meta as Record<string, unknown>)
+        : {})
+    }
+  };
+}
+
+function withRenderToolMeta<T extends object>(definition: T): T & { _meta: Record<string, unknown> } {
+  return {
+    ...definition,
+    _meta: {
+      ...TOOL_RENDER_META,
       ...("_meta" in definition && definition._meta && typeof definition._meta === "object"
         ? (definition._meta as Record<string, unknown>)
         : {})
@@ -462,7 +487,7 @@ export function createTikTokAdsPocServer() {
     message: `Video rendering could not start because approval ${approvalId} is not linked to a complete product title and landing page. Review or override product details, then approve again.`,
     retryable: true
   });
-  const makeRenderErrorState = (product: SessionProductState, error: RenderError) => ({
+  const makeRenderErrorState = (product: SessionProductState, error: RenderError): ToolViewModel => ({
     ...renderPendingResult(product),
     headline: "Creative render needs attention",
     summary: error.message,
@@ -470,7 +495,8 @@ export function createTikTokAdsPocServer() {
     secondaryCta: "Edit product details",
     blockers: [
       {
-        severity: error.retryable ? "warning" : "critical",
+        id: error.code.toLowerCase().replaceAll("_", "-"),
+        severity: error.retryable ? "medium" : "high",
         title: error.code,
         detail: error.message
       }
@@ -525,6 +551,14 @@ export function createTikTokAdsPocServer() {
       description: "Playable preview asset generated for review before campaign setup.",
       mimeType: "video/mp4"
     });
+  const withRenderJobState = (widgetState: ToolViewModel, renderJob: VideoJobState): ToolViewModel => ({
+    ...widgetState,
+    renderJob: {
+      jobId: renderJob.jobId || "missing_job",
+      status: renderJob.status === "idle" ? "pending" : renderJob.status,
+      ...(renderJob.approvalId ? { approvalId: renderJob.approvalId } : {})
+    }
+  });
   const startVideoRender = (
     approvalId: string,
     style: "ugc" | "product_demo" | "founder_story" = "ugc"
@@ -658,7 +692,7 @@ export function createTikTokAdsPocServer() {
     { name: "tiktok-ads-agent-poc", version: "0.3.0" },
     {
       instructions:
-        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review. If the user provides a Store URL and wants product ideas, call scan_store_products; treat Pick product as a substep inside Product, not a separate main launch step. After any tool returns widgetState, call render_tiktok_ads_workspace with that widgetState to display the interactive ChatGPT App UI. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review."
+        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review. Every rendered card is a hard gate. After rendering a widgetState, stop and wait for an explicit user action: either the user clicks a UI CTA or writes a clear chat confirmation. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user clicks or asks to check render status. Do not call create_smartplus_campaign, approve_campaign_parameters, or publish_campaign without explicit user approval for that exact step. If the user provides a Store URL and wants product ideas, call scan_store_products; treat Pick product as a substep inside Product, not a separate main launch step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview."
     }
   );
 
@@ -707,11 +741,14 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   const currentWorkspaceState = (): Record<string, unknown> => {
     if (state.currentVideoJob.status === "complete" && state.currentVideoJob.preview) {
-      return renderCompleteResult(state.currentVideoJob.product, state.currentVideoJob.preview) as unknown as Record<string, unknown>;
+      return withRenderJobState(
+        renderCompleteResult(state.currentVideoJob.product, state.currentVideoJob.preview),
+        state.currentVideoJob
+      ) as unknown as Record<string, unknown>;
     }
 
     if (state.currentVideoJob.status === "pending") {
-      return renderPendingResult(state.currentVideoJob.product) as unknown as Record<string, unknown>;
+      return withRenderJobState(renderPendingResult(state.currentVideoJob.product), state.currentVideoJob) as unknown as Record<string, unknown>;
     }
 
     if (state.currentDraft) {
@@ -736,7 +773,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   server.registerTool(
     "render_tiktok_ads_workspace",
-    withWidgetToolMeta({
+    withRenderToolMeta({
       title: "Render TikTok Ads workspace",
       description:
         "Use this after any Hooray TikTok Ads tool returns widgetState. It renders the interactive ChatGPT App component from the supplied widgetState.",
@@ -757,7 +794,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: "Rendering the interactive Hooray TikTok Ads workspace." }],
         _meta: {
-          ...RESULT_WIDGET_META,
+          ...RESULT_RENDER_META,
           source: "render-tool"
         }
       };
@@ -1235,7 +1272,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
                 retryable: renderError.retryable
               }
             : {}),
-          widgetState: renderError ? makeRenderErrorState(renderJob.product, renderError) : renderPendingResult(renderJob.product)
+          widgetState: renderError
+            ? withRenderJobState(makeRenderErrorState(renderJob.product, renderError), renderJob)
+            : withRenderJobState(renderPendingResult(renderJob.product), renderJob)
         },
         content: [
           {
@@ -1291,7 +1330,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
                 retryable: renderError.retryable
               }
             : {}),
-          widgetState: renderError ? makeRenderErrorState(renderJob.product, renderError) : renderPendingResult(renderJob.product)
+          widgetState: renderError
+            ? withRenderJobState(makeRenderErrorState(renderJob.product, renderError), renderJob)
+            : withRenderJobState(renderPendingResult(renderJob.product), renderJob)
         },
         content: [{ type: "text", text: renderError ? renderError.message : "Video generation started. Poll for completion instead of blocking." }],
         _meta: {
@@ -1354,7 +1395,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             errorCode: error.code,
             errorMessage: error.message,
             retryable: error.retryable,
-            widgetState: makeRenderErrorState(state.currentVideoJob.product, error)
+            widgetState: withRenderJobState(makeRenderErrorState(state.currentVideoJob.product, error), state.currentVideoJob)
           },
           content: [{ type: "text", text: error.message }],
           _meta: {
@@ -1381,7 +1422,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           structuredContent: {
             status: "complete",
             ...videoPreviewFields(preview),
-            widgetState: renderCompleteResult(state.currentVideoJob.product, preview)
+            widgetState: withRenderJobState(renderCompleteResult(state.currentVideoJob.product, preview), state.currentVideoJob)
           },
           content: [
             {
@@ -1402,7 +1443,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       return {
         structuredContent: {
           status: "pending",
-          widgetState: renderPendingResult(state.currentVideoJob.product)
+          widgetState: withRenderJobState(renderPendingResult(state.currentVideoJob.product), state.currentVideoJob)
         },
         content: [
           {

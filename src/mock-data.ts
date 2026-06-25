@@ -117,6 +117,12 @@ export type VideoPreview = {
   width: number;
 };
 
+export type RenderJobState = {
+  approvalId?: string;
+  jobId: string;
+  status: "pending" | "complete" | "failed";
+};
+
 export type AccountSetupReadiness = {
   optional: boolean;
   ready: boolean;
@@ -199,6 +205,7 @@ export type ToolViewModel = {
     nextCheckIn: string;
   };
   videoPreview?: VideoPreview;
+  renderJob?: RenderJobState;
   reportPlan?: ReportPlan;
   accountSetup?: AccountSetupReadiness;
   storeDiscovery?: StoreDiscoveryState;
