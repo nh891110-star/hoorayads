@@ -12,12 +12,19 @@ export const scrapeProductOutput = {
 
 export const updateProductImagesInput = {
   productUrl: z.string().url(),
-  images: z.array(
-    z.object({
-      source: z.enum(["url", "upload"]),
-      value: z.string()
-    })
-  )
+  images: z
+    .array(
+      z.union([
+        z.string(),
+        z.object({
+          source: z.enum(["url", "upload"]).optional(),
+          value: z.string()
+        })
+      ])
+    )
+    .optional(),
+  imageUrls: z.array(z.string()).optional(),
+  uploadedImageRefs: z.array(z.string()).optional()
 };
 
 export const updateProductImagesOutput = {

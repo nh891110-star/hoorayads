@@ -161,6 +161,44 @@ const sharedLaunchState: LaunchState = {
   }
 };
 
+type ImageReferenceInput = string | { source?: "url" | "upload"; value: string };
+
+type UpdateProductImagesArgs = {
+  imageUrls?: string[];
+  images?: ImageReferenceInput[];
+  productUrl: string;
+  uploadedImageRefs?: string[];
+};
+
+function normalizeImageReferences(args: UpdateProductImagesArgs): Array<{ source: "url" | "upload"; value: string }> {
+  const normalized: Array<{ source: "url" | "upload"; value: string }> = [];
+  const addReference = (source: "url" | "upload", value?: string) => {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      normalized.push({ source, value: trimmed });
+    }
+  };
+
+  for (const image of args.images ?? []) {
+    if (typeof image === "string") {
+      addReference(image.startsWith("http") ? "url" : "upload", image);
+      continue;
+    }
+
+    addReference(image.source ?? (image.value.startsWith("http") ? "url" : "upload"), image.value);
+  }
+
+  for (const url of args.imageUrls ?? []) {
+    addReference("url", url);
+  }
+
+  for (const ref of args.uploadedImageRefs ?? []) {
+    addReference("upload", ref);
+  }
+
+  return normalized;
+}
+
 function titleCaseProductToken(token: string): string {
   const lower = token.toLowerCase();
   const replacements: Record<string, string> = {
@@ -615,16 +653,39 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         destructiveHint: false
       }
     }),
-    async ({ images, productUrl }: { images: Array<{ source: "url" | "upload"; value: string }>; productUrl: string }) => {
+    async (args: UpdateProductImagesArgs) => {
+      const images = normalizeImageReferences(args);
+      if (images.length === 0) {
+        return {
+          structuredContent: {
+            imageCount: 0,
+            widgetState: accountErrorResult(
+              "No valid image references were received. Add at least one image URL or uploaded image reference before storyboarding.",
+              getCurrentProduct()
+            )
+          },
+          content: [
+            {
+              type: "text",
+              text: "No valid image references were received. Send imageUrls, uploadedImageRefs, or images before continuing."
+            }
+          ],
+          _meta: {
+            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            source: "guided-experience"
+          }
+        };
+      }
+
       const nextProduct = updateCurrentProduct({
-        destination: productUrl,
+        destination: args.productUrl,
         imageCount: images.length
       });
 
       return {
         structuredContent: {
           imageCount: images.length,
-          widgetState: scrapeResult(productUrl, nextProduct)
+          widgetState: scrapeResult(args.productUrl, nextProduct)
         },
         content: [{ type: "text", text: "Reference images updated. Ask the user to confirm them before moving on." }],
         _meta: {
