@@ -103,13 +103,25 @@ export const createSmartplusCampaignInput = {
   targetCountryCode: z.string().length(2),
   adgroupDailyBudget: z.number().positive(),
   optimizationGoal: z.enum(["landing_page_views", "clicks"]).default("clicks"),
-  biddingStrategy: z.enum(["maximum_delivery", "cost_cap"]).default("maximum_delivery")
+  biddingStrategy: z.enum(["maximum_delivery", "cost_cap"]).default("maximum_delivery"),
+  bidPrice: z.number().positive().optional(),
+  locationIds: z.array(z.string()).min(1).optional(),
+  pixelId: z.string().optional(),
+  videoId: z.string().optional(),
+  identityId: z.string().optional(),
+  identityType: z.enum(["TT_USER", "BC_AUTH_TT"]).optional(),
+  identityAuthorizedBcId: z.string().optional(),
+  adText: z.string().optional(),
+  callToAction: z.string().optional(),
+  scheduleStartTime: z.string().optional()
 };
 
 export const createSmartplusCampaignOutput = {
   campaignId: z.string(),
   adgroupId: z.string(),
   adId: z.string(),
+  creationState: z.enum(["needs_more_inputs", "campaign_only", "campaign_and_adgroup", "draft_ready"]),
+  warnings: z.array(z.string()),
   widgetState: z.record(z.any())
 };
 

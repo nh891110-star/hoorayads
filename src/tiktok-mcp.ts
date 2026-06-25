@@ -92,6 +92,35 @@ type TikTokToolResponse<T> =
     }
   | TikTokAuthStatus;
 
+export type CreateSmartPlusCampaignInput = {
+  advertiserId: string;
+  productUrl: string;
+  generatedVideoJobId: string;
+  campaignName: string;
+  targetCountryCode: string;
+  adgroupDailyBudget: number;
+  optimizationGoal: "landing_page_views" | "clicks";
+  biddingStrategy: "maximum_delivery" | "cost_cap";
+  bidPrice?: number;
+  locationIds?: string[];
+  pixelId?: string;
+  videoId?: string;
+  identityId?: string;
+  identityType?: "TT_USER" | "BC_AUTH_TT";
+  identityAuthorizedBcId?: string;
+  adText?: string;
+  callToAction?: string;
+  scheduleStartTime?: string;
+};
+
+type SmartPlusDraftResult = {
+  adId: string;
+  adgroupId: string;
+  campaignId: string;
+  creationState: "needs_more_inputs" | "campaign_only" | "campaign_and_adgroup" | "draft_ready";
+  warnings: string[];
+};
+
 type RawBusinessCenter = {
   bc_info?: {
     bc_id?: string;
@@ -124,6 +153,19 @@ type RawIdentity = {
   identity_id?: string;
   identity_type?: string;
   username?: string;
+};
+
+type SmartPlusCampaignCreateResponse = {
+  campaign_id?: string;
+};
+
+type SmartPlusAdgroupCreateResponse = {
+  adgroup_id?: string;
+};
+
+type SmartPlusAdCreateResponse = {
+  ad_id?: string;
+  smart_plus_ad_id?: string;
 };
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -388,6 +430,35 @@ function dedupeIdentities(identityList: RawIdentity[]) {
   return nextList;
 }
 
+function pickBestIdentity(identityList: TikTokIdentity[]) {
+  return identityList.find((identity) => identity.availableStatus !== "UNAVAILABLE") || identityList[0];
+}
+
+function formatUtcTimestamp(date: Date) {
+  const year = date.getUTCFullYear();
+  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getUTCDate()}`.padStart(2, "0");
+  const hours = `${date.getUTCHours()}`.padStart(2, "0");
+  const minutes = `${date.getUTCMinutes()}`.padStart(2, "0");
+  const seconds = `${date.getUTCSeconds()}`.padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+function defaultScheduleStartTime() {
+  return formatUtcTimestamp(new Date(Date.now() + 10 * 60 * 1000));
+}
+
+function readStringValue(payload: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
 async function withTikTokClient<T>(run: (client: Client) => Promise<T>): Promise<TikTokToolResponse<T>> {
   const state = await connectTikTokClient();
   if (state.status !== "connected") {
@@ -521,6 +592,194 @@ export async function verifyTikTokAdvertiserIdentity(
     return {
       identities: dedupeIdentities(identityResponse.identity_list ?? [])
     };
+  });
+}
+
+export async function createSmartPlusCampaignDraft(
+  input: CreateSmartPlusCampaignInput
+): Promise<TikTokToolResponse<SmartPlusDraftResult>> {
+  return withTikTokClient(async (client) => {
+    const warnings: string[] = [];
+    const locationIds = input.locationIds?.filter(Boolean) ?? [];
+
+    if (locationIds.length === 0) {
+      return {
+        adId: "",
+        adgroupId: "",
+        campaignId: "",
+        creationState: "needs_more_inputs",
+        warnings: [
+          "TikTok Smart+ ad group creation still needs at least one real location ID. `targetCountryCode` alone is not enough for the current MCP write call."
+        ]
+      };
+    }
+
+    if (input.biddingStrategy === "cost_cap" && !input.bidPrice) {
+      return {
+        adId: "",
+        adgroupId: "",
+        campaignId: "",
+        creationState: "needs_more_inputs",
+        warnings: [
+          "Cost cap bidding needs `bidPrice` before the Smart+ ad group can be created."
+        ]
+      };
+    }
+
+    let selectedIdentityId = input.identityId || "";
+    let selectedIdentityType = input.identityType || undefined;
+    let selectedIdentityAuthorizedBcId = input.identityAuthorizedBcId || "";
+
+    if (!selectedIdentityId) {
+      const identityResponse = await callTikTokTool<{ identity_list?: RawIdentity[] }>(client, "identity_get", {
+        advertiser_id: input.advertiserId,
+        page: 1,
+        page_size: 50
+      });
+      const selectedIdentity = pickBestIdentity(dedupeIdentities(identityResponse.identity_list ?? []));
+      if (selectedIdentity) {
+        selectedIdentityId = selectedIdentity.identityId;
+        selectedIdentityType =
+          selectedIdentity.identityType === "BC_AUTH_TT" ? "BC_AUTH_TT" : "TT_USER";
+        selectedIdentityAuthorizedBcId = selectedIdentity.identityAuthorizedBcId;
+      }
+    }
+
+    if (!selectedIdentityId) {
+      warnings.push("No usable TikTok identity was found yet, so the app will stop after campaign and ad group draft creation.");
+    }
+
+    if (!input.videoId) {
+      warnings.push("No TikTok `videoId` was provided yet, so the app will stop before Smart+ ad creative creation.");
+    }
+
+    const campaignResponse = await callTikTokTool<SmartPlusCampaignCreateResponse>(client, "smart_plus_campaign_create", {
+      advertiser_id: input.advertiserId,
+      campaign_name: input.campaignName,
+      objective_type: "WEB_CONVERSIONS",
+      operation_status: "DISABLE",
+      request_id: randomUUID(),
+      sales_destination: "WEBSITE"
+    });
+
+    const campaignId = readStringValue(campaignResponse as Record<string, unknown>, ["campaign_id"]);
+    if (!campaignId) {
+      throw new Error("TikTok MCP did not return a campaign_id for smart_plus_campaign_create.");
+    }
+
+    const optimizationGoal = input.optimizationGoal === "landing_page_views" ? "TRAFFIC_LANDING_PAGE_VIEW" : "CLICK";
+    const billingEvent = input.optimizationGoal === "landing_page_views" ? "OCPM" : "CPC";
+    const bidType = input.biddingStrategy === "cost_cap" ? "BID_TYPE_CUSTOM" : "BID_TYPE_NO_BID";
+
+    const adgroupPayload: Record<string, unknown> = {
+      adgroup_name: `${input.campaignName} | Smart+`,
+      advertiser_id: input.advertiserId,
+      bid_type: bidType,
+      billing_event: billingEvent,
+      budget: input.adgroupDailyBudget,
+      budget_mode: "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+      campaign_id: campaignId,
+      operation_status: "DISABLE",
+      optimization_goal: optimizationGoal,
+      promotion_target_type: "EXTERNAL_WEBSITE",
+      promotion_type: "WEBSITE",
+      request_id: randomUUID(),
+      schedule_start_time: input.scheduleStartTime || defaultScheduleStartTime(),
+      schedule_type: "SCHEDULE_FROM_NOW",
+      targeting_optimization_mode: "AUTOMATIC",
+      targeting_spec: {
+        location_ids: locationIds
+      }
+    };
+
+    if (input.pixelId) {
+      adgroupPayload.pixel_id = input.pixelId;
+    }
+
+    if (input.biddingStrategy === "cost_cap" && input.bidPrice) {
+      adgroupPayload.bid_price = input.bidPrice;
+    }
+
+    const adgroupResponse = await callTikTokTool<SmartPlusAdgroupCreateResponse>(client, "smart_plus_adgroup_create", adgroupPayload);
+    const adgroupId = readStringValue(adgroupResponse as Record<string, unknown>, ["adgroup_id"]);
+    if (!adgroupId) {
+      return {
+        adId: "",
+        adgroupId: "",
+        campaignId,
+        creationState: "campaign_only",
+        warnings: warnings.concat("TikTok created the campaign draft, but the ad group response did not include an adgroup_id.")
+      };
+    }
+
+    if (!selectedIdentityId || !input.videoId) {
+      return {
+        adId: "",
+        adgroupId,
+        campaignId,
+        creationState: "campaign_and_adgroup",
+        warnings
+      };
+    }
+
+    const adPayload: Record<string, unknown> = {
+      ad_name: `${input.campaignName} | Creative`,
+      ad_text_list: [{ ad_text: input.adText || `Shop ${input.campaignName}` }],
+      adgroup_id: adgroupId,
+      advertiser_id: input.advertiserId,
+      call_to_action_list: [{ call_to_action: input.callToAction || "SHOP_NOW" }],
+      creative_list: [
+        {
+          creative_info: {
+            video_id: input.videoId
+          }
+        }
+      ],
+      landing_page_url_list: [{ landing_page_url: input.productUrl }],
+      operation_status: "DISABLE"
+    };
+
+    adPayload.ad_configuration = {
+      identity_authorized_bc_id: selectedIdentityAuthorizedBcId || undefined,
+      identity_id: selectedIdentityId,
+      identity_type: selectedIdentityType || "TT_USER",
+      tracking_info: input.pixelId
+        ? {
+            tracking_pixel_id: input.pixelId
+          }
+        : undefined
+    };
+
+    try {
+      const adResponse = await callTikTokTool<SmartPlusAdCreateResponse>(client, "smart_plus_ad_create", adPayload);
+      const adId = readStringValue(adResponse as Record<string, unknown>, ["smart_plus_ad_id", "ad_id"]);
+      if (!adId) {
+        return {
+          adId: "",
+          adgroupId,
+          campaignId,
+          creationState: "campaign_and_adgroup",
+          warnings: warnings.concat("TikTok created the campaign and ad group drafts, but the ad response did not include an ad_id.")
+        };
+      }
+
+      return {
+        adId,
+        adgroupId,
+        campaignId,
+        creationState: "draft_ready",
+        warnings
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown Smart+ ad creation error.";
+      return {
+        adId: "",
+        adgroupId,
+        campaignId,
+        creationState: "campaign_and_adgroup",
+        warnings: warnings.concat(`TikTok campaign and ad group drafts were created, but ad creation still failed: ${message}`)
+      };
+    }
   });
 }
 

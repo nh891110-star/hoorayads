@@ -45,7 +45,11 @@ import {
   storyboardResult
 } from "./mock-data.js";
 import { getTikTokAppConfig } from "./config.js";
-import { listTikTokAdvertiserAccounts, verifyTikTokAdvertiserIdentity } from "./tiktok-mcp.js";
+import {
+  createSmartPlusCampaignDraft,
+  listTikTokAdvertiserAccounts,
+  verifyTikTokAdvertiserIdentity
+} from "./tiktok-mcp.js";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
@@ -513,19 +517,116 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         destructiveHint: false
       }
     },
-    async () => ({
-      structuredContent: {
-        campaignId: "campaign_poc_001",
-        adgroupId: "adgroup_poc_001",
-        adId: "ad_poc_001",
-        widgetState: draftResult()
-      },
-      content: [{ type: "text", text: "Smart+ draft created. Ask the user to review and approve campaign parameters." }],
-      _meta: {
-        [RESOURCE_URI_META_KEY]: WIDGET_URI,
-        source: "mock"
+    async (args) => {
+      try {
+        const result = await createSmartPlusCampaignDraft(args);
+
+        if (result.status === "needs_authorization") {
+          return {
+            structuredContent: {
+              campaignId: "",
+              adgroupId: "",
+              adId: "",
+              creationState: "needs_more_inputs",
+              warnings: ["Authorize TikTok Ads first, then retry Smart+ draft creation."],
+              widgetState: accountAuthorizationResult(result.authorizationUrl, result.redirectUri)
+            },
+            content: [{ type: "text", text: "TikTok Ads authorization is required before Smart+ draft creation can continue." }],
+            _meta: {
+              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              source: "tiktok-mcp-oauth"
+            }
+          };
+        }
+
+        if (result.status === "misconfigured") {
+          return {
+            structuredContent: {
+              campaignId: "",
+              adgroupId: "",
+              adId: "",
+              creationState: "needs_more_inputs",
+              warnings: [result.message],
+              widgetState: draftResult({
+                createdAtStage: "needs_more_inputs",
+                warnings: [result.message]
+              })
+            },
+            content: [{ type: "text", text: result.message }],
+            _meta: {
+              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              source: "config-error"
+            }
+          };
+        }
+
+        const optimizationGoalLabel =
+          args.optimizationGoal === "landing_page_views" ? "Landing page views" : "Clicks";
+        const biddingStrategyLabel =
+          args.biddingStrategy === "maximum_delivery" ? "Maximum delivery" : "Cost cap";
+
+        return {
+          structuredContent: {
+            campaignId: result.data.campaignId,
+            adgroupId: result.data.adgroupId,
+            adId: result.data.adId,
+            creationState: result.data.creationState,
+            warnings: result.data.warnings,
+            widgetState: draftResult({
+              adId: result.data.adId,
+              adgroupId: result.data.adgroupId,
+              campaignId: result.data.campaignId,
+              campaignName: args.campaignName,
+              createdAtStage: result.data.creationState,
+              adgroupDailyBudget: args.adgroupDailyBudget,
+              targetCountryCode: args.targetCountryCode,
+              optimizationGoalLabel,
+              biddingStrategyLabel,
+              warnings: result.data.warnings
+            })
+          },
+          content: [
+            {
+              type: "text",
+              text:
+                result.data.creationState === "draft_ready"
+                  ? "Smart+ draft created in TikTok. Ask the user to review and approve campaign parameters before publish."
+                  : result.data.creationState === "campaign_and_adgroup"
+                    ? "TikTok campaign and ad group drafts are created. One more creative or identity step is still needed before final approval."
+                    : result.data.creationState === "campaign_only"
+                      ? "The top-level TikTok campaign draft is created, but ad group setup still needs attention."
+                      : "The app needs a few more TikTok inputs before it can create the Smart+ draft."
+            }
+          ],
+          _meta: {
+            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            source: "tiktok-mcp",
+            mappedCapabilities:
+              capabilityMap.find((item) => item.productTool === "create_smartplus_campaign")?.currentTikTokAdsCapabilities ?? []
+          }
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error while creating the Smart+ draft.";
+        return {
+          structuredContent: {
+            campaignId: "",
+            adgroupId: "",
+            adId: "",
+            creationState: "needs_more_inputs",
+            warnings: [message],
+            widgetState: draftResult({
+              createdAtStage: "needs_more_inputs",
+              warnings: [message]
+            })
+          },
+          content: [{ type: "text", text: `Could not create the Smart+ draft: ${message}` }],
+          _meta: {
+            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            source: "tiktok-mcp-error"
+          }
+        };
       }
-    })
+    }
   );
 
   server.registerTool(

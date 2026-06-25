@@ -425,12 +425,49 @@ export function accountErrorResult(detail: string): ToolViewModel {
   };
 }
 
-export function draftResult(): ToolViewModel {
+export function draftResult(options?: {
+  adId?: string;
+  adgroupId?: string;
+  campaignId?: string;
+  campaignName?: string;
+  createdAtStage?: "needs_more_inputs" | "campaign_only" | "campaign_and_adgroup" | "draft_ready";
+  targetCountryCode?: string;
+  adgroupDailyBudget?: number;
+  optimizationGoalLabel?: string;
+  biddingStrategyLabel?: string;
+  warnings?: string[];
+  headline?: string;
+  summary?: string;
+}): ToolViewModel {
+  const createdAtStage = options?.createdAtStage || "draft_ready";
+  const warnings =
+    options?.warnings && options.warnings.length > 0
+      ? options.warnings
+      : [
+          "If payment is missing, the app should return a clear TTAM handoff instead of a raw API error.",
+          "Only publish after explicit user approval of campaign parameters."
+        ];
+  const defaultHeadlineByStage: Record<typeof createdAtStage, string> = {
+    campaign_and_adgroup: "Smart+ draft foundation is created",
+    campaign_only: "Campaign draft is created, but the ad setup is incomplete",
+    draft_ready: "Smart+ campaign draft is ready for review",
+    needs_more_inputs: "More TikTok setup details are needed before draft creation"
+  };
+  const defaultSummaryByStage: Record<typeof createdAtStage, string> = {
+    campaign_and_adgroup:
+      "The campaign and Smart+ ad group are now in TikTok as disabled drafts. One more ad-creative step is needed before publish review.",
+    campaign_only:
+      "The top-level campaign draft can be created, but Smart+ ad group or ad creation is still blocked by missing setup inputs.",
+    draft_ready:
+      "This is the campaign setup review card from the PRD: clear defaults, editable fields, and a final user approval before publish.",
+    needs_more_inputs:
+      "The app should stop here with a clear checklist when TikTok requires more inputs such as targeting IDs, identity selection, or a usable video asset."
+  };
+
   return {
     screen: "draft",
-    headline: "Smart+ campaign draft is ready for review",
-    summary:
-      "This is the campaign setup review card from the PRD: clear defaults, editable fields, and a final user approval before publish.",
+    headline: options?.headline || defaultHeadlineByStage[createdAtStage],
+    summary: options?.summary || defaultSummaryByStage[createdAtStage],
     primaryCta: "Approve parameters",
     secondaryCta: "Adjust budget",
     timeline: [
@@ -441,18 +478,18 @@ export function draftResult(): ToolViewModel {
       { id: "publish", label: "Publish", status: "current", owner: "user" }
     ],
     draft: {
-      name: "CloudSoft Pillow | Smart+ | CA",
+      name: options?.campaignName || "CloudSoft Pillow | Smart+ | CA",
       objective: "Web Conversions",
       fields: [
-        { label: "Daily budget", value: "$80", editable: true },
-        { label: "Country", value: "CA", editable: true },
-        { label: "Optimization goal", value: "Landing page views", editable: true },
-        { label: "Bidding strategy", value: "Maximum delivery", editable: true }
+        { label: "Campaign ID", value: options?.campaignId || "Pending creation", editable: false },
+        { label: "Ad group ID", value: options?.adgroupId || "Pending creation", editable: false },
+        { label: "Ad ID", value: options?.adId || "Pending creation", editable: false },
+        { label: "Daily budget", value: `$${options?.adgroupDailyBudget || 80}`, editable: true },
+        { label: "Country", value: options?.targetCountryCode || "CA", editable: true },
+        { label: "Optimization goal", value: options?.optimizationGoalLabel || "Landing page views", editable: true },
+        { label: "Bidding strategy", value: options?.biddingStrategyLabel || "Maximum delivery", editable: true }
       ],
-      warnings: [
-        "If payment is missing, the app should return a clear TTAM handoff instead of a raw API error.",
-        "Only publish after explicit user approval of campaign parameters."
-      ]
+      warnings
     },
     product: {
       title: "CloudSoft Compression Pillow",
