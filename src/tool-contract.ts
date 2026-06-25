@@ -25,6 +25,19 @@ export const updateProductImagesOutput = {
   widgetState: z.record(z.any())
 };
 
+export const overrideProductDetailsInput = {
+  title: z.string(),
+  productUrl: z.string().url(),
+  price: z.string().optional(),
+  platform: z.string().optional(),
+  notes: z.string().optional()
+};
+
+export const overrideProductDetailsOutput = {
+  productTitle: z.string(),
+  widgetState: z.record(z.any())
+};
+
 export const generateStoryboardInput = {
   productTitle: z.string(),
   productDescription: z.string(),
@@ -45,6 +58,8 @@ export const approveAdInputsInput = {
 
 export const approveAdInputsOutput = {
   approvalId: z.string(),
+  jobId: z.string().optional(),
+  status: z.enum(["pending", "complete", "failed"]).optional(),
   widgetState: z.record(z.any())
 };
 
@@ -98,7 +113,7 @@ export const verifyPaymentMethodInput = {
 };
 
 export const verifyPaymentMethodOutput = {
-  status: z.enum(["ready", "missing"]),
+  status: z.enum(["ready", "missing", "needs_authorization"]),
   widgetState: z.record(z.any())
 };
 
@@ -162,6 +177,7 @@ export const approveCampaignParametersInput = {
 
 export const approveCampaignParametersOutput = {
   approvalId: z.string(),
+  status: z.enum(["approved", "blocked"]),
   widgetState: z.record(z.any())
 };
 
@@ -227,6 +243,14 @@ export const capabilityMap: CapabilityMapping[] = [
     gaps: [
       "Image validation and storage are outside the current TikTok Ads MCP.",
       "ChatGPT file handling should feed this tool in a production build."
+    ]
+  },
+  {
+    productTool: "override_product_details",
+    purpose: "Let the advertiser correct scraped product metadata without restarting the launch flow.",
+    currentTikTokAdsCapabilities: [],
+    gaps: [
+      "Product metadata correction sits in the ChatGPT app orchestration layer rather than TikTok Ads MCP."
     ]
   },
   {

@@ -148,6 +148,27 @@ export type ToolViewModel = {
   };
 };
 
+export type ProductContext = {
+  destination: string;
+  platform: string;
+  price: string;
+  title: string;
+};
+
+const defaultProduct: ProductContext = {
+  title: "Promoted product",
+  price: "Pending merchant price",
+  destination: "Pending user input",
+  platform: "Direct product URL"
+};
+
+function toProductContext(product?: Partial<ProductContext>): ProductContext {
+  return {
+    ...defaultProduct,
+    ...product
+  };
+}
+
 function makeTimeline(current: ToolViewModel["screen"]): TimelineStep[] {
   const map: Record<string, TimelineStep["status"]> = {
     onboarding: current === "onboarding" ? "current" : "done",
@@ -248,12 +269,7 @@ export const previewState: ToolViewModel = {
   ],
   readiness: baseReadiness(),
   capabilityNotes: defaultCapabilityNotes(),
-  product: {
-    title: "CloudSoft Compression Pillow",
-    price: "$49",
-    destination: "https://merchant.example/products/cloudsoft-pillow",
-    platform: "Direct product URL"
-  }
+  product: defaultProduct
 };
 
 export function onboardingWorkspaceResult(options?: {
@@ -322,6 +338,19 @@ export function productSelectionResult(options?: {
 }): ToolViewModel {
   const source = options?.productSource || "website";
   const productTitle = options?.productLabel || "Promoted product";
+  const product = {
+    title: productTitle,
+    price: source === "lead_generation" ? "N/A" : "Pending merchant price",
+    destination: options?.productUrl || "Pending user input",
+    platform:
+      source === "website"
+        ? "Direct product URL"
+        : source === "tiktok_shop"
+          ? "TikTok Shop / GMV Max"
+          : source === "lead_generation"
+            ? "Lead collection flow"
+            : "App install flow"
+  };
 
   return {
     screen: "product",
@@ -396,12 +425,7 @@ export function productSelectionResult(options?: {
         status: "mixed"
       }
     ],
-    product: {
-      title: productTitle,
-      price: source === "lead_generation" ? "N/A" : "$49",
-      destination: options?.productUrl || "https://merchant.example/products/cloudsoft-pillow",
-      platform: source === "website" ? "Direct product URL" : source === "tiktok_shop" ? "TikTok Shop / GMV Max" : source === "lead_generation" ? "Lead collection flow" : "App install flow"
-    },
+    product,
     readiness: baseReadiness({
       accountConnection: "Authorize first or reuse connected advertiser",
       video: "Choose or generate after product path is locked"
@@ -420,7 +444,12 @@ export function productSelectionResult(options?: {
   };
 }
 
-export function scrapeResult(url: string): ToolViewModel {
+export function scrapeResult(url: string, product?: Partial<ProductContext>): ToolViewModel {
+  const currentProduct = toProductContext({
+    destination: url,
+    ...product
+  });
+
   return {
     screen: "product",
     phaseLabel: "Product intake",
@@ -464,10 +493,10 @@ export function scrapeResult(url: string): ToolViewModel {
       }
     ],
     product: {
-      title: "Detected product page",
-      price: "Pending extraction",
-      destination: url,
-      platform: "Direct product URL"
+      title: currentProduct.title,
+      price: currentProduct.price || "Pending extraction",
+      destination: currentProduct.destination,
+      platform: currentProduct.platform || "Direct product URL"
     },
     readiness: baseReadiness({
       video: "Storyboard starts after image review"
@@ -478,8 +507,12 @@ export function scrapeResult(url: string): ToolViewModel {
 
 export function creativeWorkspaceResult(options?: {
   productLabel?: string;
+  product?: Partial<ProductContext>;
 }): ToolViewModel {
-  const productLabel = options?.productLabel || "CloudSoft Compression Pillow";
+  const product = toProductContext({
+    ...options?.product,
+    title: options?.productLabel || options?.product?.title
+  });
 
   return {
     screen: "creative",
@@ -532,7 +565,7 @@ export function creativeWorkspaceResult(options?: {
         id: "asset-1",
         title: "Pain-to-comfort UGC",
         source: "Generated storyboard",
-        description: `Hook the viewer with the problem first, then reveal ${productLabel} as the relief moment.`,
+        description: `Hook the viewer with the problem first, then reveal ${product.title} as the relief moment.`,
         status: "recommended",
         meta: ["Best for conversion", "2-scene vertical video", "Direct CTA"]
       },
@@ -591,18 +624,13 @@ export function creativeWorkspaceResult(options?: {
         status: "mixed"
       }
     ],
-    product: {
-      title: productLabel,
-      price: "$49",
-      destination: "https://merchant.example/products/cloudsoft-pillow",
-      platform: "Direct product URL"
-    }
+    product
   };
 }
 
-export function storyboardResult(): ToolViewModel {
+export function storyboardResult(product?: Partial<ProductContext>): ToolViewModel {
   return {
-    ...creativeWorkspaceResult(),
+    ...creativeWorkspaceResult({ product }),
     headline: "Storyboard draft ready for review",
     summary:
       "At this moment the UI should feel editorial, not technical. The advertiser should only be deciding whether the hook, scene framing, and CTA feel right for the business.",
@@ -611,9 +639,9 @@ export function storyboardResult(): ToolViewModel {
   };
 }
 
-export function renderPendingResult(): ToolViewModel {
+export function renderPendingResult(product?: Partial<ProductContext>): ToolViewModel {
   return {
-    ...creativeWorkspaceResult(),
+    ...creativeWorkspaceResult({ product }),
     screen: "render",
     phaseLabel: "Render status",
     headline: "Creative preview is rendering in the background",
@@ -633,7 +661,9 @@ export function renderPendingResult(): ToolViewModel {
   };
 }
 
-export function accountResult(): ToolViewModel {
+export function accountResult(product?: Partial<ProductContext>): ToolViewModel {
+  const currentProduct = toProductContext(product);
+
   return {
     screen: "accounts",
     phaseLabel: "Campaign setup",
@@ -686,7 +716,8 @@ export function accountResult(): ToolViewModel {
         ]
       }
     ],
-    capabilityNotes: defaultCapabilityNotes()
+    capabilityNotes: defaultCapabilityNotes(),
+    product: currentProduct
   };
 }
 
@@ -757,11 +788,13 @@ export function liveAccountResult(options: {
   accounts: AdvertiserSummary[];
   selectedAdvertiserId?: string;
   selectedIdentities?: IdentitySummary[];
+  product?: Partial<ProductContext>;
   userDisplayName?: string;
 }): ToolViewModel {
   const selectedAccount =
     options.accounts.find((account) => account.advertiserId === options.selectedAdvertiserId) || options.accounts[0];
   const selectedIdentityCount = options.selectedIdentities?.length ?? selectedAccount?.identityCount ?? 0;
+  const product = toProductContext(options.product);
 
   return {
     screen: "onboarding",
@@ -817,12 +850,7 @@ export function liveAccountResult(options: {
         ]
       }
     ],
-    product: {
-      title: "CloudSoft Compression Pillow",
-      price: "$49",
-      destination: "https://merchant.example/products/cloudsoft-pillow",
-      platform: "Direct product URL"
-    },
+    product,
     capabilityNotes: defaultCapabilityNotes()
   };
 }
@@ -867,9 +895,11 @@ export function draftResult(options?: {
   biddingStrategyLabel?: string;
   warnings?: string[];
   headline?: string;
+  product?: Partial<ProductContext>;
   summary?: string;
 }): ToolViewModel {
   const createdAtStage = options?.createdAtStage || "draft_ready";
+  const product = toProductContext(options?.product);
   const warnings =
     options?.warnings && options.warnings.length > 0
       ? options.warnings
@@ -919,7 +949,7 @@ export function draftResult(options?: {
       video: options?.adId ? "Launch asset attached" : "Still needs video or creative input"
     }),
     draft: {
-      name: options?.campaignName || "CloudSoft Pillow | Smart+ | CA",
+      name: options?.campaignName || `${product.title} | Smart+ | ${options?.targetCountryCode || "CA"}`,
       objective: "Web Conversions",
       fields: [
         { label: "Campaign ID", value: options?.campaignId || "Pending creation", editable: false },
@@ -956,12 +986,7 @@ export function draftResult(options?: {
       }
     ],
     capabilityNotes: defaultCapabilityNotes(),
-    product: {
-      title: "CloudSoft Compression Pillow",
-      price: "$49",
-      destination: "https://merchant.example/products/cloudsoft-pillow",
-      platform: "Direct product URL"
-    }
+    product
   };
 }
 
@@ -1061,7 +1086,9 @@ export function reportingSetupResult(options?: {
   };
 }
 
-export function publishResult(): ToolViewModel {
+export function publishResult(product?: Partial<ProductContext>): ToolViewModel {
+  const currentProduct = toProductContext(product);
+
   return {
     screen: "publish",
     phaseLabel: "Launch complete",
@@ -1105,6 +1132,7 @@ export function publishResult(): ToolViewModel {
       identity: "Live identity attached",
       payment: "Assumed ready for launch",
       video: "Live creative attached"
-    })
+    }),
+    product: currentProduct
   };
 }

@@ -381,10 +381,10 @@ function renderProductMeta(state) {
   `;
 }
 
-function renderState(state) {
-  if (!root || !state) return;
+export function renderStateToElement(target, state) {
+  if (!target || !state) return;
 
-  root.innerHTML = `
+  target.innerHTML = `
     <main class="shell">
       <section class="hero">
         <div class="hero-card hero-primary">
@@ -428,6 +428,10 @@ function renderState(state) {
       ${renderCapabilityNotes(state)}
     </main>
   `;
+}
+
+function renderState(state) {
+  renderStateToElement(root, state);
 }
 
 function maybeReadToolResult(message) {
