@@ -84,8 +84,9 @@ const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
 const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
-const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v9.html";
+const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
 const LEGACY_WIDGET_URIS = [
+  "ui://widget/tiktok-ads-workspace-v9.html",
   "ui://widget/tiktok-ads-workspace-v8.html",
   "ui://widget/tiktok-ads-workspace-v7.html",
   "ui://widget/tiktok-ads-workspace-v6.html",
@@ -97,7 +98,7 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.HOORAY_PUBLI
   ""
 );
 const WIDGET_DESCRIPTION =
-  "Interactive TikTok Ads workspace for account setup, product intake, creative review, campaign drafting, publish, and reporting.";
+  "Display-only TikTok Ads workspace for product intake, creative review, campaign drafting, publish, and reporting. The user controls each step through chat.";
 const TOOL_DATA_META = {
   ui: {
     visibility: ["model", "app"]
@@ -723,7 +724,7 @@ export function createTikTokAdsPocServer() {
     { name: "tiktok-ads-agent-poc", version: "0.3.0" },
     {
       instructions:
-        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review. If the user asks to open Hooray TikTok Ads, create TikTok ads, launch ads, continue an ad workflow, inspect ad readiness, or set up reporting, first call open_tiktok_ads_workspace to open or resume the Hooray TikTok Ads workspace. If the user includes a product URL or store URL, pass it to open_tiktok_ads_workspace so the Start card is prefilled, but still wait for the user to click Confirm. Every rendered card is a hard gate. When showing a card, write exactly one short sentence before the card that explains what the card lets the user edit or decide and which CTA advances the flow. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. If a card is blocked or insufficient, keep the text minimal and let the card show the blocker. Wait for an explicit user action before moving forward: either the user clicks a UI CTA or writes a clear chat confirmation for that exact step. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user clicks or asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. If the user provides a Store URL and wants product ideas, call scan_store_products; treat Pick product as a substep inside Product, not a separate main launch step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview."
+        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review as a chat-driven workflow. The rendered Hooray TikTok Ads workspace is display-only: do not ask the user to click buttons or edit fields inside the card. If the user provides a product URL, call open_tiktok_ads_workspace with productUrl so the first visible card is Confirm this product; do not show a Start card. If the user provides a store URL, call open_tiktok_ads_workspace with storeUrl so the first visible card is Pick a product; treat Pick product as a substep inside Product, not a separate main launch step. When showing a card, write exactly one short sentence before the card that explains what the card shows and what the user can reply in chat to do next, such as 'reply continue', 'use option A', 'pick product 2', 'change the title to...', or 'approve preview'. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. Wait for explicit chat confirmation for the exact current step before moving forward. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. When the user confirms in chat, call the next MCP tool with userAction:'chat_confirmed'. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview."
     }
   );
 
@@ -811,36 +812,35 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
   const cardGuidanceText = (widgetState: Record<string, unknown>): string => {
     const screen = String(widgetState.screen || "product");
     const headline = String(widgetState.headline || "");
-    const primaryCta = String(widgetState.primaryCta || "Continue");
 
-    if (widgetState.storeDiscovery) {
-      return "Use this card to pick one store product that looks ready to promote, then continue with the selected product.";
+    if ((widgetState.storeDiscovery as { status?: string } | undefined)?.status === "loading") {
+      return "I’m scanning the store for products that look ready to promote on TikTok.";
     }
-    if (screen === "product" && headline.includes("What do you want")) {
-      return "Use this card to paste a product URL or store URL; Confirm starts the right product path.";
+    if (widgetState.storeDiscovery) {
+      return "I found product candidates from the store; reply with the product number or name you want to promote.";
     }
     if (screen === "product") {
-      return "Use this card to edit the product details and confirm the item before storyboard generation.";
+      return "I found the product details; reply 'continue' to make storyboard options, or tell me what to correct.";
     }
     if (screen === "creative") {
-      return "Use this card to edit the storyboard options and choose the direction to preview.";
+      return "Here are two storyboard directions; reply 'use option A' or 'use option B', or tell me how to revise them.";
     }
     if (screen === "render" && !widgetState.videoPreview) {
-      return "Use this card to check when the video preview is ready; nothing is connected to TikTok Ads yet.";
+      return "The video preview is rendering; reply 'check preview' when you want me to check the render status.";
     }
     if (screen === "render") {
-      return "Use this card to review the video, edit the preview direction, or approve it for account setup.";
+      return "Here is the video preview; reply 'approve preview' to continue, or ask for another version.";
     }
     if (screen === "onboarding" || screen === "accounts") {
-      return "Use this card to choose the TikTok advertiser account and confirm account readiness.";
+      return "Review the TikTok account setup; reply with the advertiser name or ID to continue.";
     }
     if (screen === "draft") {
-      return `Use this card to edit launch settings; ${primaryCta} advances the campaign toward publish.`;
+      return "Review the launch settings; reply with budget or market changes, or say 'approve launch'.";
     }
     if (screen === "publish" || screen === "reporting") {
-      return "Use this card to confirm launch follow-up and set up the reporting digest.";
+      return "Review the post-launch setup; reply when you want to save the reporting plan.";
     }
-    return `Use this card to review the current step and select ${primaryCta} when ready.`;
+    return "Review this step, then reply in chat with what you want to do next.";
   };
   const isUserDrivenAction = (args?: InteractionControl) =>
     args?.interactionToken === state.uiActionToken || args?.userAction === "chat_confirmed";
@@ -860,26 +860,34 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     reset?: boolean;
     storeUrl?: string;
   }): Record<string, unknown> => {
-    const shouldStartAtProduct = Boolean(args.reset || args.productUrl || args.storeUrl);
-    const baseState = shouldStartAtProduct ? previewState : (currentWorkspaceState() as ToolViewModel);
     const productUrl = args.productUrl || "";
     const storeUrl = args.storeUrl || "";
 
-    if (!productUrl && !storeUrl) {
-      return baseState as unknown as Record<string, unknown>;
+    if (productUrl) {
+      const nextProduct = updateCurrentProduct(inferProductFromUrl(productUrl));
+      return scrapeResult(productUrl, nextProduct) as unknown as Record<string, unknown>;
     }
 
-    return {
-      ...baseState,
-      screen: "product",
-      headline: "What do you want to promote?",
-      primaryCta: "Confirm",
-      uiDraft: {
-        mode: storeUrl && !productUrl ? "store" : "product",
-        productUrl,
-        storeUrl
+    if (storeUrl) {
+      const candidates = inferStoreProductCandidates(storeUrl);
+      const selectedCandidate = candidates.find((candidate) => candidate.selected) || candidates[0];
+      if (selectedCandidate) {
+        updateCurrentProduct({
+          destination: selectedCandidate.productUrl,
+          imageCount: 3,
+          platform: "Store URL discovery",
+          price: "Needs confirmation",
+          title: selectedCandidate.title
+        });
       }
-    };
+      return storeProductCandidatesResult(storeUrl, candidates) as unknown as Record<string, unknown>;
+    }
+
+    if (args.reset) {
+      return previewState as unknown as Record<string, unknown>;
+    }
+
+    return currentWorkspaceState();
   };
 
   server.registerTool(
@@ -887,7 +895,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     withRenderToolMeta({
       title: "Open Hooray TikTok Ads workspace",
       description:
-        "Primary entrypoint for Hooray TikTok Ads. Use this whenever the user wants to create, continue, review, or report on TikTok ads. It opens or resumes the interactive workspace without advancing the flow; optional productUrl or storeUrl only prefill the Start card.",
+        "Primary entrypoint for Hooray TikTok Ads. Use this whenever the user wants to create, continue, review, or report on TikTok ads. If productUrl is provided, open directly on Product confirmation. If storeUrl is provided, open directly on Store product picking. The workspace is display-only; user decisions happen in chat.",
       inputSchema: openTikTokAdsWorkspaceInput,
       outputSchema: openTikTokAdsWorkspaceOutput,
       annotations: {
@@ -927,7 +935,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     withRenderToolMeta({
       title: "Render TikTok Ads workspace",
       description:
-        "Use this after any Hooray TikTok Ads tool returns widgetState. It renders the interactive ChatGPT App component from the supplied widgetState.",
+        "Use this after any Hooray TikTok Ads tool returns widgetState. It renders the display-only ChatGPT App workspace from the supplied widgetState; user decisions continue through chat.",
       inputSchema: renderTikTokAdsWorkspaceInput,
       outputSchema: renderTikTokAdsWorkspaceOutput,
       annotations: {
@@ -979,7 +987,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             accountCount: 0,
             widgetState: waitForUserActionState("Approve the preview in the workspace before account setup starts.")
           },
-        content: [{ type: "text", text: "Use the preview card to approve the video before account setup starts." }],
+          content: [{ type: "text", text: "Wait for the user to reply 'approve preview' before account setup starts." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -997,7 +1005,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               stage: "needs_authorization",
               widgetState: accountAuthorizationResult(result.authorizationUrl, result.redirectUri)
             },
-            content: [{ type: "text", text: "Use this account setup card to authorize TikTok Ads, then return to continue." }],
+            content: [{ type: "text", text: "Ask the user to open the TikTok Ads authorization link, then return to this chat." }],
             _meta: {
               ...RESULT_WIDGET_META,
               source: "tiktok-mcp-oauth"
@@ -1066,7 +1074,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               userDisplayName: result.data.userDisplayName
             })
           },
-          content: [{ type: "text", text: "Use this account setup card to choose the advertiser account for this launch." }],
+          content: [{ type: "text", text: "Ask the user to reply with the advertiser account that should own this launch." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "tiktok-mcp",
@@ -1114,7 +1122,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           imageCount: nextProduct.imageCount,
           widgetState: scrapeResult(url, nextProduct)
         },
-        content: [{ type: "text", text: "Use this product card to edit the title, landing page, and price before storyboarding." }],
+        content: [{ type: "text", text: "Show the detected product details and ask the user to reply 'continue' or provide corrections in chat." }],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "heuristic-scrape",
@@ -1171,7 +1179,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           imageCount: images.length,
           widgetState: scrapeResult(args.productUrl, nextProduct)
         },
-        content: [{ type: "text", text: "Use this product card to review the updated images and confirm the item." }],
+        content: [{ type: "text", text: "Show the updated image count and ask the user to reply 'continue' when ready." }],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "guided-experience"
@@ -1219,7 +1227,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           productTitle: nextProduct.title,
           widgetState: scrapeResult(productUrl, nextProduct)
         },
-        content: [{ type: "text", text: "Use this product card to confirm the corrected details before generating storyboards." }],
+        content: [{ type: "text", text: "Show the corrected product details and ask the user to reply 'continue' when ready." }],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "guided-experience"
@@ -1266,7 +1274,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             productUrl: productUrl || nextProduct.destination
           })
         },
-        content: [{ type: "text", text: "Use this product path card to choose what kind of product flow to launch." }],
+        content: [{ type: "text", text: "Show the selected product path and ask the user to continue in chat." }],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "guided-experience",
@@ -1311,7 +1319,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           content: [
             {
               type: "text",
-              text: "Use this card to let Hooray scan the store and suggest products that are ready to promote."
+              text: "Tell the user Hooray is scanning the store for products that look ready to promote."
             }
           ],
           _meta: {
@@ -1351,7 +1359,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           {
             type: "text",
             text:
-              "Use this product picker to select one recommended store product before storyboarding."
+              "Show the recommended store products and ask the user to reply with the product number or name."
           }
         ],
         _meta: {
@@ -1389,7 +1397,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             sceneCount: 0,
             widgetState: waitForUserActionState("Confirm the product in the workspace before generating storyboard options.")
           },
-          content: [{ type: "text", text: "Use the product card to confirm the item before storyboard generation." }],
+          content: [{ type: "text", text: "Wait for the user to reply 'continue' before storyboard generation." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -1409,7 +1417,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           sceneCount: 2,
           widgetState: storyboardResult(nextProduct)
         },
-        content: [{ type: "text", text: "Use this storyboard card to edit the hook, CTA, and format, then choose one direction." }],
+        content: [{ type: "text", text: "Show the storyboard options and ask the user to reply 'use option A' or 'use option B'." }],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "guided-experience"
@@ -1445,7 +1453,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             status: "pending",
             widgetState: waitForUserActionState("Choose a storyboard in the workspace before approving ad inputs.")
           },
-          content: [{ type: "text", text: "Use the storyboard card to choose a direction before video rendering." }],
+          content: [{ type: "text", text: "Wait for the user to choose a storyboard in chat before video rendering." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -1488,7 +1496,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             type: "text",
             text: renderError
               ? renderError.message
-              : "Use this preview card to check the video render and review the draft before account setup."
+              : "Tell the user the video preview is rendering and ask them to reply 'check preview' when ready."
           }
         ],
         _meta: {
@@ -1524,9 +1532,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           structuredContent: {
             jobId: "missing_job",
             status: "pending",
-            widgetState: waitForUserActionState("Use the workspace CTA before starting another video render.")
+            widgetState: waitForUserActionState("Wait for the user to ask for another video version in chat.")
           },
-          content: [{ type: "text", text: "Use the preview card to request another video version." }],
+          content: [{ type: "text", text: "Wait for the user to ask for another video version in chat." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -1568,7 +1576,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             ? withRenderJobState(makeRenderErrorState(renderJob.product, renderError), renderJob)
             : withRenderJobState(renderPendingResult(renderJob.product), renderJob)
         },
-        content: [{ type: "text", text: renderError ? renderError.message : "Use this preview card to check when the new video version is ready." }],
+        content: [{ type: "text", text: renderError ? renderError.message : "Tell the user the new video version is rendering and ask them to reply 'check preview' when ready." }],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "guided-experience"
@@ -1595,9 +1603,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         return {
           structuredContent: {
             status: "pending",
-            widgetState: waitForUserActionState("Click Check render status in the workspace before moving to video preview.")
+            widgetState: waitForUserActionState("Wait for the user to ask to check the render status.")
           },
-          content: [{ type: "text", text: "Use the preview card to check render status when you are ready." }],
+          content: [{ type: "text", text: "Wait for the user to ask to check the render status." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -1677,7 +1685,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             {
               type: "text",
               text:
-                "Use this preview card to watch the video, edit the creative direction, or approve it for account setup."
+                "Show the video preview and ask the user to reply 'approve preview' or request another version."
             },
             previewResourceLink(preview)
           ],
@@ -1697,7 +1705,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         content: [
           {
             type: "text",
-            text: "Use this preview card to stay on the render step until the video is ready."
+            text: "Tell the user the preview is still rendering and they can ask to check again."
           }
         ],
         _meta: {
@@ -1733,7 +1741,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           creativeCount: 3,
           widgetState: creativeWorkspaceResult({ productLabel: nextProduct.title, product: nextProduct })
         },
-        content: [{ type: "text", text: "Use this creative card to choose whether to reuse TikTok content or generate a fresh ad." }],
+        content: [{ type: "text", text: "Show the creative options and ask the user to choose in chat." }],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "guided-experience",
@@ -1764,7 +1772,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             accountCount: 0,
             widgetState: waitForUserActionState("Approve the video preview in the workspace before account setup starts.")
           },
-          content: [{ type: "text", text: "Use the preview card to approve the video before account setup starts." }],
+          content: [{ type: "text", text: "Wait for the user to reply 'approve preview' before account setup starts." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -1785,7 +1793,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             content: [
               {
                 type: "text",
-                text: "Use this account setup card to authorize TikTok Ads before choosing an advertiser."
+                text: "Ask the user to open the TikTok Ads authorization link before choosing an advertiser."
               }
             ],
             _meta: {
@@ -1861,8 +1869,8 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               type: "text",
               text:
                 result.data.accounts.length > 1
-                  ? "Use this account setup card to choose which advertiser should own the Smart+ draft."
-                  : "Use this account setup card to confirm the advertiser and TikTok Account."
+                  ? "Ask the user to reply with which advertiser should own the Smart+ draft."
+                  : "Ask the user to confirm the advertiser and TikTok Account in chat."
             }
           ],
           _meta: {
@@ -1909,7 +1917,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             status: "needs_authorization",
             widgetState: waitForUserActionState("Choose an advertiser account in the workspace before identity verification.")
           },
-          content: [{ type: "text", text: "Use the account setup card to choose an advertiser before identity verification." }],
+          content: [{ type: "text", text: "Wait for the user to choose an advertiser in chat before identity verification." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -1932,7 +1940,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             content: [
               {
                 type: "text",
-                text: "Use this account setup card to authorize TikTok Ads before identity verification."
+                text: "Ask the user to open the TikTok Ads authorization link before identity verification."
               }
             ],
             _meta: {
@@ -1980,7 +1988,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               {
                 type: "text",
                 text:
-                  "Use this review card to check launch settings now that the TikTok Account is ready."
+                  "Show launch settings now that the TikTok Account is ready, then wait for chat approval."
               }
             ],
             _meta: {
@@ -2026,7 +2034,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           content: [
             {
               type: "text",
-              text: "Use this account setup card to connect a TikTok Account for delivery."
+              text: "Ask the user to connect a TikTok Account for delivery."
             }
           ],
           _meta: {
@@ -2049,7 +2057,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           {
             type: "text",
             text:
-              "Use this review card to check launch settings now that account setup is complete."
+              "Show launch settings now that account setup is complete, then wait for chat approval."
           }
         ],
         _meta: {
@@ -2078,9 +2086,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         return {
           structuredContent: {
             status: "needs_authorization",
-            widgetState: waitForUserActionState("Run payment readiness from the review card only if publish is blocked.")
+            widgetState: waitForUserActionState("Run payment readiness only after the user asks or publish is blocked.")
           },
-          content: [{ type: "text", text: "Use the review card to check readiness only when needed." }],
+          content: [{ type: "text", text: "Wait for the user to ask for payment readiness or reach a publish blocker." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -2097,7 +2105,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             status: "needs_authorization",
             widgetState: accountAuthorizationResult(accountsResult.authorizationUrl, accountsResult.redirectUri)
           },
-          content: [{ type: "text", text: "Use this account setup card to authorize TikTok Ads before payment readiness checks." }],
+          content: [{ type: "text", text: "Ask the user to open the TikTok Ads authorization link before payment readiness checks." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "tiktok-mcp-oauth"
@@ -2135,8 +2143,8 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           {
             type: "text",
             text: state.accountSetup?.ready
-              ? "Use this review card to continue after payment readiness is checked."
-              : "Use this account card to continue after payment readiness is checked."
+              ? "Show the review state after payment readiness is checked."
+              : "Show the account setup state after payment readiness is checked."
           }
         ],
         _meta: {
@@ -2168,10 +2176,10 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             adgroupId: "",
             adId: "",
             creationState: "needs_more_inputs",
-            warnings: ["Confirm the review card before creating a Smart+ draft."],
-            widgetState: waitForUserActionState("Confirm the review card before creating a Smart+ draft.")
+            warnings: ["Wait for chat approval before creating a Smart+ draft."],
+            widgetState: waitForUserActionState("Wait for chat approval before creating a Smart+ draft.")
           },
-          content: [{ type: "text", text: "Use the review card to confirm launch settings before creating a Smart+ draft." }],
+          content: [{ type: "text", text: "Wait for the user to approve launch settings in chat before creating a Smart+ draft." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -2198,7 +2206,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               warnings: ["Authorize TikTok Ads first, then retry Smart+ draft creation."],
               widgetState: accountAuthorizationResult(result.authorizationUrl, result.redirectUri)
             },
-            content: [{ type: "text", text: "Use this account setup card to authorize TikTok Ads before creating the Smart+ draft." }],
+            content: [{ type: "text", text: "Ask the user to open the TikTok Ads authorization link before creating the Smart+ draft." }],
             _meta: {
               ...RESULT_WIDGET_META,
               source: "tiktok-mcp-oauth"
@@ -2265,12 +2273,12 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               type: "text",
               text:
                 result.data.creationState === "draft_ready"
-                  ? "Use this review card to edit campaign settings and approve launch parameters before publish."
+                  ? "Show the Smart+ draft and ask the user to approve launch settings in chat before publish."
                   : result.data.creationState === "campaign_and_adgroup"
-                    ? "Use this review card to check the campaign and ad group draft before final approval."
+                    ? "Show the campaign and ad group draft, then wait for final approval in chat."
                     : result.data.creationState === "campaign_only"
-                      ? "Use this review card to finish missing ad group details before final approval."
-                      : "Use this review card to see which TikTok inputs are still needed before draft creation."
+                      ? "Show the missing ad group details and ask the user how to fill them."
+                      : "Show which TikTok inputs are still needed before draft creation."
             }
           ],
           _meta: {
@@ -2297,7 +2305,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               })
             )
           },
-          content: [{ type: "text", text: "Use this review card to fix the missing draft inputs before retrying Smart+ creation." }],
+          content: [{ type: "text", text: "Show the missing draft inputs and ask the user to provide corrections in chat." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "tiktok-mcp-error"
@@ -2341,9 +2349,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           structuredContent: {
             approvalId: "",
             status: "blocked",
-            widgetState: waitForUserActionState("Approve launch settings from the review card before publish.")
+            widgetState: waitForUserActionState("Wait for chat approval of launch settings before publish.")
           },
-          content: [{ type: "text", text: "Use the review card to approve launch settings before publish." }],
+          content: [{ type: "text", text: "Wait for the user to approve launch settings in chat before publish." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -2364,7 +2372,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               })
             )
           },
-          content: [{ type: "text", text: "Use this review card to create a matching Smart+ draft before approving launch settings." }],
+          content: [{ type: "text", text: "Show that a matching Smart+ draft is required before launch approval." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "guided-experience"
@@ -2403,7 +2411,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           status: "approved",
           widgetState: approvedDraftState
         },
-        content: [{ type: "text", text: "Use this review card to publish the approved campaign when you are ready to start spend." }],
+        content: [{ type: "text", text: "Show the approved launch state and wait for the user to say publish." }],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "guided-experience"
@@ -2437,9 +2445,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         return {
           structuredContent: {
             publishState: "needs_review",
-            widgetState: waitForUserActionState("Publish from the review card only after launch settings are approved.")
+            widgetState: waitForUserActionState("Wait for final chat confirmation before publish.")
           },
-          content: [{ type: "text", text: "Use the review card to publish only after final approval." }],
+          content: [{ type: "text", text: "Wait for final chat confirmation before publish." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -2467,7 +2475,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               })
             )
           },
-          content: [{ type: "text", text: "Use this review card to approve the matching Smart+ draft before publishing." }],
+          content: [{ type: "text", text: "Show that the matching Smart+ draft must be approved before publishing." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "guided-experience"
@@ -2480,7 +2488,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           publishState: "submitted",
           widgetState: preserveAccountSetupSkip(publishResult(getCurrentProduct()))
         },
-        content: [{ type: "text", text: "Use this launch card to confirm submission and set up the reporting digest." }],
+        content: [{ type: "text", text: "Show launch submission and ask whether to set up the reporting digest." }],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "guided-experience"
@@ -2518,9 +2526,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         return {
           structuredContent: {
             planStatus: "needs_access",
-            widgetState: waitForUserActionState("Save reporting from the post-launch card after publish.")
+            widgetState: waitForUserActionState("Wait for the user to ask to save reporting after publish.")
           },
-          content: [{ type: "text", text: "Use the post-launch card to save reporting setup." }],
+          content: [{ type: "text", text: "Wait for the user to ask to save reporting after publish." }],
           _meta: {
             ...RESULT_WIDGET_META,
             source: "state-machine-gate"
@@ -2543,8 +2551,8 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             type: "text",
             text:
               deliveryMode === "webhook"
-                ? "Use this reporting card to review the webhook caveats before saving."
-                : "Use this reporting card to save the post-launch digest."
+                ? "Show the webhook caveats before saving reporting."
+                : "Show the post-launch digest plan."
           }
         ],
         _meta: {

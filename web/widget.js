@@ -1,5 +1,5 @@
 const root = document.getElementById("app-root") || document.getElementById("app");
-const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.4" };
+const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.5" };
 const PROTOCOL_VERSION = "2025-11-21";
 
 let initializeRequestId = null;
@@ -239,8 +239,7 @@ function actionForSecondary(state) {
 }
 
 function renderActionButton(action, label, kind = "primary") {
-  const disabled = !action || isActionPending;
-  return `<button class="btn ${escapeHtml(kind)}" type="button" ${disabled ? "disabled" : `data-action="${encodeAction(action)}"`}>${escapeHtml(label)}</button>`;
+  return "";
 }
 
 function getFlowState(state = {}) {
@@ -316,49 +315,21 @@ function getNextNote(state) {
 }
 
 function renderActions(state) {
-  if (state.auth?.status === "needs_authorization" && state.auth.authorizationUrl) {
-    return `
-      <div class="panel-actions">
-        <span class="next-note">${escapeHtml(getNextNote(state))}</span>
-      </div>
-    `;
-  }
-
-  const primary = state.primaryCta || "Continue";
-  const secondary = state.secondaryCta || "";
-  const primaryAction = actionForPrimary(state);
-  const secondaryAction = actionForSecondary(state);
-
-  return `
-    <div class="panel-actions">
-      <span class="next-note">${escapeHtml(getNextNote(state))}</span>
-      <div class="button-row">
-        ${secondary && secondaryAction ? renderActionButton(secondaryAction, secondary, "secondary") : ""}
-        ${renderActionButton(primaryAction, primary, "primary")}
-      </div>
-    </div>
-  `;
+  return "";
 }
 
 function renderIntro(state = {}) {
-  const draft = draftInputState(state);
   return `
     <div class="intro-grid">
-      <article class="choice-card ${draft.mode === "product" ? "selected" : ""}" data-start-mode="product">
+      <article class="choice-card selected">
         <div class="label">Product page</div>
         <h3>I have a product in mind</h3>
-        <div class="input-block">
-          <label class="field-label" for="product-url-input">Product URL</label>
-          <input id="product-url-input" class="url-input" data-draft-url="product" type="url" inputmode="url" placeholder="https://example.com/product" value="${escapeHtml(draft.productUrl)}">
-        </div>
+        <p class="body-note">Send a product URL in chat and I’ll confirm the product before storyboarding.</p>
       </article>
-      <article class="choice-card ${draft.mode === "store" ? "selected" : ""}" data-start-mode="store">
+      <article class="choice-card">
         <div class="label">Store</div>
         <h3>Help me choose a product</h3>
-        <div class="input-block">
-          <label class="field-label" for="store-url-input">Store URL</label>
-          <input id="store-url-input" class="url-input" data-draft-url="store" type="url" inputmode="url" placeholder="https://example.com" value="${escapeHtml(draft.storeUrl)}">
-        </div>
+        <p class="body-note">Send a store URL in chat and I’ll suggest products that look ready to promote.</p>
       </article>
     </div>
   `;
@@ -394,7 +365,7 @@ function renderStoreDiscovery(state) {
       ${(discovery.candidates || [])
         .map(
           (candidate) => `
-            <article class="product-card ${candidate.id === discovery.selectedCandidateId ? "selected" : ""}" data-select-candidate="${escapeHtml(candidate.id)}">
+            <article class="product-card ${candidate.id === discovery.selectedCandidateId ? "selected" : ""}">
               <div class="product-thumb" aria-hidden="true"></div>
               <div class="storyboard-top">
                 <div>
@@ -428,22 +399,22 @@ function renderProductConfirm(state) {
     <div class="summary-card">
       <div class="summary-row">
         <div>
-          <label class="field-label" for="product-title-field">Product</label>
-          <input id="product-title-field" class="text-input product-edit-input" data-product-field="title" type="text" value="${escapeHtml(product.title || "Promoted product")}">
+          <div class="field-label">Product</div>
+          <div class="value">${escapeHtml(product.title || "Promoted product")}</div>
         </div>
         ${product.imageCount !== undefined ? `<span class="pill">${escapeHtml(String(product.imageCount))} images found</span>` : ""}
       </div>
       <div class="summary-row">
         <div>
-          <label class="field-label" for="product-url-field">Landing page</label>
-          <input id="product-url-field" class="text-input product-edit-input" data-product-field="destination" type="url" inputmode="url" value="${escapeHtml(product.destination || "")}">
+          <div class="field-label">Landing page</div>
+          <a class="value text-link" href="${escapeHtml(product.destination || "#")}" target="_blank" rel="noreferrer">${escapeHtml(product.destination || "Not provided")}</a>
         </div>
         <span class="meta">${escapeHtml(product.platform || "From product URL")}</span>
       </div>
       <div class="summary-row">
         <div>
-          <label class="field-label" for="product-price-field">Price</label>
-          <input id="product-price-field" class="text-input product-edit-input" data-product-field="price" type="text" placeholder="Optional" value="${escapeHtml(product.price && !String(product.price).toLowerCase().includes("pending") ? product.price : "")}">
+          <div class="field-label">Price</div>
+          <div class="value">${escapeHtml(product.price && !String(product.price).toLowerCase().includes("pending") ? product.price : "Not detected yet")}</div>
         </div>
       </div>
     </div>
@@ -474,17 +445,17 @@ function renderStoryboard(state) {
       ${angles
         .map(
           (angle, index) => `
-            <article class="storyboard-card ${index === selectedIndex ? "selected" : ""}" data-select-storyboard="${index}">
+            <article class="storyboard-card ${index === selectedIndex ? "selected" : ""}">
               <div class="storyboard-top">
                 <div>
                   <div class="label">Option ${index === 0 ? "A" : "B"}</div>
-                  <input class="text-input storyboard-edit-input" data-storyboard-index="${index}" data-storyboard-field="title" type="text" value="${escapeHtml(angle.title)}" aria-label="Storyboard option ${index === 0 ? "A" : "B"} title">
+                  <div class="storyboard-title">${escapeHtml(angle.title)}</div>
                 </div>
                 ${index === 0 ? `<span class="pill">Recommended</span>` : `<span class="pill">Alternate</span>`}
               </div>
               <div class="hook-box">
-                <label class="field-label">Hook</label>
-                <textarea class="textarea-input storyboard-edit-input" data-storyboard-index="${index}" data-storyboard-field="hook" rows="3">${escapeHtml(angle.hook)}</textarea>
+                <div class="field-label">Hook</div>
+                <div class="value">${escapeHtml(angle.hook)}</div>
               </div>
               <ul class="beat-list">
                 <li><span class="time">0-2s</span><span>Open with the hook and product context.</span></li>
@@ -492,18 +463,14 @@ function renderStoryboard(state) {
                 <li><span class="time">7-12s</span><span>End with CTA and landing-page reason.</span></li>
               </ul>
               <div class="inline-fields">
-                <label>
+                <div>
                   <span class="field-label">CTA / goal</span>
-                  <input class="text-input compact-input storyboard-edit-input" data-storyboard-index="${index}" data-storyboard-field="targetObjective" type="text" value="${escapeHtml(angle.targetObjective || "Website visits")}">
-                </label>
-                <label>
+                  <div class="value">${escapeHtml(angle.targetObjective || "Website visits")}</div>
+                </div>
+                <div>
                   <span class="field-label">Format</span>
-                  <input class="text-input compact-input storyboard-edit-input" data-storyboard-index="${index}" data-storyboard-field="format" type="text" value="${escapeHtml(angle.format || "vertical video")}">
-                </label>
-              </div>
-              <div class="story-actions">
-                <button class="action-chip" type="button" data-action="${encodeAction({ type: "regenerate_storyboard", feedback: `Rewrite option ${index === 0 ? "A" : "B"} with a stronger first-two-second hook.` })}">Edit hook</button>
-                <button class="action-chip" type="button" data-action="${encodeAction({ type: "regenerate_storyboard", feedback: `Change option ${index === 0 ? "A" : "B"} to use a clearer shop-now CTA.` })}">Change CTA</button>
+                  <div class="value">${escapeHtml(angle.format || "vertical video")}</div>
+                </div>
               </div>
             </article>
           `
@@ -540,23 +507,13 @@ function renderVideoPreview(state) {
       </div>
       <div class="inspector">
         <div class="label">Creative inspector</div>
-        <label class="field-label" for="preview-title-field">Video title</label>
-        <input id="preview-title-field" class="text-input product-edit-input" data-preview-field="creativeBriefTitle" type="text" value="${escapeHtml(state.product?.creativeBriefTitle || state.product?.title || "Generated preview")}">
+        <div class="value">${escapeHtml(state.product?.creativeBriefTitle || state.product?.title || "Generated preview")}</div>
         <div class="inspector-list">
-          <div class="inspector-row inspector-edit-row">
-            <label class="field-label" for="preview-hook-field">Hook</label>
-            <textarea id="preview-hook-field" class="textarea-input compact-textarea" data-preview-field="creativeBriefHook" rows="3">${escapeHtml(state.product?.creativeBriefHook || "Product benefit in the first seconds.")}</textarea>
-          </div>
-          <div class="inspector-row inspector-edit-row">
-            <label class="field-label" for="preview-cta-field">CTA</label>
-            <input id="preview-cta-field" class="text-input compact-input" data-preview-field="creativeBriefObjective" type="text" value="${escapeHtml(state.product?.creativeBriefObjective || "Shop now")}">
-          </div>
+          <div class="inspector-row"><span class="label">Hook</span><span>${escapeHtml(state.product?.creativeBriefHook || "Product benefit in the first seconds.")}</span></div>
+          <div class="inspector-row"><span class="label">CTA</span><span>${escapeHtml(state.product?.creativeBriefObjective || "Shop now")}</span></div>
           <div class="inspector-row"><span class="label">Length</span><span>${escapeHtml(preview.durationSeconds || 12)}s vertical video</span></div>
           <div class="inspector-row"><span class="label">Source</span><span>Product page images + approved storyboard</span></div>
           <div class="inspector-row"><span class="label">Status</span><span>Draft only · not live · no campaign created</span></div>
-        </div>
-        <div class="asset-actions">
-          <button class="action-chip" type="button" data-action="${encodeAction({ type: "create_another_video" })}">Create another video</button>
         </div>
       </div>
     </div>
@@ -581,9 +538,9 @@ function renderAccountSetup(state) {
         <div>
           <div class="label">TikTok authorization</div>
           <div class="value">Connect TikTok Ads before this app touches campaign setup.</div>
-          <p class="body-note">Open the authorization flow, finish approval, then return to this same ChatGPT session.</p>
+          <p class="body-note">Open the authorization flow from the chat message, finish approval, then return to this same ChatGPT session.</p>
         </div>
-        <a class="btn primary auth-link" href="${escapeHtml(state.auth.authorizationUrl)}" target="_blank" rel="noreferrer">Authorize TikTok Ads</a>
+        <a class="text-link auth-link" href="${escapeHtml(state.auth.authorizationUrl)}" target="_blank" rel="noreferrer">Authorization link</a>
       </div>
     `;
   }
@@ -617,7 +574,7 @@ function renderAdvertiserAccounts(state) {
         .slice(0, 3)
         .map(
           (account, index) => `
-            <article class="account-card ${account.advertiserId === state.uiSelection?.selectedAdvertiserId || (!state.uiSelection?.selectedAdvertiserId && index === 0) ? "selected" : ""}" data-select-account="${escapeHtml(account.advertiserId)}">
+            <article class="account-card ${account.advertiserId === state.uiSelection?.selectedAdvertiserId || (!state.uiSelection?.selectedAdvertiserId && index === 0) ? "selected" : ""}">
               <div class="storyboard-top">
                 <div>
                   <div class="label">${escapeHtml(account.advertiserRole || "Advertiser")}</div>
@@ -656,27 +613,12 @@ function renderReview(state) {
       </div>
     </div>
     <div class="review-grid">
-      <label class="mini-grid-card editable-mini-card">
-        <span class="field-label">Campaign name</span>
-        <input class="text-input compact-input" data-review-campaign-name type="text" value="${escapeHtml(campaignName)}">
-      </label>
+      <div class="mini-grid-card"><div class="label">Campaign name</div><div class="value">${escapeHtml(campaignName)}</div></div>
       <div class="mini-grid-card"><div class="label">Campaign type</div><div class="value">${escapeHtml(campaignType)}</div></div>
-      <label class="mini-grid-card editable-mini-card">
-        <span class="field-label">Landing page</span>
-        <input class="text-input compact-input" data-product-field="destination" type="url" inputmode="url" value="${escapeHtml(state.product?.destination || "")}">
-      </label>
-      <label class="mini-grid-card editable-mini-card">
-        <span class="field-label">Goal</span>
-        <input class="text-input compact-input" data-review-field="Optimization goal" type="text" value="${escapeHtml(goal)}">
-      </label>
-      <label class="mini-grid-card editable-mini-card">
-        <span class="field-label">Market</span>
-        <input class="text-input compact-input" data-review-field="Country" type="text" value="${escapeHtml(country)}">
-      </label>
-      <label class="mini-grid-card editable-mini-card">
-        <span class="field-label">Budget</span>
-        <input class="text-input compact-input" data-review-field="Daily budget" type="text" value="${escapeHtml(budget)}">
-      </label>
+      <div class="mini-grid-card"><div class="label">Landing page</div><div class="value">${escapeHtml(state.product?.destination || "Not provided")}</div></div>
+      <div class="mini-grid-card"><div class="label">Goal</div><div class="value">${escapeHtml(goal)}</div></div>
+      <div class="mini-grid-card"><div class="label">Market</div><div class="value">${escapeHtml(country)}</div></div>
+      <div class="mini-grid-card"><div class="label">Budget</div><div class="value">${escapeHtml(budget)}</div></div>
     </div>
     ${
       state.draft?.warnings?.length
@@ -822,7 +764,7 @@ async function sendChatPrompt(prompt) {
 
 async function callToolAndRender(name, args) {
   if (!window.openai?.callTool) {
-    showLocalMessage(`This button will call ${name} in ChatGPT. Local preview cannot execute MCP tools.`);
+    showLocalMessage(`This action would call ${name} in ChatGPT. Local preview cannot execute MCP tools.`);
     return null;
   }
 
@@ -1129,138 +1071,9 @@ async function handleAction(action, state) {
   }
 }
 
-function bindInteractions(target, state) {
-  target.querySelectorAll("[data-action]").forEach((element) => {
-    element.addEventListener("click", () => {
-      handleAction(decodeAction(element.getAttribute("data-action")), currentState || state);
-    });
-  });
-
-  target.querySelectorAll("[data-start-mode]").forEach((element) => {
-    element.addEventListener("click", (event) => {
-      const mode = element.getAttribute("data-start-mode") === "store" ? "store" : "product";
-      target.querySelectorAll("[data-start-mode]").forEach((card) => {
-        card.classList.toggle("selected", card.getAttribute("data-start-mode") === mode);
-      });
-      const nextState = {
-        ...(currentState || state || {}),
-        uiDraft: {
-          ...readDraftFromDom(currentState || state || {}),
-          mode
-        }
-      };
-      if (event.target?.matches?.("[data-draft-url]")) {
-        persistStateWithoutRender(nextState);
-        return;
-      }
-      renderState(nextState);
-    });
-  });
-
-  target.querySelectorAll("[data-draft-url]").forEach((input) => {
-    input.addEventListener("click", (event) => {
-      event.stopPropagation();
-    });
-    input.addEventListener("focus", () => {
-      const mode = input.closest("[data-start-mode]")?.getAttribute("data-start-mode") === "store" ? "store" : "product";
-      target.querySelectorAll("[data-start-mode]").forEach((card) => {
-        card.classList.toggle("selected", card.getAttribute("data-start-mode") === mode);
-      });
-      persistStateWithoutRender({
-        ...(currentState || state || {}),
-        uiDraft: {
-          ...readDraftFromDom(currentState || state || {}),
-          mode
-        }
-      });
-    });
-    input.addEventListener("input", () => {
-      persistStateWithoutRender({
-        ...(currentState || state || {}),
-        uiDraft: readDraftFromDom(currentState || state || {})
-      });
-    });
-  });
-
-  target.querySelectorAll("[data-product-field]").forEach((input) => {
-    input.addEventListener("input", () => {
-      persistStateWithoutRender({
-        ...(currentState || state || {}),
-        product: readProductFromDom(currentState || state || {})
-      });
-    });
-  });
-
-  target.querySelectorAll("[data-storyboard-field]").forEach((input) => {
-    input.addEventListener("input", () => {
-      persistStateWithoutRender({
-        ...(currentState || state || {}),
-        angles: readStoryboardFromDom(currentState || state || {})
-      });
-    });
-  });
-
-  target.querySelectorAll("[data-preview-field]").forEach((input) => {
-    input.addEventListener("input", () => {
-      persistStateWithoutRender({
-        ...(currentState || state || {}),
-        product: readPreviewEditsFromDom(currentState || state || {})
-      });
-    });
-  });
-
-  target.querySelectorAll("[data-review-field], [data-review-campaign-name]").forEach((input) => {
-    input.addEventListener("input", () => {
-      persistStateWithoutRender({
-        ...(currentState || state || {}),
-        draft: readReviewDraftFromDom(currentState || state || {})
-      });
-    });
-  });
-
-  target.querySelectorAll("[data-select-account]").forEach((element) => {
-    element.addEventListener("click", () => {
-      const selectedAdvertiserId = element.getAttribute("data-select-account");
-      if (!selectedAdvertiserId) return;
-      target.querySelectorAll("[data-select-account]").forEach((card) => {
-        card.classList.toggle("selected", card.getAttribute("data-select-account") === selectedAdvertiserId);
-      });
-      persistStateWithoutRender({
-        ...(currentState || state || {}),
-        uiSelection: {
-          ...((currentState || state || {}).uiSelection || {}),
-          selectedAdvertiserId
-        }
-      });
-    });
-  });
-
-  target.querySelectorAll("[data-select-candidate]").forEach((element) => {
-    element.addEventListener("click", () => {
-      const candidateId = element.getAttribute("data-select-candidate");
-      if (!candidateId || !currentState?.storeDiscovery) return;
-      renderState({
-        ...currentState,
-        storeDiscovery: {
-          ...currentState.storeDiscovery,
-          selectedCandidateId: candidateId
-        }
-      });
-    });
-  });
-
-  target.querySelectorAll("[data-select-storyboard]").forEach((element) => {
-    element.addEventListener("click", () => {
-      const selectedStoryboardIndex = Number(element.getAttribute("data-select-storyboard") || 0);
-      renderState({
-        ...(currentState || state),
-        uiSelection: {
-          ...((currentState || state).uiSelection || {}),
-          selectedStoryboardIndex
-        }
-      });
-    });
-  });
+function bindInteractions() {
+  // ChatGPT currently drives this workflow through chat confirmations.
+  // Keep the workspace display-only so users never see controls that may not fire.
 }
 
 function maybeReadToolResult(message) {
