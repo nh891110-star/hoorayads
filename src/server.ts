@@ -71,12 +71,19 @@ const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
 const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
-const WIDGET_URI = "ui://widget/tiktok-ads-workspace.html";
+const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v4.html";
+const WIDGET_DOMAIN = "https://mcp.hoorayads.org";
 const WIDGET_DESCRIPTION =
   "Interactive TikTok Ads workspace for account setup, product intake, creative review, campaign drafting, publish, and reporting.";
 const TOOL_WIDGET_META = {
+  ui: {
+    resourceUri: WIDGET_URI,
+    visibility: ["model", "app"]
+  },
   "openai/outputTemplate": WIDGET_URI,
-  "openai/widgetAccessible": false
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Preparing TikTok Ads workspace...",
+  "openai/toolInvocation/invoked": "TikTok Ads workspace ready."
 } as const;
 
 function withWidgetToolMeta<T extends object>(definition: T): T & { _meta: Record<string, unknown> } {
@@ -517,11 +524,21 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 <script type="module">${widgetJs}</script>
           `.trim(),
           _meta: {
+            ui: {
+              prefersBorder: true,
+              domain: WIDGET_DOMAIN,
+              csp: {
+                connectDomains: [WIDGET_DOMAIN],
+                resourceDomains: [WIDGET_DOMAIN]
+              }
+            },
             "openai/widgetDescription": WIDGET_DESCRIPTION,
             "openai/widgetPrefersBorder": true,
+            "openai/widgetDomain": WIDGET_DOMAIN,
             "openai/widgetCSP": {
-              connect_domains: [],
-              resource_domains: []
+              connect_domains: [WIDGET_DOMAIN],
+              resource_domains: [WIDGET_DOMAIN],
+              redirect_domains: ["https://ads.tiktok.com", "https://business-api.tiktok.com"]
             }
           }
         }
