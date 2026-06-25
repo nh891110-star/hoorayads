@@ -82,8 +82,8 @@ const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
 const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
-const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v6.html";
-const LEGACY_WIDGET_URIS = ["ui://widget/tiktok-ads-workspace-v5.html"];
+const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v7.html";
+const LEGACY_WIDGET_URIS = ["ui://widget/tiktok-ads-workspace-v6.html", "ui://widget/tiktok-ads-workspace-v5.html"];
 const WIDGET_DOMAIN = "https://mcp.hoorayads.org";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.HOORAY_PUBLIC_BASE_URL || WIDGET_DOMAIN).replace(
   /\/$/,
@@ -845,7 +845,13 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         destructiveHint: false
       }
     }),
-    async (args: InteractionControl) => {
+    async (
+      args: InteractionControl & {
+        approvedStoryboardHook?: string;
+        approvedStoryboardObjective?: string;
+        approvedStoryboardTitle?: string;
+      }
+    ) => {
       if (!isUserDrivenAction(args)) {
         return {
           structuredContent: {
@@ -1304,7 +1310,13 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         destructiveHint: false
       }
     }),
-    async (args: InteractionControl) => {
+    async (
+      args: InteractionControl & {
+        approvedStoryboardHook?: string;
+        approvedStoryboardObjective?: string;
+        approvedStoryboardTitle?: string;
+      }
+    ) => {
       if (!isUserDrivenAction(args)) {
         return {
           structuredContent: {
@@ -1320,7 +1332,11 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         };
       }
 
-      const approvedProduct = getCurrentProduct();
+      const approvedProduct = updateCurrentProduct({
+        ...(args.approvedStoryboardTitle ? { creativeBriefTitle: args.approvedStoryboardTitle } : {}),
+        ...(args.approvedStoryboardHook ? { creativeBriefHook: args.approvedStoryboardHook } : {}),
+        ...(args.approvedStoryboardObjective ? { creativeBriefObjective: args.approvedStoryboardObjective } : {})
+      });
       state.currentApprovalId = `approval_${Date.now().toString(36)}`;
       state.approvalSnapshots[state.currentApprovalId] = {
         approvalId: state.currentApprovalId,

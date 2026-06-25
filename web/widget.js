@@ -1,5 +1,5 @@
 const root = document.getElementById("app-root") || document.getElementById("app");
-const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.1" };
+const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.2" };
 const PROTOCOL_VERSION = "2025-11-21";
 
 let initializeRequestId = null;
@@ -80,10 +80,78 @@ function productActionArgs(state, feedback) {
   };
 }
 
+function draftInputState(state = {}) {
+  const draft = state.uiDraft || {};
+  const mode = draft.mode === "store" ? "store" : "product";
+  return {
+    mode,
+    productUrl: draft.productUrl || "",
+    storeUrl: draft.storeUrl || ""
+  };
+}
+
+function readDraftFromDom(state = {}) {
+  const draft = draftInputState(state);
+  const selectedMode =
+    root?.querySelector(".choice-card.selected[data-start-mode]")?.getAttribute("data-start-mode") ||
+    draft.mode;
+
+  root?.querySelectorAll("[data-draft-url]").forEach((input) => {
+    const key = input.getAttribute("data-draft-url");
+    if (key === "product") draft.productUrl = input.value.trim();
+    if (key === "store") draft.storeUrl = input.value.trim();
+  });
+
+  return {
+    ...draft,
+    mode: selectedMode === "store" ? "store" : "product"
+  };
+}
+
+function readProductFromDom(state = {}) {
+  const product = { ...(state.product || {}) };
+  root?.querySelectorAll("[data-product-field]").forEach((input) => {
+    const field = input.getAttribute("data-product-field");
+    const value = input.value.trim();
+    if (field === "title") product.title = value;
+    if (field === "destination") product.destination = value;
+    if (field === "price") product.price = value;
+  });
+  return product;
+}
+
+function readStoryboardFromDom(state = {}) {
+  const angles = (state.angles || []).map((angle) => ({ ...angle }));
+  root?.querySelectorAll("[data-storyboard-field]").forEach((input) => {
+    const index = Number(input.getAttribute("data-storyboard-index") || 0);
+    const field = input.getAttribute("data-storyboard-field");
+    if (!angles[index] || !field) return;
+    angles[index][field] = input.value.trim();
+  });
+  return angles;
+}
+
+function hydrateEditableState(state = {}) {
+  const nextState = { ...(state || {}) };
+  nextState.uiDraft = readDraftFromDom(nextState);
+  if (nextState.product) nextState.product = readProductFromDom(nextState);
+  if (nextState.angles?.length) nextState.angles = readStoryboardFromDom(nextState);
+  return nextState;
+}
+
+function persistStateWithoutRender(nextState) {
+  currentState = nextState;
+  try {
+    window.openai?.setWidgetState?.(nextState || null);
+  } catch {
+    // Host persistence is best-effort.
+  }
+}
+
 function actionForPrimary(state) {
   if (state.storeDiscovery?.status === "loading") return null;
   if (state.storeDiscovery?.status === "ready") return { type: "use_store_candidate" };
-  if (state.screen === "product" && !state.product) return { type: "ask_for_link" };
+  if (state.screen === "product" && !state.product) return { type: "confirm_start_input" };
   if (state.screen === "product") return { type: "confirm_product" };
   if (state.screen === "creative") return { type: "approve_storyboard" };
   if (state.screen === "render" && !state.videoPreview) return { type: "check_render_status" };
@@ -206,23 +274,24 @@ function renderActions(state) {
   `;
 }
 
-function renderIntro() {
+function renderIntro(state = {}) {
+  const draft = draftInputState(state);
   return `
     <div class="intro-grid">
-      <article class="choice-card selected">
+      <article class="choice-card ${draft.mode === "product" ? "selected" : ""}" data-start-mode="product">
         <div class="label">Product page</div>
         <h3>I have a product in mind</h3>
         <div class="input-block">
-          <div class="label">Product URL</div>
-          <strong>Paste a product link</strong>
+          <label class="field-label" for="product-url-input">Product URL</label>
+          <input id="product-url-input" class="url-input" data-draft-url="product" type="url" inputmode="url" placeholder="https://example.com/product" value="${escapeHtml(draft.productUrl)}">
         </div>
       </article>
-      <article class="choice-card">
+      <article class="choice-card ${draft.mode === "store" ? "selected" : ""}" data-start-mode="store">
         <div class="label">Store</div>
         <h3>Help me choose a product</h3>
         <div class="input-block">
-          <div class="label">Store URL</div>
-          <strong>Paste your store link</strong>
+          <label class="field-label" for="store-url-input">Store URL</label>
+          <input id="store-url-input" class="url-input" data-draft-url="store" type="url" inputmode="url" placeholder="https://example.com" value="${escapeHtml(draft.storeUrl)}">
         </div>
       </article>
     </div>
@@ -287,34 +356,30 @@ function renderStoreDiscovery(state) {
 
 function renderProductConfirm(state) {
   const product = state.product;
-  if (!product) return renderIntro();
+  if (!product) return renderIntro(state);
 
   return `
     <div class="summary-card">
       <div class="summary-row">
         <div>
-          <div class="label">Product</div>
-          <div class="value">${escapeHtml(product.title || "Promoted product")}</div>
+          <label class="field-label" for="product-title-field">Product</label>
+          <input id="product-title-field" class="text-input product-edit-input" data-product-field="title" type="text" value="${escapeHtml(product.title || "Promoted product")}">
         </div>
         ${product.imageCount !== undefined ? `<span class="pill">${escapeHtml(String(product.imageCount))} images found</span>` : ""}
       </div>
       <div class="summary-row">
         <div>
-          <div class="label">Landing page</div>
-          <div class="value link-value">${escapeHtml(compactUrl(product.destination))}</div>
+          <label class="field-label" for="product-url-field">Landing page</label>
+          <input id="product-url-field" class="text-input product-edit-input" data-product-field="destination" type="url" inputmode="url" value="${escapeHtml(product.destination || "")}">
         </div>
         <span class="meta">${escapeHtml(product.platform || "From product URL")}</span>
       </div>
-      ${
-        product.price && !String(product.price).toLowerCase().includes("pending")
-          ? `<div class="summary-row">
-              <div>
-                <div class="label">Price</div>
-                <div class="value">${escapeHtml(product.price)}</div>
-              </div>
-            </div>`
-          : ""
-      }
+      <div class="summary-row">
+        <div>
+          <label class="field-label" for="product-price-field">Price</label>
+          <input id="product-price-field" class="text-input product-edit-input" data-product-field="price" type="text" placeholder="Optional" value="${escapeHtml(product.price && !String(product.price).toLowerCase().includes("pending") ? product.price : "")}">
+        </div>
+      </div>
     </div>
   `;
 }
@@ -347,23 +412,31 @@ function renderStoryboard(state) {
               <div class="storyboard-top">
                 <div>
                   <div class="label">Option ${index === 0 ? "A" : "B"}</div>
-                  <div class="storyboard-title">${escapeHtml(angle.title)}</div>
+                  <input class="text-input storyboard-edit-input" data-storyboard-index="${index}" data-storyboard-field="title" type="text" value="${escapeHtml(angle.title)}" aria-label="Storyboard option ${index === 0 ? "A" : "B"} title">
                 </div>
                 ${index === 0 ? `<span class="pill">Recommended</span>` : `<span class="pill">Alternate</span>`}
               </div>
               <div class="hook-box">
-                <div class="label">Hook</div>
-                <div class="value">${escapeHtml(angle.hook)}</div>
+                <label class="field-label">Hook</label>
+                <textarea class="textarea-input storyboard-edit-input" data-storyboard-index="${index}" data-storyboard-field="hook" rows="3">${escapeHtml(angle.hook)}</textarea>
               </div>
               <ul class="beat-list">
                 <li><span class="time">0-2s</span><span>Open with the hook and product context.</span></li>
                 <li><span class="time">2-7s</span><span>Show the product benefit with clear visuals.</span></li>
                 <li><span class="time">7-12s</span><span>End with CTA and landing-page reason.</span></li>
               </ul>
-              <div class="meta">Best for: ${escapeHtml(angle.targetObjective || "website visits")} · Format: ${escapeHtml(angle.format || "vertical video")}</div>
+              <div class="inline-fields">
+                <label>
+                  <span class="field-label">CTA / goal</span>
+                  <input class="text-input compact-input storyboard-edit-input" data-storyboard-index="${index}" data-storyboard-field="targetObjective" type="text" value="${escapeHtml(angle.targetObjective || "Website visits")}">
+                </label>
+                <label>
+                  <span class="field-label">Format</span>
+                  <input class="text-input compact-input storyboard-edit-input" data-storyboard-index="${index}" data-storyboard-field="format" type="text" value="${escapeHtml(angle.format || "vertical video")}">
+                </label>
+              </div>
               <div class="story-actions">
                 <button class="action-chip" type="button" data-action="${encodeAction({ type: "regenerate_storyboard", feedback: `Rewrite option ${index === 0 ? "A" : "B"} with a stronger first-two-second hook.` })}">Edit hook</button>
-                <button class="action-chip" type="button" data-action="${encodeAction({ type: "edit_storyboard" })}">Swap image</button>
                 <button class="action-chip" type="button" data-action="${encodeAction({ type: "regenerate_storyboard", feedback: `Change option ${index === 0 ? "A" : "B"} to use a clearer shop-now CTA.` })}">Change CTA</button>
               </div>
             </article>
@@ -703,14 +776,35 @@ function campaignIdFromState(state) {
 
 async function handleAction(action, state) {
   if (!action?.type) return;
+  const liveState = hydrateEditableState(state || currentState || {});
 
-  if (action.type === "ask_for_link") {
-    await sendChatPrompt("Please ask me for either a product URL or a store URL before continuing.");
+  if (action.type === "confirm_start_input") {
+    const draft = liveState.uiDraft || draftInputState(liveState);
+    const productUrlIsValid = isValidUrl(draft.productUrl);
+    const storeUrlIsValid = isValidUrl(draft.storeUrl);
+    const mode = draft.mode === "store" || (!productUrlIsValid && storeUrlIsValid) ? "store" : "product";
+    const selectedUrl = mode === "store" ? draft.storeUrl : draft.productUrl;
+    if (!isValidUrl(selectedUrl)) {
+      showLocalMessage("Paste a valid product URL or store URL before confirming.");
+      return;
+    }
+
+    if (mode === "store") {
+      await callToolAndRender("scan_store_products", {
+        storeUrl: selectedUrl,
+        resultMode: "results"
+      });
+      return;
+    }
+
+    await callToolAndRender("scrape_product", {
+      url: selectedUrl
+    });
     return;
   }
 
   if (action.type === "use_store_candidate") {
-    const candidate = getSelectedCandidate(state);
+    const candidate = getSelectedCandidate(liveState);
     if (!candidate) {
       showLocalMessage("Select a product first.");
       return;
@@ -726,14 +820,14 @@ async function handleAction(action, state) {
 
   if (action.type === "rescan_store") {
     await callToolAndRender("scan_store_products", {
-      storeUrl: state.storeDiscovery?.storeUrl || "https://yourstore.com",
+      storeUrl: liveState.storeDiscovery?.storeUrl || liveState.uiDraft?.storeUrl || "https://yourstore.com",
       resultMode: "results"
     });
     return;
   }
 
   if (action.type === "confirm_product" || action.type === "regenerate_storyboard") {
-    const args = productActionArgs(state, action.feedback || (action.type === "regenerate_storyboard" ? "Generate two fresh storyboard options." : undefined));
+    const args = productActionArgs(liveState, action.feedback || (action.type === "regenerate_storyboard" ? "Generate two fresh storyboard options." : undefined));
     if (!args) {
       await sendChatPrompt("Please confirm or edit the product title and product URL before making storyboards.");
       return;
@@ -743,16 +837,21 @@ async function handleAction(action, state) {
   }
 
   if (action.type === "approve_storyboard") {
+    const selectedIndex = getSelectedStoryboardIndex(liveState);
+    const selectedAngle = liveState.angles?.[selectedIndex] || {};
     await callToolAndRender("approve_ad_inputs", {
-      approvedStoryboardVersion: `v${getSelectedStoryboardIndex(state) + 1}`,
-      approvedImageCount: Math.max(1, Math.min(3, Number(state.product?.imageCount || 1))),
-      approvalNotes: `User selected storyboard option ${getSelectedStoryboardIndex(state) + 1}.`
+      approvedStoryboardVersion: `v${selectedIndex + 1}`,
+      approvedImageCount: Math.max(1, Math.min(3, Number(liveState.product?.imageCount || 1))),
+      approvedStoryboardTitle: selectedAngle.title,
+      approvedStoryboardHook: selectedAngle.hook,
+      approvedStoryboardObjective: selectedAngle.targetObjective,
+      approvalNotes: `User selected storyboard option ${selectedIndex + 1}: ${selectedAngle.title || "Untitled storyboard"}. Hook: ${selectedAngle.hook || "Not provided"}.`
     });
     return;
   }
 
   if (action.type === "check_render_status") {
-    const jobId = state.renderJob?.jobId || state.videoPreview?.jobId;
+    const jobId = liveState.renderJob?.jobId || liveState.videoPreview?.jobId;
     if (!jobId) {
       showLocalMessage("Render job is missing. Approve a storyboard again to start video generation.");
       return;
@@ -762,7 +861,7 @@ async function handleAction(action, state) {
   }
 
   if (action.type === "create_another_video") {
-    const approvalId = state.renderJob?.approvalId;
+    const approvalId = liveState.renderJob?.approvalId;
     if (!approvalId) {
       await sendChatPrompt("Create another video version from the approved storyboard.");
       return;
@@ -785,7 +884,7 @@ async function handleAction(action, state) {
   }
 
   if (action.type === "approve_launch_settings") {
-    const campaignId = campaignIdFromState(state);
+    const campaignId = campaignIdFromState(liveState);
     if (!campaignId) {
       await sendChatPrompt("Create a Smart+ draft before approving launch settings.");
       return;
@@ -823,6 +922,54 @@ function bindInteractions(target, state) {
   target.querySelectorAll("[data-action]").forEach((element) => {
     element.addEventListener("click", () => {
       handleAction(decodeAction(element.getAttribute("data-action")), currentState || state);
+    });
+  });
+
+  target.querySelectorAll("[data-start-mode]").forEach((element) => {
+    element.addEventListener("click", (event) => {
+      const mode = element.getAttribute("data-start-mode") === "store" ? "store" : "product";
+      target.querySelectorAll("[data-start-mode]").forEach((card) => {
+        card.classList.toggle("selected", card.getAttribute("data-start-mode") === mode);
+      });
+      const nextState = {
+        ...(currentState || state || {}),
+        uiDraft: {
+          ...readDraftFromDom(currentState || state || {}),
+          mode
+        }
+      };
+      if (event.target?.matches?.("[data-draft-url]")) {
+        persistStateWithoutRender(nextState);
+        return;
+      }
+      renderState(nextState);
+    });
+  });
+
+  target.querySelectorAll("[data-draft-url]").forEach((input) => {
+    input.addEventListener("input", () => {
+      persistStateWithoutRender({
+        ...(currentState || state || {}),
+        uiDraft: readDraftFromDom(currentState || state || {})
+      });
+    });
+  });
+
+  target.querySelectorAll("[data-product-field]").forEach((input) => {
+    input.addEventListener("input", () => {
+      persistStateWithoutRender({
+        ...(currentState || state || {}),
+        product: readProductFromDom(currentState || state || {})
+      });
+    });
+  });
+
+  target.querySelectorAll("[data-storyboard-field]").forEach((input) => {
+    input.addEventListener("input", () => {
+      persistStateWithoutRender({
+        ...(currentState || state || {}),
+        angles: readStoryboardFromDom(currentState || state || {})
+      });
     });
   });
 

@@ -81,7 +81,10 @@ export const approveAdInputsInput = {
   ...userActionGateInput,
   approvalNotes: z.string().optional(),
   approvedStoryboardVersion: z.string(),
-  approvedImageCount: z.number().min(1).max(3)
+  approvedImageCount: z.number().min(1).max(3),
+  approvedStoryboardTitle: z.string().optional(),
+  approvedStoryboardHook: z.string().optional(),
+  approvedStoryboardObjective: z.string().optional()
 };
 
 export const approveAdInputsOutput = {
