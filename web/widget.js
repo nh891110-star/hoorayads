@@ -1,86 +1,401 @@
 const root = document.getElementById("app-root") || document.getElementById("app");
-const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.1.0" };
+const APP_INFO = { name: "Hooray TikTok Ads Workspace", version: "0.2.0" };
 const PROTOCOL_VERSION = "2025-11-21";
 
 let initializeRequestId = null;
 let initializedWithHost = false;
 
 function escapeHtml(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 }
 
-function renderTimeline(steps = []) {
-  if (!steps.length) return "";
+function sentenceCase(value) {
+  return String(value || "")
+    .replaceAll("_", " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
+function compactUrl(value) {
+  try {
+    const url = new URL(value);
+    return `${url.hostname.replace(/^www\./, "")}${url.pathname}`.replace(/\/$/, "");
+  } catch {
+    return value || "";
+  }
+}
+
+function getFlowState(state = {}) {
+  const screen = state.screen || "product";
+  const isAuth = state.auth?.status === "needs_authorization";
+  const accountSkipped = Boolean(state.accountSetup?.skipped);
+
+  let active = 0;
+  if (["creative"].includes(screen)) active = 1;
+  if (["render"].includes(screen)) active = 2;
+  if (["onboarding", "accounts"].includes(screen) || isAuth) active = 3;
+  if (["draft", "publish", "reporting"].includes(screen)) active = 4;
+
+  const productCaption = state.storeDiscovery?.status === "loading" ? "Find products" : state.storeDiscovery?.status === "ready" ? "Pick product" : "Confirm item";
+
+  const base = [
+    { key: "Product", caption: productCaption },
+    { key: "Storyboard", caption: "Pick direction" },
+    { key: "Preview", caption: "See video" },
+    { key: "Account setup", caption: accountSkipped ? "Already ready" : "Connect accounts" },
+    { key: "Review", caption: "Approve spend" }
+  ];
+
+  return base.map((step, index) => ({
+    ...step,
+    index,
+    status: index < active ? "done" : index === active ? "active" : "todo",
+    skipped: index === 3 && accountSkipped
+  }));
+}
+
+function renderRail(state) {
+  const steps = getFlowState(state);
   return `
-    <div class="timeline">
-      ${steps
-        .map(
-          (step) => `
-            <div class="timeline-step">
-              <div class="timeline-badge ${escapeHtml(step.status)}">${escapeHtml(step.status)}</div>
-              <div class="timeline-copy">
-                <strong>${escapeHtml(step.label)}</strong>
-                <span>${escapeHtml(step.owner)}</span>
+    <aside class="rail" aria-label="Launch path">
+      <div class="rail-title">Launch path</div>
+      <div class="steps">
+        ${steps
+          .map(
+            (step) => `
+              <div class="step ${escapeHtml(step.status)} ${step.skipped ? "skipped" : ""}">
+                <div class="step-index">${step.status === "done" || step.skipped ? "✓" : step.index + 1}</div>
+                <div>
+                  <strong>${escapeHtml(step.key)}</strong>
+                  <span>${escapeHtml(step.caption)}</span>
+                </div>
               </div>
-            </div>
+            `
+          )
+          .join("")}
+      </div>
+    </aside>
+  `;
+}
+
+function getCrumb(state) {
+  const active = getFlowState(state).find((step) => step.status === "active") || getFlowState(state)[0];
+  return `Step ${active.index + 1} of 5 · ${active.key}`;
+}
+
+function getNextNote(state) {
+  if (state.storeDiscovery?.status === "loading") return "Next: choose one product to promote.";
+  if (state.storeDiscovery?.status === "ready") return "Next: confirm the selected product page and images.";
+  if (state.screen === "product" && !state.product) return "";
+  if (state.screen === "product") return "Next: choose the story before account setup.";
+  if (state.screen === "creative") return "Next: render a short preview from the selected story.";
+  if (state.screen === "render" && !state.videoPreview) return "Next: check render status when the preview is ready.";
+  if (state.screen === "render") return state.accountSetup?.skipped ? "Next: review campaign settings." : "Next: complete account setup before final review.";
+  if (["onboarding", "accounts"].includes(state.screen || "") || state.auth?.status === "needs_authorization") return "Next: continue to review after accounts are ready.";
+  if (["draft", "publish"].includes(state.screen || "")) return "Nothing goes live without this approval.";
+  if (state.screen === "reporting") return "Reporting unlocks after publish.";
+  return "";
+}
+
+function renderActions(state) {
+  if (state.auth?.status === "needs_authorization" && state.auth.authorizationUrl) {
+    return `
+      <div class="panel-actions">
+        <span class="next-note">${escapeHtml(getNextNote(state))}</span>
+      </div>
+    `;
+  }
+
+  const primary = state.primaryCta || "Continue";
+  const secondary = state.secondaryCta || "";
+  return `
+    <div class="panel-actions">
+      <span class="next-note">${escapeHtml(getNextNote(state))}</span>
+      <div class="button-row">
+        ${secondary ? `<button class="btn secondary" type="button">${escapeHtml(secondary)}</button>` : ""}
+        <button class="btn primary" type="button">${escapeHtml(primary)}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderIntro() {
+  return `
+    <div class="intro-grid">
+      <article class="choice-card selected">
+        <div class="label">Product page</div>
+        <h3>I have a product in mind</h3>
+        <div class="input-block">
+          <div class="label">Product URL</div>
+          <strong>Paste a product link</strong>
+        </div>
+      </article>
+      <article class="choice-card">
+        <div class="label">Store</div>
+        <h3>Help me choose a product</h3>
+        <div class="input-block">
+          <div class="label">Store URL</div>
+          <strong>Paste your store link</strong>
+        </div>
+      </article>
+    </div>
+  `;
+}
+
+function renderStoreDiscovery(state) {
+  const discovery = state.storeDiscovery;
+  if (!discovery) return "";
+
+  if (discovery.status === "loading") {
+    return `
+      <div class="store-loading-card">
+        <div class="spinner" aria-hidden="true"></div>
+        <div>
+          <div class="label">Store URL</div>
+          <div class="value">${escapeHtml(compactUrl(discovery.storeUrl))}</div>
+          <div class="scan-list">
+            <div class="scan-item"><span class="scan-dot"></span><span>Looking for featured, bestseller, and new arrival products.</span></div>
+            <div class="scan-item"><span class="scan-dot"></span><span>Checking visual fit, offer clarity, and short-video potential.</span></div>
+            <div class="scan-item"><span class="scan-dot"></span><span>Filtering out products that need risky claims or unclear landing pages.</span></div>
+          </div>
+          <div class="scan-preview-grid">
+            <div class="scan-preview-card"></div>
+            <div class="scan-preview-card"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="product-pick-grid">
+      ${(discovery.candidates || [])
+        .map(
+          (candidate) => `
+            <article class="product-card ${candidate.id === discovery.selectedCandidateId ? "selected" : ""}">
+              <div class="product-thumb" aria-hidden="true"></div>
+              <div class="storyboard-top">
+                <div>
+                  <div class="label">${escapeHtml(candidate.recommendation)}</div>
+                  <div class="storyboard-title">${escapeHtml(candidate.title)}</div>
+                  <div class="meta">${escapeHtml(compactUrl(candidate.productUrl))}</div>
+                </div>
+                <span class="pill">${escapeHtml(candidate.confidence)}</span>
+              </div>
+              <ul class="reason-list">
+                ${candidate.reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("")}
+              </ul>
+              <div class="hook-box">
+                <div class="label">Best TikTok angle</div>
+                <div class="value">${escapeHtml(candidate.angle)}</div>
+              </div>
+            </article>
           `
         )
         .join("")}
+      <div class="chat-edit"><strong>Note:</strong> These are recommendations from your store page, not sales predictions.</div>
     </div>
   `;
 }
 
-function renderHighlights(state) {
-  if (!state.highlights?.length) return "";
+function renderProductConfirm(state) {
+  const product = state.product;
+  if (!product) return renderIntro();
 
   return `
-    <div class="highlight-grid">
-      ${state.highlights
-        .map(
-          (item) => `
-            <div class="highlight-card ${escapeHtml(item.tone || "default")}">
-              <span>${escapeHtml(item.label)}</span>
-              <strong>${escapeHtml(item.value)}</strong>
-            </div>
-          `
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function renderReadiness(state) {
-  if (!state.readiness) return "";
-
-  return `
-    <div class="meta-list">
-      <div class="meta-item"><strong>Account</strong><span>${escapeHtml(state.readiness.accountConnection)}</span></div>
-      <div class="meta-item"><strong>Identity</strong><span>${escapeHtml(state.readiness.identity)}</span></div>
-      <div class="meta-item"><strong>Payment</strong><span>${escapeHtml(state.readiness.payment)}</span></div>
-      <div class="meta-item"><strong>Video</strong><span>${escapeHtml(state.readiness.video)}</span></div>
-      <div class="meta-item"><strong>Recommended objective</strong><span>${escapeHtml(state.readiness.recommendedObjective)}</span></div>
-    </div>
-  `;
-}
-
-function renderChecklist(state) {
-  if (!state.checklist?.length) return "";
-
-  return `
-    <div class="checklist">
-      ${state.checklist
-        .map(
-          (item) => `
-            <article class="checklist-item ${escapeHtml(item.status)}">
-              <div class="checklist-pill">${escapeHtml(item.status)}</div>
+    <div class="summary-card">
+      <div class="summary-row">
+        <div>
+          <div class="label">Product</div>
+          <div class="value">${escapeHtml(product.title || "Promoted product")}</div>
+        </div>
+        ${product.imageCount !== undefined ? `<span class="pill">${escapeHtml(String(product.imageCount))} images found</span>` : ""}
+      </div>
+      <div class="summary-row">
+        <div>
+          <div class="label">Landing page</div>
+          <div class="value link-value">${escapeHtml(compactUrl(product.destination))}</div>
+        </div>
+        <span class="meta">${escapeHtml(product.platform || "From product URL")}</span>
+      </div>
+      ${
+        product.price && !String(product.price).toLowerCase().includes("pending")
+          ? `<div class="summary-row">
               <div>
-                <strong>${escapeHtml(item.label)}</strong>
-                <p>${escapeHtml(item.detail)}</p>
+                <div class="label">Price</div>
+                <div class="value">${escapeHtml(product.price)}</div>
+              </div>
+            </div>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderStoryboard(state) {
+  const angles = state.angles?.length
+    ? state.angles.slice(0, 2)
+    : [
+        {
+          title: state.product?.creativeBriefTitle || "Product demo",
+          hook: state.product?.creativeBriefHook || "Show the product benefit quickly, then move into the CTA.",
+          format: state.product?.creativeBriefFormat || "2-scene vertical ad",
+          targetObjective: state.product?.creativeBriefObjective || "Website visits"
+        },
+        {
+          title: "Creator testimonial",
+          hook: "Open with a believable reason to care, then show the product in use.",
+          format: "Creator-style short",
+          targetObjective: "Landing page views"
+        }
+      ];
+
+  return `
+    <div class="storyboard-grid">
+      ${angles
+        .map(
+          (angle, index) => `
+            <article class="storyboard-card ${index === 0 ? "selected" : ""}">
+              <div class="storyboard-top">
+                <div>
+                  <div class="label">Option ${index === 0 ? "A" : "B"}</div>
+                  <div class="storyboard-title">${escapeHtml(angle.title)}</div>
+                </div>
+                ${index === 0 ? `<span class="pill">Recommended</span>` : `<span class="pill">Alternate</span>`}
+              </div>
+              <div class="hook-box">
+                <div class="label">Hook</div>
+                <div class="value">${escapeHtml(angle.hook)}</div>
+              </div>
+              <ul class="beat-list">
+                <li><span class="time">0-2s</span><span>Open with the hook and product context.</span></li>
+                <li><span class="time">2-7s</span><span>Show the product benefit with clear visuals.</span></li>
+                <li><span class="time">7-12s</span><span>End with CTA and landing-page reason.</span></li>
+              </ul>
+              <div class="meta">Best for: ${escapeHtml(angle.targetObjective || "website visits")} · Format: ${escapeHtml(angle.format || "vertical video")}</div>
+              <div class="story-actions">
+                <button class="action-chip" type="button">Edit hook</button>
+                <button class="action-chip" type="button">Swap image</button>
+                <button class="action-chip" type="button">Change CTA</button>
+              </div>
+            </article>
+          `
+        )
+        .join("")}
+    </div>
+    <div class="chat-edit"><strong>Chat edit also works:</strong> “Make option B more premium,” “Use a stronger hook,” or “Replace scene 2 with the black bag image.”</div>
+  `;
+}
+
+function renderRenderPending(state) {
+  return `
+    <div class="store-loading-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>
+        <div class="label">Video render</div>
+        <div class="value">Rendering your preview...</div>
+        <p class="body-note">We keep the selected storyboard and product context attached to this job. Nothing has been submitted to TikTok Ads.</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderVideoPreview(state) {
+  const preview = state.videoPreview;
+  if (!preview?.previewUrl) return renderRenderPending(state);
+
+  return `
+    <div class="summary-card preview-row preview-large">
+      <div class="video-shell">
+        <video class="video-player" controls playsinline preload="metadata" poster="${escapeHtml(preview.thumbnailUrl || "")}">
+          <source src="${escapeHtml(preview.previewUrl)}" type="video/mp4">
+          Your browser does not support video preview playback.
+        </video>
+      </div>
+      <div class="inspector">
+        <div class="label">Creative inspector</div>
+        <div class="value">${escapeHtml(preview.durationSeconds || 12)}s vertical video · ${escapeHtml(state.product?.creativeBriefTitle || state.product?.title || "Generated preview")}</div>
+        <div class="inspector-list">
+          <div class="inspector-row"><span class="label">Hook</span><span>${escapeHtml(state.product?.creativeBriefHook || "Product benefit in the first seconds.")}</span></div>
+          <div class="inspector-row"><span class="label">CTA</span><span>${escapeHtml(state.product?.creativeBriefObjective || "Shop now")}</span></div>
+          <div class="inspector-row"><span class="label">Source</span><span>Product page images + approved storyboard</span></div>
+          <div class="inspector-row"><span class="label">Status</span><span>Draft only · not live · no campaign created</span></div>
+        </div>
+        <div class="asset-actions">
+          <button class="action-chip" type="button">Create another video</button>
+        </div>
+      </div>
+    </div>
+    <div class="chat-edit"><strong>Chat also works:</strong> “Create another version with a faster opening,” or “Make the video feel more premium.”</div>
+  `;
+}
+
+function accountRowsFromState(state) {
+  if (state.accountSetup?.requirements?.length) return state.accountSetup.requirements;
+
+  return [
+    { id: "tt4b", label: "TikTok for Business", status: state.auth?.status === "needs_authorization" ? "missing" : "ready" },
+    { id: "business_center", label: "Business Center", status: state.accounts?.length ? "ready" : "missing" },
+    { id: "advertiser_account", label: "Advertiser Account", status: state.accounts?.length ? "ready" : "missing" },
+    { id: "tiktok_account", label: "TikTok Account", status: state.identities?.length ? "ready" : "missing" }
+  ];
+}
+
+function renderAccountSetup(state) {
+  if (state.auth?.status === "needs_authorization" && state.auth.authorizationUrl) {
+    return `
+      <div class="auth-panel">
+        <div>
+          <div class="label">TikTok authorization</div>
+          <div class="value">Connect TikTok Ads before this app touches campaign setup.</div>
+          <p class="body-note">Open the authorization flow, finish approval, then return to this same ChatGPT session.</p>
+        </div>
+        <a class="btn primary auth-link" href="${escapeHtml(state.auth.authorizationUrl)}" target="_blank" rel="noreferrer">Authorize TikTok Ads</a>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="status-list">
+      ${accountRowsFromState(state)
+        .map(
+          (row) => `
+            <div class="status-row">
+              <div>
+                <div class="status-name">${escapeHtml(row.label)}</div>
+                <div class="status-detail">${escapeHtml(row.id === "tt4b" ? "TT4B business login for TikTok Ads" : row.id === "business_center" ? "Business Center manages assets and permissions" : row.id === "advertiser_account" ? "Ad account that owns campaign drafts" : "TikTok profile connected as the ad identity")}</div>
+              </div>
+              <span class="status-badge ${row.status === "missing" ? "warn" : ""}">${row.status === "ready" ? "Ready" : "Missing"}</span>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+    ${renderAdvertiserAccounts(state)}
+  `;
+}
+
+function renderAdvertiserAccounts(state) {
+  if (!state.accounts?.length) return "";
+
+  return `
+    <div class="account-list">
+      ${state.accounts
+        .slice(0, 3)
+        .map(
+          (account) => `
+            <article class="account-card">
+              <div class="storyboard-top">
+                <div>
+                  <div class="label">${escapeHtml(account.advertiserRole || "Advertiser")}</div>
+                  <div class="storyboard-title">${escapeHtml(account.advertiserName)}</div>
+                  <div class="meta">${escapeHtml(account.bcName)} · ${escapeHtml(account.country)} · ${escapeHtml(account.currency)}</div>
+                </div>
+                <span class="pill">${escapeHtml(account.status)}</span>
               </div>
             </article>
           `
@@ -90,399 +405,110 @@ function renderChecklist(state) {
   `;
 }
 
-function renderBlockers(state) {
-  if (!state.blockers?.length) return "";
-
-  return `
-    <div class="blockers">
-      ${state.blockers
-        .map(
-          (blocker) => `
-            <div class="blocker ${escapeHtml(blocker.severity)}">
-              <strong>${escapeHtml(blocker.title)}</strong>
-              <p>${escapeHtml(blocker.detail)}</p>
-            </div>
-          `
-        )
-        .join("")}
-    </div>
-  `;
+function readDraftField(state, label, fallback) {
+  const field = state.draft?.fields?.find((item) => item.label.toLowerCase() === label.toLowerCase());
+  return field?.value || fallback;
 }
 
-function renderOptionGroups(state) {
-  if (!state.optionGroups?.length) return "";
-
-  return state.optionGroups
-    .map(
-      (group) => `
-        <section class="panel" style="margin-top:20px;">
-          <div class="section-topline">
-            <h2>${escapeHtml(group.title)}</h2>
-            ${group.description ? `<p>${escapeHtml(group.description)}</p>` : ""}
-          </div>
-          <div class="option-grid">
-            ${group.options
-              .map(
-                (option) => `
-                  <article class="option-card ${escapeHtml(option.status)}">
-                    <small>${escapeHtml(option.kicker)}</small>
-                    <h3>${escapeHtml(option.title)}</h3>
-                    <p>${escapeHtml(option.description)}</p>
-                    <div class="meta-stack">
-                      ${option.meta.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}
-                    </div>
-                  </article>
-                `
-              )
-              .join("")}
-          </div>
-        </section>
-      `
-    )
-    .join("");
-}
-
-function renderCreativeCards(state) {
-  if (!state.angles?.length) return "";
+function renderReview(state) {
+  const budget = readDraftField(state, "Daily budget", "$50/day");
+  const country = readDraftField(state, "Country", "United States");
+  const goal = readDraftField(state, "Optimization goal", "Website visits");
+  const campaignType = state.draft?.objective || "Smart+ traffic";
 
   return `
-    <section class="panel" style="margin-top:20px;">
-      <h2>Creative directions</h2>
-      <div class="carousel">
-        ${state.angles
-          .map(
-            (angle) => `
-              <article class="card">
-                <small>${escapeHtml(angle.format)}</small>
-                <h3>${escapeHtml(angle.title)}</h3>
-                <p>${escapeHtml(angle.hook)}</p>
-                <p class="card-footer">${escapeHtml(angle.targetObjective)}</p>
-              </article>
-            `
-          )
-          .join("")}
-      </div>
-    </section>
-  `;
-}
-
-function renderCreativeAssets(state) {
-  if (!state.creativeAssets?.length) return "";
-
-  return `
-    <section class="panel" style="margin-top:20px;">
-      <h2>Creative asset paths</h2>
-      <div class="option-grid">
-        ${state.creativeAssets
-          .map(
-            (asset) => `
-              <article class="option-card ${escapeHtml(asset.status)}">
-                <small>${escapeHtml(asset.source)}</small>
-                <h3>${escapeHtml(asset.title)}</h3>
-                <p>${escapeHtml(asset.description)}</p>
-                <div class="meta-stack">
-                  ${asset.meta.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}
-                </div>
-              </article>
-            `
-          )
-          .join("")}
-      </div>
-    </section>
-  `;
-}
-
-function renderAccounts(state) {
-  if (!state.accounts?.length) return "";
-
-  return `
-    <section class="panel" style="margin-top:20px;">
-      <h2>Advertiser accounts</h2>
-      <div class="account-list">
-        ${state.accounts
-          .map(
-            (account) => `
-              <article class="account-card">
-                <div class="account-topline">
-                  <strong>${escapeHtml(account.advertiserName)}</strong>
-                  <span class="owner-pill">${escapeHtml(account.advertiserRole)}</span>
-                </div>
-                <div class="account-meta">
-                  <span>${escapeHtml(account.bcName)}</span>
-                  <span>${escapeHtml(account.country)} • ${escapeHtml(account.currency)}</span>
-                  <span>${escapeHtml(account.status)} • ${escapeHtml(String(account.identityCount))} identities</span>
-                </div>
-                <div class="account-id">Advertiser ID ${escapeHtml(account.advertiserId)}</div>
-              </article>
-            `
-          )
-          .join("")}
-      </div>
-    </section>
-  `;
-}
-
-function renderIdentities(state) {
-  if (!state.identities?.length) return "";
-
-  return `
-    <section class="panel" style="margin-top:20px;">
-      <h2>Connected identities</h2>
-      <div class="account-list">
-        ${state.identities
-          .map(
-            (identity) => `
-              <article class="account-card">
-                <div class="account-topline">
-                  <strong>${escapeHtml(identity.displayName)}</strong>
-                  <span class="owner-pill">${escapeHtml(identity.identityType)}</span>
-                </div>
-                <div class="account-meta">
-                  <span>@${escapeHtml(identity.username || "unknown")}</span>
-                  <span>${escapeHtml(identity.availableStatus)}</span>
-                </div>
-                <div class="account-id">Identity ID ${escapeHtml(identity.identityId)}</div>
-              </article>
-            `
-          )
-          .join("")}
-      </div>
-    </section>
-  `;
-}
-
-function renderDraft(state) {
-  if (!state.draft) return "";
-
-  return `
-    <section class="panel" style="margin-top:20px;">
-      <h2>${escapeHtml(state.draft.name)}</h2>
-      <div class="meta-list">
-        ${state.draft.fields
-          .map(
-            (field) => `
-              <div class="meta-item">
-                <strong>${escapeHtml(field.label)}</strong>
-                <span>${escapeHtml(field.value)}${field.editable ? " • editable" : ""}</span>
-              </div>
-            `
-          )
-          .join("")}
-      </div>
-      <div class="warning-wrap">
-        <strong>Launch warnings</strong>
-        <ul class="warning-list">
-          ${state.draft.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}
-        </ul>
-      </div>
-    </section>
-  `;
-}
-
-function renderPublish(state) {
-  if (!state.publish) return "";
-
-  return `
-    <div class="publish-banner">
+    <div class="summary-card preview-row">
+      <div class="phone-thumb" aria-hidden="true"></div>
       <div>
-        <div class="publish-state">${escapeHtml(state.publish.state)}</div>
-        <h3>Campaign ${escapeHtml(state.publish.campaignId)}</h3>
-        <p>${escapeHtml(state.publish.nextCheckIn)}</p>
+        <div class="label">Preview ready</div>
+        <div class="value">${escapeHtml(state.product?.creativeBriefTitle || "12s vertical video")} · Smart+ draft attached</div>
+        <p class="meta">Weekly report: spend, clicks, CPC, conversions, creative fatigue.</p>
+        <div class="asset-actions">
+          <button class="action-chip" type="button">Edit video</button>
+          <button class="action-chip" type="button">Change budget</button>
+          <button class="action-chip" type="button">Edit report</button>
+        </div>
       </div>
     </div>
+    <div class="review-grid">
+      <div class="mini-grid-card"><div class="label">Campaign type</div><div class="value">${escapeHtml(campaignType)}</div></div>
+      <div class="mini-grid-card"><div class="label">Goal</div><div class="value">${escapeHtml(goal)}</div></div>
+      <div class="mini-grid-card"><div class="label">Market</div><div class="value">${escapeHtml(country)}</div></div>
+      <div class="mini-grid-card"><div class="label">Budget</div><div class="value">${escapeHtml(budget)}</div></div>
+    </div>
+    ${
+      state.draft?.warnings?.length
+        ? `<div class="chat-edit"><strong>Before publish:</strong> ${state.draft.warnings.map(escapeHtml).join(" ")}</div>`
+        : `<div class="chat-edit"><strong>Chat edit also works:</strong> “Lower budget to $30/day,” “Pause reporting for now,” or “Make the video more luxury.”</div>`
+    }
   `;
 }
 
-function renderReportPlan(state) {
-  if (!state.reportPlan) return "";
-
+function renderReporting(state) {
+  const metrics = state.reportPlan?.metrics || ["spend", "clicks", "CTR", "conversions"];
   return `
-    <section class="panel" style="margin-top:20px;">
-      <h2>Reporting plan</h2>
-      <div class="meta-list">
-        <div class="meta-item"><strong>Cadence</strong><span>${escapeHtml(state.reportPlan.cadence)}</span></div>
-        <div class="meta-item"><strong>Delivery</strong><span>${escapeHtml(state.reportPlan.delivery)}</span></div>
-        <div class="meta-item"><strong>Next run</strong><span>${escapeHtml(state.reportPlan.nextRun)}</span></div>
-        <div class="meta-item"><strong>Focus</strong><span>${escapeHtml(state.reportPlan.focus)}</span></div>
-      </div>
-      <div class="warning-wrap">
-        <strong>Metrics to emphasize</strong>
-        <ul class="warning-list">
-          ${state.reportPlan.metrics.map((metric) => `<li>${escapeHtml(metric)}</li>`).join("")}
-        </ul>
-      </div>
-      <div class="warning-wrap">
-        <strong>Setup notes</strong>
-        <ul class="warning-list">
-          ${state.reportPlan.notes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}
-        </ul>
-      </div>
-    </section>
-  `;
-}
-
-function renderCapabilityNotes(state) {
-  if (!state.capabilityNotes?.length) return "";
-
-  return `
-    <section class="panel" style="margin-top:20px;">
-      <h2>Capability notes</h2>
-      <div class="note-list">
-        ${state.capabilityNotes
-          .map(
-            (note) => `
-              <article class="note-card ${escapeHtml(note.status)}">
-                <div class="note-status">${escapeHtml(note.status)}</div>
-                <strong>${escapeHtml(note.title)}</strong>
-                <p>${escapeHtml(note.detail)}</p>
-              </article>
-            `
-          )
-          .join("")}
-      </div>
-    </section>
-  `;
-}
-
-function renderAuth(state) {
-  if (state.auth?.status !== "needs_authorization" || !state.auth.authorizationUrl) return "";
-
-  return `
-    <section class="panel" style="margin-top:20px;">
-      <h2>TikTok authorization</h2>
-      <div class="auth-panel">
+    <div class="summary-card">
+      <div class="summary-row">
         <div>
-          <strong>TikTok Ads authorization is required</strong>
-          <p>Open the TikTok authorization flow, finish approval, then return to the same ChatGPT app session and continue.</p>
+          <div class="label">Reporting</div>
+          <div class="value">${escapeHtml(state.reportPlan?.cadence || "Weekly")} ${escapeHtml(state.reportPlan?.delivery || "ChatGPT digest")}</div>
         </div>
-        <a class="auth-link" href="${escapeHtml(state.auth.authorizationUrl)}" target="_blank" rel="noreferrer">Open TikTok authorization</a>
+        <span class="pill">${escapeHtml(state.reportPlan?.focus || "conversion")}</span>
       </div>
-    </section>
-  `;
-}
-
-function renderProductMeta(state) {
-  if (!state.product) return "";
-
-  return `
-    <div class="stats">
-      <div class="stat">
-        <span class="stat-label">Platform</span>
-        <span class="stat-value">${escapeHtml(state.product.platform)}</span>
+      <div class="summary-row">
+        <div>
+          <div class="label">Metrics</div>
+          <div class="value">${metrics.map(escapeHtml).join(" · ")}</div>
+        </div>
       </div>
-      <div class="stat">
-        <span class="stat-label">Product</span>
-        <span class="stat-value">${escapeHtml(state.product.title)}</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Destination</span>
-        <span class="stat-value stat-link">${escapeHtml(state.product.destination)}</span>
-      </div>
-      <div class="stat">
-        <span class="stat-label">Price</span>
-        <span class="stat-value">${escapeHtml(state.product.price)}</span>
-      </div>
-      ${
-        state.product.imageCount !== undefined
-          ? `<div class="stat">
-              <span class="stat-label">Images</span>
-              <span class="stat-value">${escapeHtml(String(state.product.imageCount))}</span>
-            </div>`
-          : ""
-      }
-      ${
-        state.product.creativeBriefTitle
-          ? `<div class="stat">
-              <span class="stat-label">Creative direction</span>
-              <span class="stat-value">${escapeHtml(state.product.creativeBriefTitle)}</span>
-            </div>`
-          : ""
-      }
     </div>
   `;
 }
 
-function renderVideoPreview(state) {
-  const preview = state.videoPreview;
-  if (!preview?.previewUrl) return "";
-
-  return `
-    <section class="panel video-preview-panel" style="margin-top:20px;">
-      <div class="section-topline">
-        <h2>Video preview</h2>
-        <p>Watch this before campaign setup. The app should only continue after the advertiser approves the preview.</p>
-      </div>
-      <div class="video-preview-grid">
-        <div class="video-frame">
-          <video class="video-player" controls playsinline preload="metadata" poster="${escapeHtml(preview.thumbnailUrl || "")}">
-            <source src="${escapeHtml(preview.previewUrl)}" type="video/mp4" />
-            Your browser does not support video preview playback.
-          </video>
-        </div>
-        <div class="video-inspector">
-          <div class="preview-pill">${escapeHtml(preview.status || "preview_ready")}</div>
-          <h3>${escapeHtml(state.product?.title || "Generated TikTok preview")}</h3>
-          <p>This render is ready for creative review. It is not a publish action and it has not created a TikTok ad yet.</p>
-          <div class="meta-list compact">
-            <div class="meta-item"><strong>Duration</strong><span>${escapeHtml(String(preview.durationSeconds || ""))}s</span></div>
-            <div class="meta-item"><strong>Format</strong><span>${escapeHtml(String(preview.width || 540))} x ${escapeHtml(String(preview.height || 960))}</span></div>
-            <div class="meta-item"><strong>Preview ID</strong><span>${escapeHtml(preview.videoId || "pending")}</span></div>
-            <div class="meta-item"><strong>Asset ID</strong><span>${escapeHtml(preview.creativeAssetId || "pending")}</span></div>
-            <div class="meta-item"><strong>TikTok video ID</strong><span>${escapeHtml(preview.tiktokVideoId || "Upload needed before publish")}</span></div>
-          </div>
-          <a class="preview-link" href="${escapeHtml(preview.previewUrl)}" target="_blank" rel="noreferrer">Open MP4 preview</a>
-        </div>
-      </div>
-    </section>
-  `;
+function renderBody(state) {
+  if (!state || !state.headline) return renderIntro();
+  if (state.storeDiscovery) return renderStoreDiscovery(state);
+  if (state.screen === "creative") return renderStoryboard(state);
+  if (state.screen === "render") return renderVideoPreview(state);
+  if (["onboarding", "accounts"].includes(state.screen) || state.auth?.status === "needs_authorization") return renderAccountSetup(state);
+  if (["draft", "publish"].includes(state.screen)) return renderReview(state);
+  if (state.screen === "reporting") return renderReporting(state);
+  return renderProductConfirm(state);
 }
 
-export function renderStateToElement(target, state) {
-  if (!target || !state) return;
+function renderStateToElement(target, state) {
+  if (!target) return;
+
+  const safeState =
+    state || {
+      screen: "product",
+      phaseLabel: "Start here",
+      headline: "What do you want to promote?",
+      summary: "",
+      primaryCta: "Confirm"
+    };
 
   target.innerHTML = `
-    <main class="shell">
-      <section class="hero">
-        <div class="hero-card hero-primary">
-          ${state.phaseLabel ? `<div class="eyebrow">${escapeHtml(state.phaseLabel)}</div>` : ""}
-          <h1>${escapeHtml(state.headline)}</h1>
-          <p>${escapeHtml(state.summary)}</p>
-          <div class="cta-row">
-            <button class="btn btn-primary">${escapeHtml(state.primaryCta)}</button>
-            ${state.secondaryCta ? `<button class="btn btn-secondary">${escapeHtml(state.secondaryCta)}</button>` : ""}
-          </div>
-          ${renderHighlights(state)}
+    <main class="app-shell">
+      <section class="browser">
+        <div class="topbar">
+          <div class="brand"><span class="brand-mark"></span>Hooray TikTok Ads</div>
         </div>
-        <div class="hero-card hero-secondary">
-          <div class="hero-side-head">Guided launch map</div>
-          ${renderTimeline(state.timeline)}
-        </div>
-      </section>
-
-      <section class="grid">
-        <div class="panel">
-          <h2>What happens in this step</h2>
-          ${renderChecklist(state)}
-        </div>
-        <div class="panel">
-          <h2>Launch readiness</h2>
-          ${renderReadiness(state)}
-          ${renderPublish(state)}
+        <div class="workspace">
+          <article class="panel">
+            <div class="panel-head">
+              <div class="crumb"><span class="crumb-dot"></span>${escapeHtml(getCrumb(safeState))}</div>
+              <h1>${escapeHtml(safeState.headline || "What do you want to promote?")}</h1>
+              ${safeState.summary ? `<p>${escapeHtml(safeState.summary)}</p>` : ""}
+            </div>
+            <div class="panel-body">
+              ${renderBody(safeState)}
+            </div>
+            ${renderActions(safeState)}
+          </article>
+          ${renderRail(safeState)}
         </div>
       </section>
-
-      ${renderAuth(state)}
-      ${renderVideoPreview(state)}
-      ${state.product ? `<section class="panel" style="margin-top:20px;"><h2>Promoted product</h2>${renderProductMeta(state)}</section>` : ""}
-      ${state.blockers?.length ? `<section class="panel" style="margin-top:20px;"><h2>What still needs attention</h2>${renderBlockers(state)}</section>` : ""}
-      ${renderOptionGroups(state)}
-      ${renderAccounts(state)}
-      ${renderIdentities(state)}
-      ${renderCreativeAssets(state)}
-      ${renderCreativeCards(state)}
-      ${renderDraft(state)}
-      ${renderReportPlan(state)}
-      ${renderCapabilityNotes(state)}
     </main>
   `;
 }
@@ -499,13 +525,7 @@ function maybeReadToolResult(message) {
 
 function postToHost(message) {
   if (!window.parent || window.parent === window) return;
-  window.parent.postMessage(
-    {
-      jsonrpc: "2.0",
-      ...message
-    },
-    "*"
-  );
+  window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*");
 }
 
 function sendInitialize() {

@@ -8,14 +8,8 @@ if (galleryRoot) {
     .map(
       (entry, index) => `
         <section class="mock-step">
-          <div class="mock-step-topline">
-            <span class="mock-step-index">Step ${index + 1}</span>
-            <div>
-              <h2>${entry.label}</h2>
-              <p>${entry.note}</p>
-            </div>
-          </div>
           <div class="mock-step-frame">
+            <div class="mock-step-label">Preview ${index + 1} · ${entry.label}</div>
             <div class="mock-step-surface" id="mock-surface-${index}"></div>
           </div>
         </section>

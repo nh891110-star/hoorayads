@@ -34,6 +34,8 @@ import {
   overrideProductDetailsOutput,
   scrapeProductInput,
   scrapeProductOutput,
+  scanStoreProductsInput,
+  scanStoreProductsOutput,
   setupReportingDigestInput,
   setupReportingDigestOutput,
   updateProductImagesInput,
@@ -57,17 +59,22 @@ import {
   publishResult,
   renderCompleteResult,
   renderPendingResult,
+  reviewReadyResult,
   reportingSetupResult,
   scrapeResult,
-  storyboardResult
+  storeProductCandidatesResult,
+  storeProductScanLoadingResult,
+  storyboardResult,
+  withSkippedAccountSetup
 } from "./mock-data.js";
-import type { ProductContext, VideoPreview } from "./mock-data.js";
+import type { AccountSetupReadiness, ProductContext, StoreProductCandidate, ToolViewModel, VideoPreview } from "./mock-data.js";
 import { getTikTokAppConfig } from "./config.js";
 import {
   createSmartPlusCampaignDraft,
   listTikTokAdvertiserAccounts,
   verifyTikTokAdvertiserIdentity
 } from "./tiktok-mcp.js";
+import type { TikTokAdvertiserAccount, TikTokIdentity } from "./tiktok-mcp.js";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
@@ -151,6 +158,7 @@ type VideoJobState = {
 };
 
 type LaunchState = {
+  accountSetup: AccountSetupReadiness | null;
   approvalSnapshots: Record<string, ApprovalSnapshot>;
   currentApprovalId: string | null;
   currentCampaignApprovalId: string | null;
@@ -168,6 +176,7 @@ const initialProductState: SessionProductState = {
 };
 
 const sharedLaunchState: LaunchState = {
+  accountSetup: null,
   approvalSnapshots: {},
   currentApprovalId: null,
   currentCampaignApprovalId: null,
@@ -294,6 +303,43 @@ function inferProductFromUrl(url: string): SessionProductState {
   };
 }
 
+function absoluteStoreProductUrl(storeUrl: string, slug: string): string {
+  const parsed = new URL(storeUrl);
+  return `${parsed.origin.replace(/\/$/, "")}/products/${slug}`;
+}
+
+function inferStoreProductCandidates(storeUrl: string): StoreProductCandidate[] {
+  return [
+    {
+      angle: "Hands-free cooling for hot commutes.",
+      confidence: "Strong match",
+      id: "portable-neck-fan",
+      productUrl: absoluteStoreProductUrl(storeUrl, "portable-neck-fan"),
+      recommendation: "Top pick",
+      reasons: [
+        "Clear seasonal use case and easy visual demo.",
+        "Benefit is understandable in the first 2 seconds.",
+        "Product page can support a simple shop-now CTA."
+      ],
+      selected: true,
+      title: "Portable Neck Fan"
+    },
+    {
+      angle: "30-second couch cleanup before/after.",
+      confidence: "Good potential",
+      id: "pet-hair-remover-brush",
+      productUrl: absoluteStoreProductUrl(storeUrl, "pet-hair-remover-brush"),
+      recommendation: "Candidate",
+      reasons: [
+        "Before/after cleanup is easy to show in short video.",
+        "Audience is specific: pet owners with sofas, rugs, or cars.",
+        "Strong demonstration potential if product footage is available."
+      ],
+      title: "Pet Hair Remover Brush"
+    }
+  ];
+}
+
 function platformForProductSource(source: "website" | "tiktok_shop" | "lead_generation" | "app"): string {
   if (source === "website") {
     return "Direct product URL";
@@ -363,6 +409,50 @@ export function createTikTokAdsPocServer() {
 
     return getCurrentProduct();
   };
+  const isAccountSetupReady = (account?: TikTokAdvertiserAccount, identities?: TikTokIdentity[]): boolean =>
+    Boolean(
+      account &&
+        (account.bcId || account.bcName) &&
+        account.advertiserId &&
+        (identities?.length || account.identityCount > 0)
+    );
+  const markAccountSetupReady = (options: {
+    account?: TikTokAdvertiserAccount;
+    advertiserId?: string;
+    identities?: TikTokIdentity[];
+  }): AccountSetupReadiness => {
+    const selectedIdentity = options.identities?.[0];
+    const selectedAdvertiserId = options.account?.advertiserId || options.advertiserId;
+    const readiness: AccountSetupReadiness = {
+      optional: true,
+      ready: true,
+      skipped: true,
+      skipReason:
+        "TikTok for Business, Business Center, Advertiser Account, and TikTok Account are already connected.",
+      selectedAdvertiserId,
+      selectedIdentityId: selectedIdentity?.identityId,
+      requirements: [
+        { id: "tt4b", label: "TikTok for Business", status: "ready" },
+        { id: "business_center", label: "Business Center", status: "ready" },
+        { id: "advertiser_account", label: "Advertiser Account", status: "ready" },
+        { id: "tiktok_account", label: "TikTok Account", status: "ready" }
+      ]
+    };
+
+    state.accountSetup = readiness;
+    return readiness;
+  };
+  const clearAccountSetupReadiness = () => {
+    state.accountSetup = null;
+  };
+  const preserveAccountSetupSkip = (widgetState: ToolViewModel): ToolViewModel =>
+    state.accountSetup?.ready
+      ? withSkippedAccountSetup(widgetState, {
+          selectedAdvertiserId: state.accountSetup.selectedAdvertiserId,
+          selectedIdentityId: state.accountSetup.selectedIdentityId,
+          skipReason: state.accountSetup.skipReason
+        })
+      : widgetState;
   const isRenderableProduct = (product: SessionProductState): boolean =>
     product.title !== initialProductState.title &&
     product.destination !== initialProductState.destination &&
@@ -461,6 +551,7 @@ export function createTikTokAdsPocServer() {
       const result = await listTikTokAdvertiserAccounts();
 
       if (result.status === "needs_authorization") {
+        clearAccountSetupReadiness();
         return {
           source: "tiktok-mcp-oauth",
           text: "Video render is done, but TikTok Ads authorization is still required before advertiser setup can continue.",
@@ -469,6 +560,7 @@ export function createTikTokAdsPocServer() {
       }
 
       if (result.status === "misconfigured") {
+        clearAccountSetupReadiness();
         return {
           source: "config-error",
           text: result.message,
@@ -477,6 +569,7 @@ export function createTikTokAdsPocServer() {
       }
 
       if (result.data.accounts.length === 0) {
+        clearAccountSetupReadiness();
         return {
           source: "tiktok-mcp",
           text: "Video render is done, but no advertiser accounts are available on this TikTok Ads connection yet.",
@@ -493,6 +586,7 @@ export function createTikTokAdsPocServer() {
         const identityResult = await verifyTikTokAdvertiserIdentity(selectedAccount.advertiserId);
 
         if (identityResult.status === "needs_authorization") {
+          clearAccountSetupReadiness();
           return {
             source: "tiktok-mcp-oauth",
             text: "Video render is done, but identity verification still needs TikTok Ads authorization to finish.",
@@ -501,6 +595,7 @@ export function createTikTokAdsPocServer() {
         }
 
         if (identityResult.status === "misconfigured") {
+          clearAccountSetupReadiness();
           return {
             source: "config-error",
             text: identityResult.message,
@@ -508,21 +603,26 @@ export function createTikTokAdsPocServer() {
           } as const;
         }
 
-        if (identityResult.data.identities.length > 0) {
+        if (isAccountSetupReady(selectedAccount, identityResult.data.identities)) {
+          const accountSetup = markAccountSetupReady({
+            account: selectedAccount,
+            identities: identityResult.data.identities
+          });
+
           return {
             source: "tiktok-mcp",
-            text: "Video render complete. Advertiser account and usable identity are ready. The next step is Smart+ draft inputs, not another setup detour.",
-            widgetState: liveAccountResult({
-              accounts: result.data.accounts,
+            text:
+              "Video render complete. Account setup is already ready, so skip Account setup and move directly to Review.",
+            widgetState: reviewReadyResult({
               product: getCurrentProduct(),
-              selectedAdvertiserId: selectedAccount.advertiserId,
-              selectedIdentities: identityResult.data.identities,
-              userDisplayName: result.data.userDisplayName
+              selectedAdvertiserId: accountSetup.selectedAdvertiserId,
+              selectedIdentityId: accountSetup.selectedIdentityId
             })
           } as const;
         }
 
         if (tikTokConfig.advertiserAuthUrl && tikTokConfig.redirectUri) {
+          clearAccountSetupReadiness();
           return {
             source: "tiktok-mcp",
             text: "Video render complete. The advertiser account is ready, but a TikTok identity still needs to be connected before Smart+ draft creation.",
@@ -558,7 +658,7 @@ export function createTikTokAdsPocServer() {
     { name: "tiktok-ads-agent-poc", version: "0.3.0" },
     {
       instructions:
-        "Guide the advertiser through account setup, promoted-product choice, creative selection or generation, Smart+ draft review, publish, and reporting setup. After any tool returns widgetState, call render_tiktok_ads_workspace with that widgetState to display the interactive ChatGPT App UI."
+        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review. If the user provides a Store URL and wants product ideas, call scan_store_products; treat Pick product as a substep inside Product, not a separate main launch step. After any tool returns widgetState, call render_tiktok_ads_workspace with that widgetState to display the interactive ChatGPT App UI. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review."
     }
   );
 
@@ -615,14 +715,16 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     }
 
     if (state.currentDraft) {
-      return draftResult({
-        adId: state.currentDraft.adId,
-        adgroupId: state.currentDraft.adgroupId,
-        campaignId: state.currentDraft.campaignId,
-        createdAtStage: state.currentDraft.creationState,
-        product: getCurrentProduct(),
-        warnings: state.currentDraft.warnings
-      }) as unknown as Record<string, unknown>;
+      return preserveAccountSetupSkip(
+        draftResult({
+          adId: state.currentDraft.adId,
+          adgroupId: state.currentDraft.adgroupId,
+          campaignId: state.currentDraft.campaignId,
+          createdAtStage: state.currentDraft.creationState,
+          product: getCurrentProduct(),
+          warnings: state.currentDraft.warnings
+        })
+      ) as unknown as Record<string, unknown>;
     }
 
     if (getCurrentProduct().destination !== initialProductState.destination) {
@@ -666,7 +768,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     "plan_account_setup",
     withWidgetToolMeta({
       title: "Plan account setup",
-      description: "Guide the advertiser through TikTok authorization, advertiser selection, identity readiness, and billing handoff.",
+      description: "Guide the advertiser through TikTok authorization, Business Center, advertiser account, and TikTok Account readiness.",
       inputSchema: planAccountSetupInput,
       outputSchema: planAccountSetupOutput,
       annotations: {
@@ -680,6 +782,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         const result = await listTikTokAdvertiserAccounts();
 
         if (result.status === "needs_authorization") {
+          clearAccountSetupReadiness();
           return {
             structuredContent: {
               stage: "needs_authorization",
@@ -694,6 +797,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         }
 
         if (result.status === "misconfigured") {
+          clearAccountSetupReadiness();
           return {
             structuredContent: {
               stage: "needs_authorization",
@@ -707,6 +811,43 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           };
         }
 
+        if (result.data.accounts.length === 1) {
+          const selectedAccount = result.data.accounts[0];
+          const identityResult = await verifyTikTokAdvertiserIdentity(selectedAccount.advertiserId);
+
+          if (identityResult.status === "connected" && isAccountSetupReady(selectedAccount, identityResult.data.identities)) {
+            const accountSetup = markAccountSetupReady({
+              account: selectedAccount,
+              identities: identityResult.data.identities
+            });
+
+            return {
+              structuredContent: {
+                stage: "setup_review",
+                widgetState: reviewReadyResult({
+                  product: getCurrentProduct(),
+                  selectedAdvertiserId: accountSetup.selectedAdvertiserId,
+                  selectedIdentityId: accountSetup.selectedIdentityId
+                })
+              },
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "Account setup is already complete for this advertiser, so skip the setup step and continue to Review."
+                }
+              ],
+              _meta: {
+                ...RESULT_WIDGET_META,
+                source: "tiktok-mcp",
+                mappedCapabilities:
+                  capabilityMap.find((item) => item.productTool === "plan_account_setup")?.currentTikTokAdsCapabilities ?? []
+              }
+            };
+          }
+        }
+
+        clearAccountSetupReadiness();
         return {
           structuredContent: {
             stage: result.data.accounts.length > 0 ? "account_selection" : "setup_review",
@@ -922,6 +1063,92 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           source: "guided-experience",
           mappedCapabilities:
             capabilityMap.find((item) => item.productTool === "choose_promoted_product")?.currentTikTokAdsCapabilities ?? []
+        }
+      };
+    }
+  );
+
+  server.registerTool(
+    "scan_store_products",
+    withWidgetToolMeta({
+      title: "Scan store products",
+      description:
+        "Use this when the advertiser provides a store URL and wants help choosing a product. It stays inside the Product step: first render a lightweight loading state, then return only product candidates ready to promote.",
+      inputSchema: scanStoreProductsInput,
+      outputSchema: scanStoreProductsOutput,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false
+      }
+    }),
+    async ({
+      resultMode,
+      storeUrl
+    }: {
+      resultMode?: "loading" | "results";
+      storeUrl: string;
+    }) => {
+      const mode = resultMode || "results";
+
+      if (mode === "loading") {
+        return {
+          structuredContent: {
+            candidateCount: 0,
+            status: "loading",
+            storeUrl,
+            widgetState: storeProductScanLoadingResult(storeUrl)
+          },
+          content: [
+            {
+              type: "text",
+              text: "Finding products that are ready for TikTok ads..."
+            }
+          ],
+          _meta: {
+            ...RESULT_WIDGET_META,
+            source: "guided-experience"
+          }
+        };
+      }
+
+      const candidates = inferStoreProductCandidates(storeUrl);
+      const selectedCandidate = candidates.find((candidate) => candidate.selected) || candidates[0];
+
+      updateCurrentProduct({
+        destination: selectedCandidate.productUrl,
+        imageCount: 3,
+        platform: "Store URL discovery",
+        price: "Needs confirmation",
+        title: selectedCandidate.title
+      });
+
+      return {
+        structuredContent: {
+          candidateCount: candidates.length,
+          candidates: candidates.map(({ angle, confidence, id, productUrl, reasons, title }) => ({
+            angle,
+            confidence,
+            id,
+            productUrl,
+            reasons,
+            title
+          })),
+          status: "ready",
+          storeUrl,
+          widgetState: storeProductCandidatesResult(storeUrl, candidates)
+        },
+        content: [
+          {
+            type: "text",
+            text:
+              "Recommended products are ready. Show only strong or good-potential options and ask the advertiser to use one product before storyboarding."
+          }
+        ],
+        _meta: {
+          ...RESULT_WIDGET_META,
+          source: "guided-experience",
+          capabilityGaps: capabilityMap.find((item) => item.productTool === "scan_store_products")?.gaps ?? []
         }
       };
     }
@@ -1245,6 +1472,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         const result = await listTikTokAdvertiserAccounts();
 
         if (result.status === "needs_authorization") {
+          clearAccountSetupReadiness();
           return {
             structuredContent: {
               accountCount: 0,
@@ -1264,6 +1492,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         }
 
         if (result.status === "misconfigured") {
+          clearAccountSetupReadiness();
           return {
             structuredContent: {
               accountCount: 0,
@@ -1277,6 +1506,43 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           };
         }
 
+        if (result.data.accounts.length === 1) {
+          const selectedAccount = result.data.accounts[0];
+          const identityResult = await verifyTikTokAdvertiserIdentity(selectedAccount.advertiserId);
+
+          if (identityResult.status === "connected" && isAccountSetupReady(selectedAccount, identityResult.data.identities)) {
+            const accountSetup = markAccountSetupReady({
+              account: selectedAccount,
+              identities: identityResult.data.identities
+            });
+
+            return {
+              structuredContent: {
+                accountCount: result.data.accounts.length,
+                widgetState: reviewReadyResult({
+                  product: getCurrentProduct(),
+                  selectedAdvertiserId: accountSetup.selectedAdvertiserId,
+                  selectedIdentityId: accountSetup.selectedIdentityId
+                })
+              },
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "Advertiser account and TikTok Account are already ready. Skip Account setup and continue directly to Review."
+                }
+              ],
+              _meta: {
+                ...RESULT_WIDGET_META,
+                source: "tiktok-mcp",
+                mappedCapabilities:
+                  capabilityMap.find((item) => item.productTool === "get_ad_accounts")?.currentTikTokAdsCapabilities ?? []
+              }
+            };
+          }
+        }
+
+        clearAccountSetupReadiness();
         return {
           structuredContent: {
             accountCount: result.data.accounts.length,
@@ -1337,6 +1603,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         const result = await verifyTikTokAdvertiserIdentity(advertiserId);
 
         if (result.status === "needs_authorization") {
+          clearAccountSetupReadiness();
           return {
             structuredContent: {
               status: "needs_authorization",
@@ -1358,11 +1625,14 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         }
 
         if (result.status === "misconfigured") {
+          clearAccountSetupReadiness();
           return {
             structuredContent: {
               status: "needs_authorization",
-              authorizationUrl: tikTokConfig.advertiserAuthUrl || "https://ads.tiktok.com/mcp",
-              redirectUri: tikTokConfig.redirectUri,
+              ...(tikTokConfig.advertiserAuthUrl
+                ? { authorizationUrl: tikTokConfig.advertiserAuthUrl }
+                : {}),
+              ...(tikTokConfig.redirectUri ? { redirectUri: tikTokConfig.redirectUri } : {}),
               widgetState: accountErrorResult(result.message, getCurrentProduct())
             },
             content: [{ type: "text", text: result.message }],
@@ -1374,17 +1644,27 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         }
 
         if (result.data.identities.length > 0) {
+          const accountSetup = markAccountSetupReady({
+            advertiserId,
+            identities: result.data.identities
+          });
+
           return {
             structuredContent: {
               status: "connected",
-              widgetState: liveAccountResult({
-                accounts: [],
-                selectedAdvertiserId: advertiserId,
-                selectedIdentities: result.data.identities,
-                product: getCurrentProduct()
+              widgetState: reviewReadyResult({
+                product: getCurrentProduct(),
+                selectedAdvertiserId: accountSetup.selectedAdvertiserId,
+                selectedIdentityId: accountSetup.selectedIdentityId
               })
             },
-            content: [{ type: "text", text: "TikTok identity is available for the selected advertiser." }],
+            content: [
+              {
+                type: "text",
+                text:
+                  "TikTok Account is available for the selected advertiser. Account setup is complete, so continue directly to Review."
+              }
+            ],
             _meta: {
               ...RESULT_WIDGET_META,
               source: "tiktok-mcp"
@@ -1393,11 +1673,14 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error while verifying advertiser identity.";
+        clearAccountSetupReadiness();
         return {
           structuredContent: {
             status: "needs_authorization",
-            authorizationUrl: tikTokConfig.advertiserAuthUrl,
-            redirectUri: tikTokConfig.redirectUri,
+            ...(tikTokConfig.advertiserAuthUrl
+              ? { authorizationUrl: tikTokConfig.advertiserAuthUrl }
+              : {}),
+            ...(tikTokConfig.redirectUri ? { redirectUri: tikTokConfig.redirectUri } : {}),
             widgetState: accountErrorResult(message, getCurrentProduct())
           },
           content: [
@@ -1414,6 +1697,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       }
 
       if (tikTokConfig.advertiserAuthUrl && tikTokConfig.redirectUri) {
+        clearAccountSetupReadiness();
         return {
           structuredContent: {
             status: "needs_authorization",
@@ -1434,12 +1718,22 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         };
       }
 
+      const accountSetup = markAccountSetupReady({ advertiserId });
       return {
-          structuredContent: {
-            status: "connected",
-            widgetState: accountResult(getCurrentProduct())
-          },
-        content: [{ type: "text", text: "TikTok identity is available for the selected advertiser." }],
+        structuredContent: {
+          status: "connected",
+          widgetState: reviewReadyResult({
+            product: getCurrentProduct(),
+            selectedAdvertiserId: accountSetup.selectedAdvertiserId
+          })
+        },
+        content: [
+          {
+            type: "text",
+            text:
+              "TikTok identity is available for the selected advertiser. Account setup is complete, so continue directly to Review."
+          }
+        ],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "mock"
@@ -1465,6 +1759,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       const accountsResult = await listTikTokAdvertiserAccounts();
 
       if (accountsResult.status === "needs_authorization") {
+        clearAccountSetupReadiness();
         return {
           structuredContent: {
             status: "needs_authorization",
@@ -1479,6 +1774,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       }
 
       if (accountsResult.status === "misconfigured") {
+        clearAccountSetupReadiness();
         return {
           structuredContent: {
             status: "missing",
@@ -1495,9 +1791,22 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       return {
         structuredContent: {
           status: "ready",
-          widgetState: accountResult(getCurrentProduct())
+          widgetState: state.accountSetup?.ready
+            ? reviewReadyResult({
+                product: getCurrentProduct(),
+                selectedAdvertiserId: state.accountSetup.selectedAdvertiserId,
+                selectedIdentityId: state.accountSetup.selectedIdentityId
+              })
+            : accountResult(getCurrentProduct())
         },
-        content: [{ type: "text", text: "Payment path looks ready for draft review and publish." }],
+        content: [
+          {
+            type: "text",
+            text: state.accountSetup?.ready
+              ? "Payment path looks ready. Account setup was already complete, so stay in Review."
+              : "Payment path looks ready for draft review and publish."
+          }
+        ],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "guided-experience"
@@ -1555,11 +1864,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               adId: "",
               creationState: "needs_more_inputs",
               warnings: [result.message],
-              widgetState: draftResult({
-                createdAtStage: "needs_more_inputs",
-                product: getCurrentProduct(),
-                warnings: [result.message]
-              })
+              widgetState: accountErrorResult(result.message, getCurrentProduct())
             },
             content: [{ type: "text", text: result.message }],
             _meta: {
@@ -1589,19 +1894,21 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             adId: result.data.adId,
             creationState: result.data.creationState,
             warnings: result.data.warnings,
-            widgetState: draftResult({
-              adId: result.data.adId,
-              adgroupId: result.data.adgroupId,
-              campaignId: result.data.campaignId,
-              campaignName: args.campaignName,
-              createdAtStage: result.data.creationState,
-              adgroupDailyBudget: args.adgroupDailyBudget,
-              product: getCurrentProduct(),
-              targetCountryCode: args.targetCountryCode,
-              optimizationGoalLabel,
-              biddingStrategyLabel,
-              warnings: result.data.warnings
-            })
+            widgetState: preserveAccountSetupSkip(
+              draftResult({
+                adId: result.data.adId,
+                adgroupId: result.data.adgroupId,
+                campaignId: result.data.campaignId,
+                campaignName: args.campaignName,
+                createdAtStage: result.data.creationState,
+                adgroupDailyBudget: args.adgroupDailyBudget,
+                product: getCurrentProduct(),
+                targetCountryCode: args.targetCountryCode,
+                optimizationGoalLabel,
+                biddingStrategyLabel,
+                warnings: result.data.warnings
+              })
+            )
           },
           content: [
             {
@@ -1632,11 +1939,13 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             adId: "",
             creationState: "needs_more_inputs",
             warnings: [message],
-            widgetState: draftResult({
-              createdAtStage: "needs_more_inputs",
-              product: getCurrentProduct(),
-              warnings: [message]
-            })
+            widgetState: preserveAccountSetupSkip(
+              draftResult({
+                createdAtStage: "needs_more_inputs",
+                product: getCurrentProduct(),
+                warnings: [message]
+              })
+            )
           },
           content: [{ type: "text", text: `Could not create the Smart+ draft: ${message}` }],
           _meta: {
@@ -1667,11 +1976,13 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           structuredContent: {
             approvalId: "",
             status: "blocked",
-            widgetState: draftResult({
-              createdAtStage: "needs_more_inputs",
-              product: getCurrentProduct(),
-              warnings: ["Create a real Smart+ draft before approving campaign parameters."]
-            })
+            widgetState: preserveAccountSetupSkip(
+              draftResult({
+                createdAtStage: "needs_more_inputs",
+                product: getCurrentProduct(),
+                warnings: ["Create a real Smart+ draft before approving campaign parameters."]
+              })
+            )
           },
           content: [{ type: "text", text: "Campaign approval is blocked because this launch session does not yet have a matching Smart+ draft." }],
           _meta: {
@@ -1687,14 +1998,16 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         structuredContent: {
           approvalId: state.currentCampaignApprovalId,
           status: "approved",
-          widgetState: draftResult({
-            adId: state.currentDraft.adId,
-            adgroupId: state.currentDraft.adgroupId,
-            campaignId: state.currentDraft.campaignId,
-            createdAtStage: state.currentDraft.creationState,
-            product: getCurrentProduct(),
-            warnings: state.currentDraft.warnings
-          })
+          widgetState: preserveAccountSetupSkip(
+            draftResult({
+              adId: state.currentDraft.adId,
+              adgroupId: state.currentDraft.adgroupId,
+              campaignId: state.currentDraft.campaignId,
+              createdAtStage: state.currentDraft.creationState,
+              product: getCurrentProduct(),
+              warnings: state.currentDraft.warnings
+            })
+          )
         },
         content: [{ type: "text", text: "Campaign parameters approved. The app may now publish." }],
         _meta: {
@@ -1735,13 +2048,15 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         return {
           structuredContent: {
             publishState: "needs_review",
-            widgetState: draftResult({
-              createdAtStage: state.currentDraft?.creationState || "needs_more_inputs",
-              product: getCurrentProduct(),
-              warnings: [
-                "Publish is blocked until a Smart+ draft exists and the same draft has been explicitly approved in this session."
-              ]
-            })
+            widgetState: preserveAccountSetupSkip(
+              draftResult({
+                createdAtStage: state.currentDraft?.creationState || "needs_more_inputs",
+                product: getCurrentProduct(),
+                warnings: [
+                  "Publish is blocked until a Smart+ draft exists and the same draft has been explicitly approved in this session."
+                ]
+              })
+            )
           },
           content: [{ type: "text", text: "Publish is blocked because this session does not have a matching approved Smart+ draft yet." }],
           _meta: {
@@ -1754,9 +2069,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       return {
         structuredContent: {
           publishState: "submitted",
-          widgetState: publishResult(getCurrentProduct())
+          widgetState: preserveAccountSetupSkip(publishResult(getCurrentProduct()))
         },
-        content: [{ type: "text", text: "Campaign submitted. Switch the user into a celebratory post-launch state with a TTAM handoff." }],
+        content: [{ type: "text", text: "Campaign submitted. Switch the user into a concise post-launch state with campaign confirmation and next reporting expectations." }],
         _meta: {
           ...RESULT_WIDGET_META,
           source: "guided-experience"

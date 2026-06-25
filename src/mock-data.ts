@@ -1,7 +1,11 @@
 export type TimelineStep = {
   id: string;
   label: string;
-  status: "done" | "current" | "todo";
+  substeps?: Array<{
+    label: string;
+    status: "done" | "current" | "todo";
+  }>;
+  status: "done" | "current" | "todo" | "skipped";
   owner: "user" | "chatgpt" | "tiktok";
 };
 
@@ -113,6 +117,41 @@ export type VideoPreview = {
   width: number;
 };
 
+export type AccountSetupReadiness = {
+  optional: boolean;
+  ready: boolean;
+  skipped: boolean;
+  skipReason?: string;
+  selectedAdvertiserId?: string;
+  selectedIdentityId?: string;
+  requirements: Array<{
+    id: "tt4b" | "business_center" | "advertiser_account" | "tiktok_account";
+    label: string;
+    status: "ready" | "missing";
+  }>;
+};
+
+export type StoreProductCandidate = {
+  angle: string;
+  confidence: "Strong match" | "Good potential";
+  id: string;
+  imageUrl?: string;
+  productUrl: string;
+  recommendation: "Top pick" | "Candidate";
+  reasons: string[];
+  selected?: boolean;
+  title: string;
+};
+
+export type StoreDiscoveryState = {
+  candidates?: StoreProductCandidate[];
+  note: string;
+  rankingBasis: string[];
+  selectedCandidateId?: string;
+  status: "loading" | "ready";
+  storeUrl: string;
+};
+
 export type ToolViewModel = {
   screen: "onboarding" | "product" | "creative" | "render" | "accounts" | "draft" | "publish" | "reporting";
   phaseLabel?: string;
@@ -161,6 +200,8 @@ export type ToolViewModel = {
   };
   videoPreview?: VideoPreview;
   reportPlan?: ReportPlan;
+  accountSetup?: AccountSetupReadiness;
+  storeDiscovery?: StoreDiscoveryState;
   auth?: {
     status: "connected" | "needs_authorization";
     authorizationUrl?: string;
@@ -196,23 +237,87 @@ function toProductContext(product?: Partial<ProductContext>): ProductContext {
 }
 
 function makeTimeline(current: ToolViewModel["screen"]): TimelineStep[] {
-  const map: Record<string, TimelineStep["status"]> = {
-    onboarding: current === "onboarding" ? "current" : "done",
-    product: ["product"].includes(current) ? "current" : ["creative", "render", "accounts", "draft", "publish", "reporting"].includes(current) ? "done" : "todo",
-    creative: ["creative", "render"].includes(current) ? "current" : ["accounts", "draft", "publish", "reporting"].includes(current) ? "done" : "todo",
-    accounts: ["accounts"].includes(current) ? "current" : ["draft", "publish", "reporting"].includes(current) ? "done" : "todo",
-    publish: ["draft", "publish"].includes(current) ? "current" : ["reporting"].includes(current) ? "done" : "todo",
-    reporting: current === "reporting" ? "current" : "todo"
-  };
+  const map: Record<string, TimelineStep["status"]> =
+    current === "onboarding"
+      ? {
+          product: "todo",
+          creative: "todo",
+          render: "todo",
+          accounts: "current",
+          publish: "todo"
+        }
+      : {
+          product: current === "product" ? "current" : ["creative", "render", "accounts", "draft", "publish", "reporting"].includes(current) ? "done" : "todo",
+          creative: current === "creative" ? "current" : ["render", "accounts", "draft", "publish", "reporting"].includes(current) ? "done" : "todo",
+          render: current === "render" ? "current" : ["accounts", "draft", "publish", "reporting"].includes(current) ? "done" : "todo",
+          accounts: current === "accounts" ? "current" : ["draft", "publish", "reporting"].includes(current) ? "done" : "todo",
+          publish: ["draft", "publish"].includes(current) ? "current" : current === "reporting" ? "done" : "todo"
+        };
 
   return [
-    { id: "onboarding", label: "Account setup", status: map.onboarding, owner: "tiktok" },
-    { id: "product", label: "Choose product", status: map.product, owner: "user" },
-    { id: "creative", label: "Creative source", status: map.creative, owner: "chatgpt" },
-    { id: "accounts", label: "Campaign setup", status: map.accounts, owner: "tiktok" },
-    { id: "publish", label: "Review + publish", status: map.publish, owner: "user" },
-    { id: "reporting", label: "Reporting setup", status: map.reporting, owner: "chatgpt" }
+    { id: "product", label: "Product", status: map.product, owner: "user" },
+    { id: "creative", label: "Storyboard", status: map.creative, owner: "chatgpt" },
+    { id: "render", label: "Preview", status: map.render, owner: "chatgpt" },
+    { id: "accounts", label: "Account setup", status: map.accounts, owner: "tiktok" },
+    { id: "publish", label: "Review", status: map.publish, owner: "user" }
   ];
+}
+
+function withProductSubsteps(
+  timeline: TimelineStep[],
+  currentSubstep: "pick" | "confirm"
+): TimelineStep[] {
+  return timeline.map((step) =>
+    step.id === "product"
+      ? {
+          ...step,
+          substeps: [
+            { label: "Pick product", status: currentSubstep === "pick" ? "current" : "done" },
+            { label: "Confirm product", status: currentSubstep === "confirm" ? "current" : "todo" }
+          ]
+        }
+      : step
+  );
+}
+
+const readyAccountSetupRequirements: AccountSetupReadiness["requirements"] = [
+  { id: "tt4b", label: "TikTok for Business", status: "ready" },
+  { id: "business_center", label: "Business Center", status: "ready" },
+  { id: "advertiser_account", label: "Advertiser Account", status: "ready" },
+  { id: "tiktok_account", label: "TikTok Account", status: "ready" }
+];
+
+export function withSkippedAccountSetup(
+  state: ToolViewModel,
+  options?: {
+    selectedAdvertiserId?: string;
+    selectedIdentityId?: string;
+    skipReason?: string;
+  }
+): ToolViewModel {
+  return {
+    ...state,
+    timeline: state.timeline.map((step) =>
+      step.id === "accounts"
+        ? {
+            ...step,
+            label: "Account setup",
+            status: "skipped"
+          }
+        : step
+    ),
+    accountSetup: {
+      optional: true,
+      ready: true,
+      skipped: true,
+      skipReason:
+        options?.skipReason ||
+        "TikTok for Business, Business Center, Advertiser Account, and TikTok Account are already connected.",
+      selectedAdvertiserId: options?.selectedAdvertiserId,
+      selectedIdentityId: options?.selectedIdentityId,
+      requirements: readyAccountSetupRequirements
+    }
+  };
 }
 
 function baseReadiness(overrides?: Partial<ToolViewModel["readiness"]>): ToolViewModel["readiness"] {
@@ -242,60 +347,20 @@ function defaultCapabilityNotes(): CapabilityNote[] {
     },
     {
       id: "billing-gap",
-      title: "Payment readiness is still a guided handoff",
-      detail: "There is no direct payment-readiness endpoint in the current MCP surface, so the app should escalate billing setup in plain language.",
+      title: "Payment readiness is checked before publish",
+      detail: "If billing needs attention, the app should guide the advertiser before anything goes live.",
       status: "gap"
     }
   ];
 }
 
 export const previewState: ToolViewModel = {
-  screen: "onboarding",
-  phaseLabel: "Guided workspace",
-  headline: "Launch a TikTok campaign without dropping the user into raw Ads Manager first",
-  summary:
-    "This app layer is designed for novice and mid-market advertisers: connect the right account, choose what to promote, pick or generate creative, review a Smart+ draft, then set up reporting follow-through.",
-  primaryCta: "Start account setup",
-  secondaryCta: "See the flow",
-  timeline: makeTimeline("onboarding"),
-  checklist: [
-    { id: "auth", label: "Authorize TikTok Ads", detail: "Connect the developer app to the user's TikTok for Business identity.", status: "current" },
-    { id: "account", label: "Select an advertiser", detail: "Choose the ad account that should own the draft and reporting.", status: "todo" },
-    { id: "identity", label: "Confirm delivery identity", detail: "Make sure a usable TikTok identity exists before creative selection.", status: "todo" },
-    { id: "billing", label: "Handle payment readiness", detail: "If billing is missing, guide to TTAM instead of failing late at publish time.", status: "todo" }
-  ],
-  highlights: [
-    { label: "Primary path", value: "Website conversions", tone: "accent" },
-    { label: "Alternative path", value: "GMV Max / TikTok Shop when eligible" },
-    { label: "Reporting lane", value: "ChatGPT digest + async exports", tone: "good" }
-  ],
-  optionGroups: [
-    {
-      title: "Recommended advertiser experience",
-      description: "Sequence the flow so each step earns the next one. Do not ask for all settings up front.",
-      options: [
-        {
-          id: "flow-1",
-          title: "Account-first guided launch",
-          kicker: "Recommended",
-          description: "Use one clean setup lane: authorize, pick advertiser, verify identity, then move into product and creative.",
-          status: "recommended",
-          meta: ["Best for first-time advertisers", "Keeps blockers visible early"]
-        },
-        {
-          id: "flow-2",
-          title: "Direct draft creation",
-          kicker: "Advanced",
-          description: "Skip straight to campaign inputs only after the app already knows the advertiser, identity, and pixel context.",
-          status: "ready",
-          meta: ["For returning users", "Needs saved setup state"]
-        }
-      ]
-    }
-  ],
-  readiness: baseReadiness(),
-  capabilityNotes: defaultCapabilityNotes(),
-  product: defaultProduct
+  screen: "product",
+  phaseLabel: "Product",
+  headline: "What do you want to promote?",
+  summary: "",
+  primaryCta: "Confirm",
+  timeline: makeTimeline("product")
 };
 
 export function onboardingWorkspaceResult(options?: {
@@ -308,10 +373,10 @@ export function onboardingWorkspaceResult(options?: {
   return {
     screen: "onboarding",
     phaseLabel: "Account setup",
-    headline: hasAccounts ? "Choose the advertiser that should own this launch" : "Connect TikTok Ads before the app touches campaign setup",
+    headline: hasAccounts ? "Choose the advertiser account." : "Account setup.",
     summary: hasAccounts
-      ? `${options?.userDisplayName || "This TikTok Ads user"} is connected. The next best move is to choose one advertiser, confirm the delivery identity, and only then move into product and creative selection.`
-      : "The guided launch should start with authorization, account ownership, and identity readiness. This prevents late-stage publish failures and gives the user confidence that the draft will land in the right ad account.",
+      ? `${options?.userDisplayName || "This TikTok Ads user"} is connected. Choose the advertiser account that should own this launch.`
+      : "Connect TikTok Ads so Hooray can find the right Business Center, advertiser account, and TikTok Account.",
     primaryCta: hasAccounts ? "Continue with selected advertiser" : "Authorize TikTok Ads",
     secondaryCta: hasAccounts ? "Review account details" : "Why this is needed",
     timeline: makeTimeline("onboarding"),
@@ -319,12 +384,12 @@ export function onboardingWorkspaceResult(options?: {
       { id: "auth", label: "Authorize TikTok Ads", detail: "Use the MCP OAuth bridge so account discovery and reporting can stay inside the same app session.", status: hasAccounts ? "done" : "current" },
       { id: "account", label: "Select an advertiser", detail: "Show one clear account card at a time, with business center, currency, and account status.", status: hasAccounts ? "current" : "todo" },
       { id: "identity", label: "Confirm delivery identity", detail: "Before draft creation, verify at least one usable TikTok identity under the chosen advertiser.", status: "todo" },
-      { id: "billing", label: "Handle payment readiness", detail: "If no billing path is available, hand off in plain language rather than failing at publish.", status: "todo" }
+      { id: "tiktok_account", label: "Confirm TikTok Account", detail: "Choose the TikTok profile that will appear as the ad identity.", status: "todo" }
     ],
     highlights: [
       { label: "Connected advertiser accounts", value: String(options?.accounts?.length ?? 0), tone: hasAccounts ? "good" : "warn" },
       { label: "Identity path", value: "Check immediately after account selection" },
-      { label: "Billing", value: "Guided TTAM handoff if missing" }
+      { label: "TikTok Account", value: "Check after advertiser selection" }
     ],
     optionGroups: [
       {
@@ -381,9 +446,9 @@ export function productSelectionResult(options?: {
   return {
     screen: "product",
     phaseLabel: "Product path",
-    headline: "Choose what the campaign is promoting before you ask for creative",
+    headline: "What do you want to promote?",
     summary:
-      "Advertisers think in business goals, not endpoints. The app should first ask whether they are sending traffic to a website, promoting a TikTok Shop product, collecting leads, or driving app installs. That choice determines the rest of the setup.",
+      "Start with a product page if you know what to promote, or use a store link if you want Hooray to recommend products first.",
     primaryCta: "Use website path",
     secondaryCta: "See other launch paths",
     timeline: makeTimeline("product"),
@@ -395,7 +460,7 @@ export function productSelectionResult(options?: {
     optionGroups: [
       {
         title: "Promoted-product paths",
-        description: "The app should recommend the simplest viable path first, then show advanced options with their prerequisites.",
+        description: "Choose the simplest path that matches what you want to promote.",
         options: [
           {
             id: "website",
@@ -424,10 +489,10 @@ export function productSelectionResult(options?: {
           {
             id: "app",
             title: "App promotion",
-            kicker: "Separate asset track",
-            description: "Only show this if the advertiser has app IDs, tracking setup, and app events ready.",
+            kicker: "Separate setup track",
+            description: "Only show this if the advertiser explicitly asks for app installs and has the required app setup ready.",
             status: source === "app" ? "connected" : "blocked",
-            meta: ["Needs app + measurement setup", "Do not recommend by default"]
+            meta: ["Separate product path", "Do not recommend by default"]
           }
         ]
       }
@@ -461,12 +526,108 @@ export function productSelectionResult(options?: {
         ? [
             {
               id: "app-setup",
-              title: "App promotion should stay hidden until tracking is real",
-              detail: "Without app IDs, optimization events, and app measurement, this path creates confusion for most SMB advertisers.",
+              title: "App promotion should stay hidden by default",
+              detail: "This MVP is optimized for product-page advertising. App install campaigns need a separate setup path.",
               severity: "medium"
             }
           ]
         : []
+  };
+}
+
+export function storeProductScanLoadingResult(storeUrl: string): ToolViewModel {
+  return {
+    screen: "product",
+    phaseLabel: "Product",
+    headline: "Finding products ready for TikTok ads.",
+    summary:
+      "Scanning your store page for products with strong visuals, clear offers, usable landing pages, and short-video storytelling potential.",
+    primaryCta: "Scanning store",
+    timeline: withProductSubsteps(makeTimeline("product"), "pick"),
+    checklist: [
+      { id: "store-url", label: "Store URL received", detail: storeUrl, status: "done" },
+      {
+        id: "scan-products",
+        label: "Find product candidates",
+        detail: "Review visible store signals, product-page quality, and creative fit.",
+        status: "current"
+      },
+      {
+        id: "confirm-product",
+        label: "Confirm one product",
+        detail: "After you pick a candidate, we will confirm the product page and images before storyboarding.",
+        status: "todo"
+      }
+    ],
+    highlights: [
+      { label: "Store", value: new URL(storeUrl).hostname.replace(/^www\./, ""), tone: "accent" },
+      { label: "Ranking", value: "Ad-readiness signals" },
+      { label: "Next", value: "Pick one product", tone: "good" }
+    ],
+    readiness: baseReadiness({
+      accountConnection: "Not needed yet",
+      video: "Starts after product confirmation"
+    }),
+    storeDiscovery: {
+      status: "loading",
+      storeUrl,
+      rankingBasis: ["Visual fit", "Clear offer", "Landing page quality", "Short-video potential"],
+      note: "This scan uses visible store-page signals. It is not a sales forecast."
+    }
+  };
+}
+
+export function storeProductCandidatesResult(storeUrl: string, candidates: StoreProductCandidate[]): ToolViewModel {
+  const selectedCandidate = candidates.find((candidate) => candidate.selected) || candidates[0];
+
+  return {
+    screen: "product",
+    phaseLabel: "Product",
+    headline: "Pick a product to promote.",
+    summary: `I found ${candidates.length} products from your store that look ready to promote on TikTok. Choose one.`,
+    primaryCta: "Use selected product",
+    secondaryCta: "Show more candidates",
+    timeline: withProductSubsteps(makeTimeline("product"), "pick"),
+    checklist: [
+      { id: "store-url", label: "Store URL scanned", detail: storeUrl, status: "done" },
+      {
+        id: "pick-product",
+        label: "Pick one product",
+        detail: "Choose the product that should move into product confirmation and storyboard generation.",
+        status: "current"
+      },
+      {
+        id: "confirm-product",
+        label: "Confirm product page and images",
+        detail: "The next screen checks the selected product details before any video is created.",
+        status: "todo"
+      }
+    ],
+    highlights: [
+      { label: "Top pick", value: selectedCandidate?.title || "Needs selection", tone: "accent" },
+      { label: "Candidates", value: String(candidates.length), tone: "good" },
+      { label: "Recommendation", value: selectedCandidate?.confidence || "Good potential" }
+    ],
+    product: selectedCandidate
+      ? {
+          title: selectedCandidate.title,
+          price: "Needs confirmation",
+          destination: selectedCandidate.productUrl,
+          platform: "Store URL discovery"
+        }
+      : undefined,
+    readiness: baseReadiness({
+      accountConnection: "Not needed yet",
+      video: "Starts after product confirmation"
+    }),
+    storeDiscovery: {
+      status: "ready",
+      storeUrl,
+      candidates,
+      selectedCandidateId: selectedCandidate?.id,
+      rankingBasis: ["Visual fit", "Clear offer", "Landing page quality", "Short-video potential"],
+      note: "These are recommendations from visible store-page signals, not sales predictions."
+    }
   };
 }
 
@@ -478,12 +639,12 @@ export function scrapeResult(url: string, product?: Partial<ProductContext>): To
 
   return {
     screen: "product",
-    phaseLabel: "Product intake",
-    headline: "Confirm the product details before the app writes creative",
+    phaseLabel: "Product",
+    headline: "Confirm this product.",
     summary:
-      "This is the first review checkpoint. The app should confirm the extracted title, price, offer, and reference images in a rich card before it starts storyboarding.",
-    primaryCta: "Looks correct",
-    secondaryCta: "Replace images",
+      "We found this from your URL. Check the name, page, and images before we make the ad.",
+    primaryCta: "Confirm product",
+    secondaryCta: "Edit details",
     timeline: makeTimeline("product"),
     checklist: [
       { id: "url", label: "Landing page captured", detail: "Keep the exact destination visible so the advertiser knows what creative is being based on.", status: "done" },
@@ -553,11 +714,11 @@ export function creativeWorkspaceResult(options?: {
   return {
     screen: "creative",
     phaseLabel: "Creative source",
-    headline: "Let the advertiser choose between reusing content and generating something new",
+    headline: "Pick a storyboard.",
     summary:
-      "A good advertiser experience should not force one creative path. The app should present three lanes: reuse an existing TikTok post, start from approved product assets, or generate a fresh storyboard and video.",
-    primaryCta: "Generate new creative",
-    secondaryCta: "Reuse existing TikTok post",
+      "I drafted two story directions from the product page. Choose one, then preview the video.",
+    primaryCta: "Use selected storyboard",
+    secondaryCta: "Regenerate options",
     timeline: makeTimeline("creative"),
     checklist: [
       { id: "lane", label: "Pick a creative lane", detail: "Start with a simple choice between existing content and net-new generation.", status: "current" },
@@ -667,11 +828,12 @@ export function creativeWorkspaceResult(options?: {
 export function storyboardResult(product?: Partial<ProductContext>): ToolViewModel {
   return {
     ...creativeWorkspaceResult({ product }),
-    headline: "Storyboard draft ready for review",
+    phaseLabel: "Storyboard",
+    headline: "Pick a storyboard.",
     summary:
-      "At this moment the UI should feel editorial, not technical. The advertiser should only be deciding whether the hook, scene framing, and CTA feel right for the business.",
-    primaryCta: "Approve storyboard",
-    secondaryCta: "Change the hook"
+      "I drafted two story directions from the product page. Choose one, then preview the video.",
+    primaryCta: "Use selected storyboard",
+    secondaryCta: "Regenerate options"
   };
 }
 
@@ -679,13 +841,13 @@ export function renderPendingResult(product?: Partial<ProductContext>): ToolView
   return {
     ...creativeWorkspaceResult({ product }),
     screen: "render",
-    phaseLabel: "Render status",
-    headline: "Creative preview is rendering in the background",
+    phaseLabel: "Preview",
+    headline: "Generating your video preview.",
     summary:
-      "The app should return immediately with a clear progress state instead of blocking. Keep the creative context on screen so the wait feels purposeful.",
+      "I’m turning the selected storyboard into a short draft. Nothing is connected to TikTok Ads yet.",
     primaryCta: "Check render status",
-    secondaryCta: "Revise storyboard",
-    timeline: makeTimeline("creative"),
+    secondaryCta: "Edit storyboard",
+    timeline: makeTimeline("render"),
     checklist: [
       { id: "lane", label: "Creative lane selected", detail: "The advertiser already approved the concept, so rendering can happen asynchronously.", status: "done" },
       { id: "render", label: "Generate preview asset", detail: "Poll for completion and keep the user in the same workspace.", status: "current" },
@@ -703,12 +865,12 @@ export function renderCompleteResult(product: Partial<ProductContext> | undefine
   return {
     ...creativeWorkspaceResult({ product: currentProduct }),
     screen: "render",
-    phaseLabel: "Video preview",
-    headline: "Rendered video preview is ready",
+    phaseLabel: "Preview",
+    headline: "Preview the video.",
     summary:
-      "Review the generated TikTok-style preview before campaign setup. This is the safety checkpoint where the advertiser confirms the product, hook, pacing, and CTA before any TikTok Ads objects are created.",
-    primaryCta: "Use this video for campaign setup",
-    secondaryCta: "Render another version",
+      "Review the selected storyboard as a short draft. Nothing is connected to TikTok Ads yet.",
+    primaryCta: "Approve preview",
+    secondaryCta: "Edit storyboard",
     timeline: makeTimeline("render"),
     checklist: [
       { id: "concept", label: "Storyboard approved", detail: "The hook, product framing, and CTA were approved before rendering.", status: "done" },
@@ -749,23 +911,76 @@ export function renderCompleteResult(product: Partial<ProductContext> | undefine
   };
 }
 
+export function reviewReadyResult(options?: {
+  product?: Partial<ProductContext>;
+  selectedAdvertiserId?: string;
+  selectedIdentityId?: string;
+}): ToolViewModel {
+  const product = toProductContext(options?.product);
+
+  return withSkippedAccountSetup(
+    {
+      screen: "draft",
+      phaseLabel: "Review",
+      headline: "Review before launch.",
+      summary:
+        "Account setup is already complete, so you can review the launch details before any spend starts.",
+      primaryCta: "Create Smart+ draft",
+      secondaryCta: "Edit campaign details",
+      timeline: makeTimeline("publish"),
+      checklist: [
+        { id: "creative", label: "Video preview approved", detail: "The launch can continue from the selected creative preview.", status: "done" },
+        {
+          id: "account",
+          label: "Account setup skipped",
+          detail: "TT4B, Business Center, Advertiser Account, and TikTok Account are already connected.",
+          status: "done"
+        },
+        {
+          id: "review",
+          label: "Review launch settings",
+          detail: "Confirm budget, destination, identity, and campaign defaults before creating the Smart+ draft.",
+          status: "current"
+        }
+      ],
+      highlights: [
+        { label: "Account setup", value: "Skipped", tone: "good" },
+        { label: "Advertiser", value: options?.selectedAdvertiserId || "Ready", tone: "accent" },
+        { label: "Next step", value: "Review campaign details" }
+      ],
+      readiness: baseReadiness({
+        accountConnection: "Ready",
+        identity: "TikTok Account connected",
+        payment: "Check before enabling delivery",
+        video: "Preview ready",
+        recommendedObjective: "Smart+ Web Conversions"
+      }),
+      product
+    },
+    {
+      selectedAdvertiserId: options?.selectedAdvertiserId,
+      selectedIdentityId: options?.selectedIdentityId
+    }
+  );
+}
+
 export function accountResult(product?: Partial<ProductContext>): ToolViewModel {
   const currentProduct = toProductContext(product);
 
   return {
     screen: "accounts",
-    phaseLabel: "Campaign setup",
-    headline: "The launch is ready for campaign settings and Smart+ draft creation",
+    phaseLabel: "Account setup",
+    headline: "Account setup.",
     summary:
-      "This is where the guided experience should become more operational: confirm advertiser, identity, tracking, budget shape, and publish risk before the app writes campaign objects.",
-    primaryCta: "Create Smart+ draft",
-    secondaryCta: "Switch advertiser",
+      "Confirm the TikTok business accounts Hooray will use for this ad.",
+    primaryCta: "Continue",
+    secondaryCta: "Change account",
     timeline: makeTimeline("accounts"),
     checklist: [
       { id: "account", label: "Advertiser selected", detail: "The user knows which account will own the draft.", status: "done" },
       { id: "identity", label: "Identity confirmed", detail: "A usable TikTok identity is available for delivery.", status: "done" },
-      { id: "tracking", label: "Tracking and destination checked", detail: "Pixel, landing page, and product path should be visible before the write call.", status: "current" },
-      { id: "billing", label: "Billing handoff if needed", detail: "If payment readiness is uncertain, show the handoff before publish.", status: "todo" }
+      { id: "tt4b", label: "TikTok for Business ready", detail: "The user has authorized the business login for this launch.", status: "done" },
+      { id: "business_center", label: "Business Center ready", detail: "Assets and permissions are available for the selected advertiser.", status: "done" }
     ],
     readiness: baseReadiness({
       accountConnection: "1 advertiser selected",
@@ -775,9 +990,9 @@ export function accountResult(product?: Partial<ProductContext>): ToolViewModel 
     }),
     blockers: [
       {
-        id: "payment",
-        title: "Payment readiness still needs a clear human-safe handoff",
-        detail: "Do not let the app fail with a raw backend error if payment setup is missing.",
+        id: "final-review",
+        title: "Final review still comes before publish",
+        detail: "Budget, destination, and account choice should be reviewed before anything goes live.",
         severity: "medium"
       }
     ],
@@ -812,9 +1027,9 @@ export function accountResult(product?: Partial<ProductContext>): ToolViewModel 
 export function accountAuthorizationResult(authorizationUrl: string, redirectUri: string): ToolViewModel {
   return {
     ...onboardingWorkspaceResult(),
-    headline: "Authorize TikTok Ads access to unlock the rest of the guided launch",
+    headline: "Account setup.",
     summary:
-      "This app can already guide the campaign journey, but it still needs one TikTok authorization step before it can discover real advertiser accounts, identities, and reporting destinations.",
+      "Connect TikTok Ads so Hooray can find the right Business Center, advertiser account, and TikTok Account.",
     primaryCta: "Authorize TikTok Ads",
     secondaryCta: "Why this is needed",
     auth: {
@@ -889,20 +1104,20 @@ export function liveAccountResult(options: {
     phaseLabel: "Account setup",
     headline:
       options.accounts.length > 1
-        ? "Choose the advertiser that should own this launch"
-        : "Connected account is ready for identity and product setup",
+        ? "Choose the advertiser account."
+        : "Account setup.",
     summary:
       options.accounts.length > 1
-        ? `${options.userDisplayName || "This TikTok Ads user"} can access ${options.accounts.length} advertiser accounts. The guided experience should help them choose the right owner first, not bury the choice in a dropdown.`
-        : `The TikTok Ads connection is live. The next best move is to verify the identity path and move this advertiser into product and creative setup.`,
+        ? `${options.userDisplayName || "This TikTok Ads user"} can access ${options.accounts.length} advertiser accounts. Choose the one that should own this launch.`
+        : "The TikTok Ads connection is ready. Confirm the account and TikTok Account before review.",
     primaryCta: selectedIdentityCount > 0 ? "Continue with this advertiser" : "Verify identity",
     secondaryCta: options.accounts.length > 1 ? "Switch advertiser" : "Review details",
     timeline: makeTimeline("onboarding"),
     checklist: [
       { id: "auth", label: "Authorize TikTok Ads", detail: "The app can now read real advertiser data.", status: "done" },
       { id: "account", label: "Choose advertiser owner", detail: "Make the selected account visible and explicit before the app writes anything.", status: "current" },
-      { id: "identity", label: "Confirm delivery identity", detail: "If no identity exists, route into identity setup before creative or draft creation.", status: selectedIdentityCount > 0 ? "done" : "todo" },
-      { id: "billing", label: "Prepare billing handoff", detail: "Keep payment readiness visible as a guided pre-publish task.", status: "todo" }
+      { id: "business_center", label: "Confirm Business Center", detail: "Show the Business Center connected to this advertiser account.", status: "done" },
+      { id: "identity", label: "Confirm TikTok Account", detail: "If no TikTok Account exists, route into identity setup before draft creation.", status: selectedIdentityCount > 0 ? "done" : "todo" }
     ],
     highlights: [
       { label: "Advertiser accounts", value: String(options.accounts.length), tone: "accent" },
@@ -949,7 +1164,7 @@ export function accountErrorResult(detail: string, product?: Partial<ProductCont
     phaseLabel: "Setup issue",
     headline: "TikTok account setup needs attention before the launch can continue",
     summary:
-      "When account discovery fails, the app should not expose the raw backend shape. It should explain what broke, preserve the flow context, and offer a safe retry path.",
+      "We could not load the TikTok account details yet. Your product and creative progress is saved, so you can retry without restarting.",
     primaryCta: "Try again",
     secondaryCta: "Check TikTok access",
     timeline: makeTimeline("onboarding"),
@@ -993,33 +1208,33 @@ export function draftResult(options?: {
     options?.warnings && options.warnings.length > 0
       ? options.warnings
       : [
-          "If payment is missing, the app should return a clear TTAM handoff instead of a raw API error.",
-          "Only publish after explicit user approval of campaign parameters."
+          "If billing needs attention, we’ll guide you to finish it before publish.",
+          "Nothing goes live until you approve the final launch settings."
         ];
   const defaultHeadlineByStage: Record<typeof createdAtStage, string> = {
-    campaign_and_adgroup: "Smart+ draft foundation is created",
-    campaign_only: "Campaign draft exists, but the setup still needs missing inputs",
-    draft_ready: "Smart+ draft is ready for review inside the guided launch workspace",
-    needs_more_inputs: "The app still needs a few TikTok inputs before it can create the draft"
+    campaign_and_adgroup: "Review before launch.",
+    campaign_only: "Review before launch.",
+    draft_ready: "Review before launch.",
+    needs_more_inputs: "Review before launch."
   };
   const defaultSummaryByStage: Record<typeof createdAtStage, string> = {
     campaign_and_adgroup:
-      "The campaign and ad group are already in TikTok as disabled drafts. Now the UI should clearly tell the advertiser what is missing for the final ad object.",
+      "Campaign and ad group drafts exist in TikTok. Check what is still needed before any spend starts.",
     campaign_only:
-      "The top-level campaign draft can be created first, but the app should make it obvious why ad group or ad creation is paused.",
+      "The campaign draft exists. Check what is still needed before any spend starts.",
     draft_ready:
-      "This review step should feel like a launch checklist, not a settings dump: budget, country, identity, creative, and publish risk in one clean card.",
+      "Check the video, budget, destination, and report plan. We’ll publish only after you confirm.",
     needs_more_inputs:
-      "Stop early and explain exactly what is missing, such as location IDs, video assets, or identity context."
+      "A few inputs are still missing. Review what is ready and what needs attention before continuing."
   };
 
   return {
     screen: "draft",
-    phaseLabel: "Review + publish",
+    phaseLabel: "Review",
     headline: options?.headline || defaultHeadlineByStage[createdAtStage],
     summary: options?.summary || defaultSummaryByStage[createdAtStage],
-    primaryCta: "Approve parameters",
-    secondaryCta: "Adjust settings",
+    primaryCta: "Approve launch settings",
+    secondaryCta: "Edit campaign details",
     timeline: makeTimeline("publish"),
     checklist: [
       { id: "draft", label: "Draft objects created", detail: "Campaign, ad group, and ad IDs should be clearly visible when available.", status: createdAtStage === "needs_more_inputs" ? "blocked" : "done" },

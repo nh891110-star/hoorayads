@@ -168,6 +168,30 @@ export const choosePromotedProductOutput = {
   widgetState: z.record(z.any())
 };
 
+export const scanStoreProductsInput = {
+  resultMode: z.enum(["loading", "results"]).default("results"),
+  storeUrl: z.string().url()
+};
+
+export const scanStoreProductsOutput = {
+  candidateCount: z.number(),
+  candidates: z
+    .array(
+      z.object({
+        angle: z.string(),
+        confidence: z.enum(["Strong match", "Good potential"]),
+        id: z.string(),
+        productUrl: z.string().url(),
+        reasons: z.array(z.string()),
+        title: z.string()
+      })
+    )
+    .optional(),
+  status: z.enum(["loading", "ready"]),
+  storeUrl: z.string().url(),
+  widgetState: z.record(z.any())
+};
+
 export const loadCreativeOptionsInput = {
   advertiserId: z.string().optional(),
   identityAuthorizedBcId: z.string().optional(),
@@ -253,18 +277,16 @@ export type CapabilityMapping = {
 export const capabilityMap: CapabilityMapping[] = [
   {
     productTool: "plan_account_setup",
-    purpose: "Guide the advertiser through authorization, account selection, identity readiness, pixel readiness, and billing handoff.",
+    purpose: "Guide the advertiser through TikTok authorization, Business Center, advertiser account, and TikTok Account readiness.",
     currentTikTokAdsCapabilities: [
       "user_info_get",
       "bc_get",
       "bc_asset_get",
       "advertiser_info_get",
-      "identity_get",
-      "pixel_list_get"
+      "identity_get"
     ],
     gaps: [
-      "There is still no direct payment-method readiness API in the current MCP surface.",
-      "Billing setup still needs a TTAM or Business Center handoff."
+      "Account setup should be skipped when all four readiness checks are already complete."
     ]
   },
   {
@@ -303,6 +325,15 @@ export const capabilityMap: CapabilityMapping[] = [
     gaps: [
       "Arbitrary product scraping is still external to TikTok Ads MCP.",
       "GMV Max and TikTok Shop product paths have extra eligibility and allowlist constraints."
+    ]
+  },
+  {
+    productTool: "scan_store_products",
+    purpose: "Scan a submitted Store URL and recommend only product candidates that are ready to promote in the Product step.",
+    currentTikTokAdsCapabilities: [],
+    gaps: [
+      "Store-page product discovery is part of the ChatGPT app orchestration layer, not the current TikTok Ads MCP.",
+      "Trend- or performance-based ranking needs a separate Creative Center, benchmark, or advertiser-data layer."
     ]
   },
   {
@@ -378,7 +409,7 @@ export const capabilityMap: CapabilityMapping[] = [
     currentTikTokAdsCapabilities: [],
     gaps: [
       "Payment method inspection is not currently represented in the observed MCP surface.",
-      "We need either a payment-specific API bridge or a TTAM handoff."
+      "Keep payment checks out of the main Account setup card for MVP; surface them only if publish is blocked."
     ]
   },
   {

@@ -1,381 +1,334 @@
 window.__POC_MOCK_GALLERY__ = [
   {
-    "label": "Account Setup",
-    "note": "The app starts by reducing setup anxiety: show authorization, advertiser ownership, identity readiness, and billing expectations before any campaign write happens.",
+    "label": "Start",
     "state": {
-      "screen": "onboarding",
-      "phaseLabel": "Account setup",
-      "headline": "Choose the advertiser that should own this launch",
-      "summary": "Hooray Marketing is connected. The next best move is to choose one advertiser, confirm the delivery identity, and only then move into product and creative selection.",
-      "primaryCta": "Continue with selected advertiser",
-      "secondaryCta": "Review account details",
+      "screen": "product",
+      "phaseLabel": "Product",
+      "headline": "What do you want to promote?",
+      "summary": "",
+      "primaryCta": "Confirm",
       "timeline": [
         {
-          "id": "onboarding",
-          "label": "Account setup",
-          "status": "current",
-          "owner": "tiktok"
-        },
-        {
           "id": "product",
-          "label": "Choose product",
-          "status": "todo",
+          "label": "Product",
+          "status": "current",
           "owner": "user"
         },
         {
           "id": "creative",
-          "label": "Creative source",
+          "label": "Storyboard",
+          "status": "todo",
+          "owner": "chatgpt"
+        },
+        {
+          "id": "render",
+          "label": "Preview",
           "status": "todo",
           "owner": "chatgpt"
         },
         {
           "id": "accounts",
-          "label": "Campaign setup",
+          "label": "Account setup",
           "status": "todo",
           "owner": "tiktok"
         },
         {
           "id": "publish",
-          "label": "Review + publish",
+          "label": "Review",
           "status": "todo",
           "owner": "user"
+        }
+      ]
+    }
+  },
+  {
+    "label": "Store scan",
+    "state": {
+      "screen": "product",
+      "phaseLabel": "Product",
+      "headline": "Finding products ready for TikTok ads.",
+      "summary": "Scanning your store page for products with strong visuals, clear offers, usable landing pages, and short-video storytelling potential.",
+      "primaryCta": "Scanning store",
+      "timeline": [
+        {
+          "id": "product",
+          "label": "Product",
+          "status": "current",
+          "owner": "user",
+          "substeps": [
+            {
+              "label": "Pick product",
+              "status": "current"
+            },
+            {
+              "label": "Confirm product",
+              "status": "todo"
+            }
+          ]
         },
         {
-          "id": "reporting",
-          "label": "Reporting setup",
+          "id": "creative",
+          "label": "Storyboard",
           "status": "todo",
           "owner": "chatgpt"
+        },
+        {
+          "id": "render",
+          "label": "Preview",
+          "status": "todo",
+          "owner": "chatgpt"
+        },
+        {
+          "id": "accounts",
+          "label": "Account setup",
+          "status": "todo",
+          "owner": "tiktok"
+        },
+        {
+          "id": "publish",
+          "label": "Review",
+          "status": "todo",
+          "owner": "user"
         }
       ],
       "checklist": [
         {
-          "id": "auth",
-          "label": "Authorize TikTok Ads",
-          "detail": "Use the MCP OAuth bridge so account discovery and reporting can stay inside the same app session.",
+          "id": "store-url",
+          "label": "Store URL received",
+          "detail": "https://yourstore.com",
           "status": "done"
         },
         {
-          "id": "account",
-          "label": "Select an advertiser",
-          "detail": "Show one clear account card at a time, with business center, currency, and account status.",
+          "id": "scan-products",
+          "label": "Find product candidates",
+          "detail": "Review visible store signals, product-page quality, and creative fit.",
           "status": "current"
         },
         {
-          "id": "identity",
-          "label": "Confirm delivery identity",
-          "detail": "Before draft creation, verify at least one usable TikTok identity under the chosen advertiser.",
-          "status": "todo"
-        },
-        {
-          "id": "billing",
-          "label": "Handle payment readiness",
-          "detail": "If no billing path is available, hand off in plain language rather than failing at publish.",
+          "id": "confirm-product",
+          "label": "Confirm one product",
+          "detail": "After you pick a candidate, we will confirm the product page and images before storyboarding.",
           "status": "todo"
         }
       ],
       "highlights": [
         {
-          "label": "Connected advertiser accounts",
+          "label": "Store",
+          "value": "yourstore.com",
+          "tone": "accent"
+        },
+        {
+          "label": "Ranking",
+          "value": "Ad-readiness signals"
+        },
+        {
+          "label": "Next",
+          "value": "Pick one product",
+          "tone": "good"
+        }
+      ],
+      "readiness": {
+        "accountConnection": "Not needed yet",
+        "identity": "Will verify after account selection",
+        "payment": "Confirm in Ads Manager before publish",
+        "video": "Starts after product confirmation",
+        "recommendedObjective": "Smart+ Web Conversions"
+      },
+      "storeDiscovery": {
+        "status": "loading",
+        "storeUrl": "https://yourstore.com",
+        "rankingBasis": [
+          "Visual fit",
+          "Clear offer",
+          "Landing page quality",
+          "Short-video potential"
+        ],
+        "note": "This scan uses visible store-page signals. It is not a sales forecast."
+      }
+    }
+  },
+  {
+    "label": "Pick product",
+    "state": {
+      "screen": "product",
+      "phaseLabel": "Product",
+      "headline": "Pick a product to promote.",
+      "summary": "I found 2 products from your store that look ready to promote on TikTok. Choose one.",
+      "primaryCta": "Use selected product",
+      "secondaryCta": "Show more candidates",
+      "timeline": [
+        {
+          "id": "product",
+          "label": "Product",
+          "status": "current",
+          "owner": "user",
+          "substeps": [
+            {
+              "label": "Pick product",
+              "status": "current"
+            },
+            {
+              "label": "Confirm product",
+              "status": "todo"
+            }
+          ]
+        },
+        {
+          "id": "creative",
+          "label": "Storyboard",
+          "status": "todo",
+          "owner": "chatgpt"
+        },
+        {
+          "id": "render",
+          "label": "Preview",
+          "status": "todo",
+          "owner": "chatgpt"
+        },
+        {
+          "id": "accounts",
+          "label": "Account setup",
+          "status": "todo",
+          "owner": "tiktok"
+        },
+        {
+          "id": "publish",
+          "label": "Review",
+          "status": "todo",
+          "owner": "user"
+        }
+      ],
+      "checklist": [
+        {
+          "id": "store-url",
+          "label": "Store URL scanned",
+          "detail": "https://yourstore.com",
+          "status": "done"
+        },
+        {
+          "id": "pick-product",
+          "label": "Pick one product",
+          "detail": "Choose the product that should move into product confirmation and storyboard generation.",
+          "status": "current"
+        },
+        {
+          "id": "confirm-product",
+          "label": "Confirm product page and images",
+          "detail": "The next screen checks the selected product details before any video is created.",
+          "status": "todo"
+        }
+      ],
+      "highlights": [
+        {
+          "label": "Top pick",
+          "value": "Portable Neck Fan",
+          "tone": "accent"
+        },
+        {
+          "label": "Candidates",
           "value": "2",
           "tone": "good"
         },
         {
-          "label": "Identity path",
-          "value": "Check immediately after account selection"
-        },
-        {
-          "label": "Billing",
-          "value": "Guided TTAM handoff if missing"
+          "label": "Recommendation",
+          "value": "Strong match"
         }
       ],
-      "optionGroups": [
-        {
-          "title": "What this step should optimize for",
-          "options": [
-            {
-              "id": "clarity",
-              "title": "Reduce setup anxiety",
-              "kicker": "Content design",
-              "description": "Use plain-language labels like 'Which ad account should own this launch?' instead of TikTok API terminology.",
-              "status": "recommended",
-              "meta": [
-                "Best for SMBs",
-                "One decision per card"
-              ]
-            },
-            {
-              "id": "trust",
-              "title": "Surface ownership early",
-              "kicker": "Advertiser need",
-              "description": "The user should see account name, currency, timezone, and identity count before any campaign write happens.",
-              "status": "ready",
-              "meta": [
-                "Prevents wrong-account drafts",
-                "Builds trust before publish"
-              ]
-            }
-          ]
-        }
-      ],
+      "product": {
+        "title": "Portable Neck Fan",
+        "price": "Needs confirmation",
+        "destination": "https://yourstore.com/products/portable-neck-fan",
+        "platform": "Store URL discovery"
+      },
       "readiness": {
-        "accountConnection": "2 advertiser account(s) available",
+        "accountConnection": "Not needed yet",
         "identity": "Will verify after account selection",
         "payment": "Confirm in Ads Manager before publish",
-        "video": "Choose or generate after product selection",
+        "video": "Starts after product confirmation",
         "recommendedObjective": "Smart+ Web Conversions"
       },
-      "accounts": [
-        {
-          "advertiserId": "707500000000000001",
-          "advertiserName": "Hooray DTC Footwear",
-          "advertiserRole": "ADMIN",
-          "bcName": "Hooray Growth Lab",
-          "country": "US",
-          "currency": "USD",
-          "identityCount": 2,
-          "status": "ACTIVE",
-          "timezone": "America/Los_Angeles"
-        },
-        {
-          "advertiserId": "707500000000000002",
-          "advertiserName": "Hooray Retargeting",
-          "advertiserRole": "OPERATOR",
-          "bcName": "Hooray Growth Lab",
-          "country": "US",
-          "currency": "USD",
-          "identityCount": 1,
-          "status": "ACTIVE",
-          "timezone": "America/Los_Angeles"
-        }
-      ],
-      "capabilityNotes": [
-        {
-          "id": "account-execution",
-          "title": "Account, identity, and Smart+ writes can run on TikTok MCP",
-          "detail": "The current bridge can already authorize, discover advertiser accounts, verify identities, and write Smart+ campaign objects.",
-          "status": "live"
-        },
-        {
-          "id": "creative-gap",
-          "title": "Scraping and net-new creative generation still need an external media layer",
-          "detail": "Product scraping, storyboard generation, video rendering, and asset hosting are outside the observed TikTok Ads MCP surface.",
-          "status": "mixed"
-        },
-        {
-          "id": "billing-gap",
-          "title": "Payment readiness is still a guided handoff",
-          "detail": "There is no direct payment-readiness endpoint in the current MCP surface, so the app should escalate billing setup in plain language.",
-          "status": "gap"
-        }
-      ]
+      "storeDiscovery": {
+        "status": "ready",
+        "storeUrl": "https://yourstore.com",
+        "candidates": [
+          {
+            "angle": "Hands-free cooling for hot commutes.",
+            "confidence": "Strong match",
+            "id": "portable-neck-fan",
+            "productUrl": "https://yourstore.com/products/portable-neck-fan",
+            "recommendation": "Top pick",
+            "reasons": [
+              "Clear seasonal use case and easy visual demo.",
+              "Benefit is understandable in the first 2 seconds.",
+              "Product page can support a simple shop-now CTA."
+            ],
+            "selected": true,
+            "title": "Portable Neck Fan"
+          },
+          {
+            "angle": "30-second couch cleanup before/after.",
+            "confidence": "Good potential",
+            "id": "pet-hair-remover-brush",
+            "productUrl": "https://yourstore.com/products/pet-hair-remover-brush",
+            "recommendation": "Candidate",
+            "reasons": [
+              "Before/after cleanup is easy to show in short video.",
+              "Audience is specific: pet owners with sofas, rugs, or cars.",
+              "Strong demonstration potential if product footage is available."
+            ],
+            "title": "Pet Hair Remover Brush"
+          }
+        ],
+        "selectedCandidateId": "portable-neck-fan",
+        "rankingBasis": [
+          "Visual fit",
+          "Clear offer",
+          "Landing page quality",
+          "Short-video potential"
+        ],
+        "note": "These are recommendations from visible store-page signals, not sales predictions."
+      }
     }
   },
   {
-    "label": "Authorization Gate",
-    "note": "When TikTok Ads is not connected yet, the user should see a strong blocker card and a clear authorization CTA instead of a raw error.",
-    "state": {
-      "screen": "onboarding",
-      "phaseLabel": "Account setup",
-      "headline": "Authorize TikTok Ads access to unlock the rest of the guided launch",
-      "summary": "This app can already guide the campaign journey, but it still needs one TikTok authorization step before it can discover real advertiser accounts, identities, and reporting destinations.",
-      "primaryCta": "Authorize TikTok Ads",
-      "secondaryCta": "Why this is needed",
-      "timeline": [
-        {
-          "id": "onboarding",
-          "label": "Account setup",
-          "status": "current",
-          "owner": "tiktok"
-        },
-        {
-          "id": "product",
-          "label": "Choose product",
-          "status": "todo",
-          "owner": "user"
-        },
-        {
-          "id": "creative",
-          "label": "Creative source",
-          "status": "todo",
-          "owner": "chatgpt"
-        },
-        {
-          "id": "accounts",
-          "label": "Campaign setup",
-          "status": "todo",
-          "owner": "tiktok"
-        },
-        {
-          "id": "publish",
-          "label": "Review + publish",
-          "status": "todo",
-          "owner": "user"
-        },
-        {
-          "id": "reporting",
-          "label": "Reporting setup",
-          "status": "todo",
-          "owner": "chatgpt"
-        }
-      ],
-      "checklist": [
-        {
-          "id": "auth",
-          "label": "Authorize TikTok Ads",
-          "detail": "Use the MCP OAuth bridge so account discovery and reporting can stay inside the same app session.",
-          "status": "current"
-        },
-        {
-          "id": "account",
-          "label": "Select an advertiser",
-          "detail": "Show one clear account card at a time, with business center, currency, and account status.",
-          "status": "todo"
-        },
-        {
-          "id": "identity",
-          "label": "Confirm delivery identity",
-          "detail": "Before draft creation, verify at least one usable TikTok identity under the chosen advertiser.",
-          "status": "todo"
-        },
-        {
-          "id": "billing",
-          "label": "Handle payment readiness",
-          "detail": "If no billing path is available, hand off in plain language rather than failing at publish.",
-          "status": "todo"
-        }
-      ],
-      "highlights": [
-        {
-          "label": "Connected advertiser accounts",
-          "value": "0",
-          "tone": "warn"
-        },
-        {
-          "label": "Identity path",
-          "value": "Check immediately after account selection"
-        },
-        {
-          "label": "Billing",
-          "value": "Guided TTAM handoff if missing"
-        }
-      ],
-      "optionGroups": [
-        {
-          "title": "What this step should optimize for",
-          "options": [
-            {
-              "id": "clarity",
-              "title": "Reduce setup anxiety",
-              "kicker": "Content design",
-              "description": "Use plain-language labels like 'Which ad account should own this launch?' instead of TikTok API terminology.",
-              "status": "recommended",
-              "meta": [
-                "Best for SMBs",
-                "One decision per card"
-              ]
-            },
-            {
-              "id": "trust",
-              "title": "Surface ownership early",
-              "kicker": "Advertiser need",
-              "description": "The user should see account name, currency, timezone, and identity count before any campaign write happens.",
-              "status": "ready",
-              "meta": [
-                "Prevents wrong-account drafts",
-                "Builds trust before publish"
-              ]
-            }
-          ]
-        }
-      ],
-      "readiness": {
-        "accountConnection": "Not authorized yet",
-        "identity": "Will verify after account selection",
-        "payment": "Confirm in Ads Manager before publish",
-        "video": "Choose or generate after product selection",
-        "recommendedObjective": "Smart+ Web Conversions"
-      },
-      "capabilityNotes": [
-        {
-          "id": "account-execution",
-          "title": "Account, identity, and Smart+ writes can run on TikTok MCP",
-          "detail": "The current bridge can already authorize, discover advertiser accounts, verify identities, and write Smart+ campaign objects.",
-          "status": "live"
-        },
-        {
-          "id": "creative-gap",
-          "title": "Scraping and net-new creative generation still need an external media layer",
-          "detail": "Product scraping, storyboard generation, video rendering, and asset hosting are outside the observed TikTok Ads MCP surface.",
-          "status": "mixed"
-        },
-        {
-          "id": "billing-gap",
-          "title": "Payment readiness is still a guided handoff",
-          "detail": "There is no direct payment-readiness endpoint in the current MCP surface, so the app should escalate billing setup in plain language.",
-          "status": "gap"
-        }
-      ],
-      "auth": {
-        "status": "needs_authorization",
-        "authorizationUrl": "https://ads.tiktok.com/api/chatgpt_app/auth",
-        "redirectUri": "https://mcp.hoorayads.org/callback"
-      },
-      "blockers": [
-        {
-          "id": "oauth",
-          "title": "TikTok Ads authorization required",
-          "detail": "Complete the authorization flow once, then return to the same Hooray TikTok Ads session and continue.",
-          "severity": "high"
-        }
-      ]
-    }
-  },
-  {
-    "label": "Product Intake",
-    "note": "The first review checkpoint confirms the landing page, product title, price, and destination before creative generation starts.",
+    "label": "Confirm product",
     "state": {
       "screen": "product",
-      "phaseLabel": "Product intake",
-      "headline": "Confirm the product details before the app writes creative",
-      "summary": "This is the first review checkpoint. The app should confirm the extracted title, price, offer, and reference images in a rich card before it starts storyboarding.",
-      "primaryCta": "Looks correct",
-      "secondaryCta": "Replace images",
+      "phaseLabel": "Product",
+      "headline": "Confirm this product.",
+      "summary": "We found this from your URL. Check the name, page, and images before we make the ad.",
+      "primaryCta": "Confirm product",
+      "secondaryCta": "Edit details",
       "timeline": [
         {
-          "id": "onboarding",
-          "label": "Account setup",
-          "status": "done",
-          "owner": "tiktok"
-        },
-        {
           "id": "product",
-          "label": "Choose product",
+          "label": "Product",
           "status": "current",
           "owner": "user"
         },
         {
           "id": "creative",
-          "label": "Creative source",
+          "label": "Storyboard",
+          "status": "todo",
+          "owner": "chatgpt"
+        },
+        {
+          "id": "render",
+          "label": "Preview",
           "status": "todo",
           "owner": "chatgpt"
         },
         {
           "id": "accounts",
-          "label": "Campaign setup",
+          "label": "Account setup",
           "status": "todo",
           "owner": "tiktok"
         },
         {
           "id": "publish",
-          "label": "Review + publish",
+          "label": "Review",
           "status": "todo",
           "owner": "user"
-        },
-        {
-          "id": "reporting",
-          "label": "Reporting setup",
-          "status": "todo",
-          "owner": "chatgpt"
         }
       ],
       "checklist": [
@@ -444,10 +397,11 @@ window.__POC_MOCK_GALLERY__ = [
         }
       ],
       "product": {
-        "title": "Nike Men's Air Max LTD 3 Sneaker - Grey/Black",
-        "price": "$129",
-        "destination": "https://www.famousfootwear.com/product/nike-mens-air-max-ltd-3-sneaker-1054683/grey-black-74030",
-        "platform": "Direct product URL"
+        "title": "Coach Brooklyn Shoulder Bag 28",
+        "price": "$295",
+        "destination": "https://coach.com/products/brooklyn-shoulder-bag-28",
+        "platform": "Direct product URL",
+        "imageCount": 3
       },
       "readiness": {
         "accountConnection": "Needs TikTok Ads authorization",
@@ -471,224 +425,52 @@ window.__POC_MOCK_GALLERY__ = [
         },
         {
           "id": "billing-gap",
-          "title": "Payment readiness is still a guided handoff",
-          "detail": "There is no direct payment-readiness endpoint in the current MCP surface, so the app should escalate billing setup in plain language.",
+          "title": "Payment readiness is checked before publish",
+          "detail": "If billing needs attention, the app should guide the advertiser before anything goes live.",
           "status": "gap"
         }
       ]
     }
   },
   {
-    "label": "Product Path",
-    "note": "After the product looks right, the user chooses the simplest viable launch lane. For this persona, website conversions is the default.",
-    "state": {
-      "screen": "product",
-      "phaseLabel": "Product path",
-      "headline": "Choose what the campaign is promoting before you ask for creative",
-      "summary": "Advertisers think in business goals, not endpoints. The app should first ask whether they are sending traffic to a website, promoting a TikTok Shop product, collecting leads, or driving app installs. That choice determines the rest of the setup.",
-      "primaryCta": "Use website path",
-      "secondaryCta": "See other launch paths",
-      "timeline": [
-        {
-          "id": "onboarding",
-          "label": "Account setup",
-          "status": "done",
-          "owner": "tiktok"
-        },
-        {
-          "id": "product",
-          "label": "Choose product",
-          "status": "current",
-          "owner": "user"
-        },
-        {
-          "id": "creative",
-          "label": "Creative source",
-          "status": "todo",
-          "owner": "chatgpt"
-        },
-        {
-          "id": "accounts",
-          "label": "Campaign setup",
-          "status": "todo",
-          "owner": "tiktok"
-        },
-        {
-          "id": "publish",
-          "label": "Review + publish",
-          "status": "todo",
-          "owner": "user"
-        },
-        {
-          "id": "reporting",
-          "label": "Reporting setup",
-          "status": "todo",
-          "owner": "chatgpt"
-        }
-      ],
-      "checklist": [
-        {
-          "id": "goal",
-          "label": "Lock the launch path",
-          "detail": "Set the product or destination type first so the app knows whether to ask for a URL, catalog, form, or app asset.",
-          "status": "current"
-        },
-        {
-          "id": "url",
-          "label": "Capture a concrete destination",
-          "detail": "For website campaigns, confirm a valid landing page that creative can reference.",
-          "status": "current"
-        },
-        {
-          "id": "asset-shape",
-          "label": "Translate into campaign shape",
-          "detail": "Map the choice into Smart+, GMV Max, lead gen, or app promotion requirements.",
-          "status": "todo"
-        }
-      ],
-      "optionGroups": [
-        {
-          "title": "Promoted-product paths",
-          "description": "The app should recommend the simplest viable path first, then show advanced options with their prerequisites.",
-          "options": [
-            {
-              "id": "website",
-              "title": "Website conversions",
-              "kicker": "Recommended first path",
-              "description": "Best default for a non-Shopify advertiser with a product page and no TikTok Shop dependency.",
-              "status": "recommended",
-              "meta": [
-                "Needs landing page URL",
-                "Maps cleanly into Smart+ website flow"
-              ]
-            },
-            {
-              "id": "shop",
-              "title": "TikTok Shop / GMV Max",
-              "kicker": "Advanced",
-              "description": "Great when the seller already has TikTok Shop eligibility, GMV Max access, and product-level creative assets.",
-              "status": "draft",
-              "meta": [
-                "Eligibility varies",
-                "Needs shop + campaign prerequisites"
-              ]
-            },
-            {
-              "id": "lead",
-              "title": "Lead generation",
-              "kicker": "Use when there is no direct product URL",
-              "description": "Useful for services, consultations, waitlists, or businesses that need contact capture first.",
-              "status": "ready",
-              "meta": [
-                "Form-first experience",
-                "Different publish checklist"
-              ]
-            },
-            {
-              "id": "app",
-              "title": "App promotion",
-              "kicker": "Separate asset track",
-              "description": "Only show this if the advertiser has app IDs, tracking setup, and app events ready.",
-              "status": "blocked",
-              "meta": [
-                "Needs app + measurement setup",
-                "Do not recommend by default"
-              ]
-            }
-          ]
-        }
-      ],
-      "highlights": [
-        {
-          "label": "Selected source",
-          "value": "website",
-          "tone": "accent"
-        },
-        {
-          "label": "Recommended objective",
-          "value": "Smart+ Web Conversions"
-        },
-        {
-          "label": "Destination",
-          "value": "https://www.famousfootwear.com/product/nike-mens-air-max-ltd-3-sneaker-1054683/grey-black-74030"
-        }
-      ],
-      "capabilityNotes": [
-        {
-          "id": "website-gap",
-          "title": "Website product scraping is still outside TikTok Ads MCP",
-          "detail": "The guided app should still own this step because it can normalize arbitrary merchant URLs into a clean creative brief.",
-          "status": "mixed"
-        },
-        {
-          "id": "gmv-max",
-          "title": "TikTok Shop and GMV Max exist, but should be shown as an eligibility-based lane",
-          "detail": "This path is powerful, but it should appear only when shop, store, and campaign prerequisites are actually met.",
-          "status": "mixed"
-        }
-      ],
-      "product": {
-        "title": "Nike Men's Air Max LTD 3 Sneaker - Grey/Black",
-        "price": "Pending merchant price",
-        "destination": "https://www.famousfootwear.com/product/nike-mens-air-max-ltd-3-sneaker-1054683/grey-black-74030",
-        "platform": "Direct product URL"
-      },
-      "readiness": {
-        "accountConnection": "Authorize first or reuse connected advertiser",
-        "identity": "Will verify after account selection",
-        "payment": "Confirm in Ads Manager before publish",
-        "video": "Choose or generate after product path is locked",
-        "recommendedObjective": "Smart+ Web Conversions"
-      },
-      "blockers": []
-    }
-  },
-  {
-    "label": "Creative Source",
-    "note": "The app then offers three rich paths: reuse an existing TikTok post, build from product media, or generate a fresh storyboard.",
+    "label": "Storyboard",
     "state": {
       "screen": "creative",
-      "phaseLabel": "Creative source",
-      "headline": "Let the advertiser choose between reusing content and generating something new",
-      "summary": "A good advertiser experience should not force one creative path. The app should present three lanes: reuse an existing TikTok post, start from approved product assets, or generate a fresh storyboard and video.",
-      "primaryCta": "Generate new creative",
-      "secondaryCta": "Reuse existing TikTok post",
+      "phaseLabel": "Storyboard",
+      "headline": "Pick a storyboard.",
+      "summary": "I drafted two story directions from the product page. Choose one, then preview the video.",
+      "primaryCta": "Use selected storyboard",
+      "secondaryCta": "Regenerate options",
       "timeline": [
         {
-          "id": "onboarding",
-          "label": "Account setup",
-          "status": "done",
-          "owner": "tiktok"
-        },
-        {
           "id": "product",
-          "label": "Choose product",
+          "label": "Product",
           "status": "done",
           "owner": "user"
         },
         {
           "id": "creative",
-          "label": "Creative source",
+          "label": "Storyboard",
           "status": "current",
           "owner": "chatgpt"
         },
         {
+          "id": "render",
+          "label": "Preview",
+          "status": "todo",
+          "owner": "chatgpt"
+        },
+        {
           "id": "accounts",
-          "label": "Campaign setup",
+          "label": "Account setup",
           "status": "todo",
           "owner": "tiktok"
         },
         {
           "id": "publish",
-          "label": "Review + publish",
+          "label": "Review",
           "status": "todo",
           "owner": "user"
-        },
-        {
-          "id": "reporting",
-          "label": "Reporting setup",
-          "status": "todo",
-          "owner": "chatgpt"
         }
       ],
       "checklist": [
@@ -755,13 +537,13 @@ window.__POC_MOCK_GALLERY__ = [
       "creativeAssets": [
         {
           "id": "asset-1",
-          "title": "Pain-to-comfort UGC",
+          "title": "Everyday style switch",
           "source": "Generated storyboard",
-          "description": "Hook the viewer with the problem first, then reveal Nike Men's Air Max LTD 3 Sneaker - Grey/Black as the relief moment.",
+          "description": "Hook the viewer with the problem first, then reveal Coach Brooklyn Shoulder Bag 28 as the relief moment.",
           "status": "recommended",
           "meta": [
-            "Best for conversion",
-            "2-scene vertical video",
+            "User-guided direction",
+            "12s vertical video",
             "Direct CTA"
           ]
         },
@@ -791,10 +573,10 @@ window.__POC_MOCK_GALLERY__ = [
       "angles": [
         {
           "id": "hook-01",
-          "title": "Pain-to-comfort switch",
-          "hook": "Start with the problem, then pivot hard into the product payoff with one spoken line and one tactile reveal.",
-          "format": "2-scene UGC",
-          "targetObjective": "Web Conversions"
+          "title": "Everyday style switch",
+          "hook": "One bag, three easy outfits.",
+          "format": "12s vertical video",
+          "targetObjective": "Shop the Brooklyn Bag"
         },
         {
           "id": "hook-02",
@@ -806,8 +588,8 @@ window.__POC_MOCK_GALLERY__ = [
       ],
       "highlights": [
         {
-          "label": "Preferred lane",
-          "value": "Generate new creative",
+          "label": "Creative direction",
+          "value": "Everyday style switch",
           "tone": "accent"
         },
         {
@@ -842,78 +624,76 @@ window.__POC_MOCK_GALLERY__ = [
         }
       ],
       "product": {
-        "title": "Nike Men's Air Max LTD 3 Sneaker - Grey/Black",
-        "price": "$129",
-        "destination": "https://www.famousfootwear.com/product/nike-mens-air-max-ltd-3-sneaker-1054683/grey-black-74030",
-        "platform": "Direct product URL"
+        "title": "Coach Brooklyn Shoulder Bag 28",
+        "price": "$295",
+        "destination": "https://coach.com/products/brooklyn-shoulder-bag-28",
+        "platform": "Direct product URL",
+        "creativeBriefFormat": "12s vertical video",
+        "creativeBriefHook": "One bag, three easy outfits.",
+        "creativeBriefObjective": "Shop the Brooklyn Bag",
+        "creativeBriefTitle": "Everyday style switch",
+        "imageCount": 3
       }
     }
   },
   {
-    "label": "Storyboard Review",
-    "note": "This is the editorial checkpoint. The advertiser reviews hook, scene framing, and CTA before any render or ad draft is started.",
+    "label": "Generating preview",
     "state": {
-      "screen": "creative",
-      "phaseLabel": "Creative source",
-      "headline": "Storyboard draft ready for review",
-      "summary": "At this moment the UI should feel editorial, not technical. The advertiser should only be deciding whether the hook, scene framing, and CTA feel right for the business.",
-      "primaryCta": "Approve storyboard",
-      "secondaryCta": "Change the hook",
+      "screen": "render",
+      "phaseLabel": "Preview",
+      "headline": "Generating your video preview.",
+      "summary": "I’m turning the selected storyboard into a short draft. Nothing is connected to TikTok Ads yet.",
+      "primaryCta": "Check render status",
+      "secondaryCta": "Edit storyboard",
       "timeline": [
         {
-          "id": "onboarding",
-          "label": "Account setup",
-          "status": "done",
-          "owner": "tiktok"
-        },
-        {
           "id": "product",
-          "label": "Choose product",
+          "label": "Product",
           "status": "done",
           "owner": "user"
         },
         {
           "id": "creative",
-          "label": "Creative source",
+          "label": "Storyboard",
+          "status": "done",
+          "owner": "chatgpt"
+        },
+        {
+          "id": "render",
+          "label": "Preview",
           "status": "current",
           "owner": "chatgpt"
         },
         {
           "id": "accounts",
-          "label": "Campaign setup",
+          "label": "Account setup",
           "status": "todo",
           "owner": "tiktok"
         },
         {
           "id": "publish",
-          "label": "Review + publish",
+          "label": "Review",
           "status": "todo",
           "owner": "user"
-        },
-        {
-          "id": "reporting",
-          "label": "Reporting setup",
-          "status": "todo",
-          "owner": "chatgpt"
         }
       ],
       "checklist": [
         {
           "id": "lane",
-          "label": "Pick a creative lane",
-          "detail": "Start with a simple choice between existing content and net-new generation.",
+          "label": "Creative lane selected",
+          "detail": "The advertiser already approved the concept, so rendering can happen asynchronously.",
+          "status": "done"
+        },
+        {
+          "id": "render",
+          "label": "Generate preview asset",
+          "detail": "Poll for completion and keep the user in the same workspace.",
           "status": "current"
         },
         {
           "id": "review",
-          "label": "Review the concept",
-          "detail": "Before rendering or selecting a post, show the advertiser the angle, hook, and CTA in plain language.",
-          "status": "todo"
-        },
-        {
-          "id": "asset",
-          "label": "Lock the launch asset",
-          "detail": "Only after approval should the campaign use a video ID or rendered output.",
+          "label": "Move into campaign setup",
+          "detail": "Only once the preview exists should the app ask for final campaign inputs.",
           "status": "todo"
         }
       ],
@@ -961,13 +741,13 @@ window.__POC_MOCK_GALLERY__ = [
       "creativeAssets": [
         {
           "id": "asset-1",
-          "title": "Pain-to-comfort UGC",
+          "title": "Everyday style switch",
           "source": "Generated storyboard",
-          "description": "Hook the viewer with the problem first, then reveal Nike Men's Air Max LTD 3 Sneaker - Grey/Black as the relief moment.",
+          "description": "Hook the viewer with the problem first, then reveal Coach Brooklyn Shoulder Bag 28 as the relief moment.",
           "status": "recommended",
           "meta": [
-            "Best for conversion",
-            "2-scene vertical video",
+            "User-guided direction",
+            "12s vertical video",
             "Direct CTA"
           ]
         },
@@ -997,10 +777,10 @@ window.__POC_MOCK_GALLERY__ = [
       "angles": [
         {
           "id": "hook-01",
-          "title": "Pain-to-comfort switch",
-          "hook": "Start with the problem, then pivot hard into the product payoff with one spoken line and one tactile reveal.",
-          "format": "2-scene UGC",
-          "targetObjective": "Web Conversions"
+          "title": "Everyday style switch",
+          "hook": "One bag, three easy outfits.",
+          "format": "12s vertical video",
+          "targetObjective": "Shop the Brooklyn Bag"
         },
         {
           "id": "hook-02",
@@ -1012,8 +792,8 @@ window.__POC_MOCK_GALLERY__ = [
       ],
       "highlights": [
         {
-          "label": "Preferred lane",
-          "value": "Generate new creative",
+          "label": "Creative direction",
+          "value": "Everyday style switch",
           "tone": "accent"
         },
         {
@@ -1030,7 +810,7 @@ window.__POC_MOCK_GALLERY__ = [
         "accountConnection": "Needs TikTok Ads authorization",
         "identity": "Will verify after account selection",
         "payment": "Confirm in Ads Manager before publish",
-        "video": "Creative lane selected, final asset still pending",
+        "video": "Preview rendering in progress",
         "recommendedObjective": "Smart+ Web Conversions"
       },
       "capabilityNotes": [
@@ -1048,166 +828,360 @@ window.__POC_MOCK_GALLERY__ = [
         }
       ],
       "product": {
-        "title": "Nike Men's Air Max LTD 3 Sneaker - Grey/Black",
-        "price": "$129",
-        "destination": "https://www.famousfootwear.com/product/nike-mens-air-max-ltd-3-sneaker-1054683/grey-black-74030",
-        "platform": "Direct product URL"
+        "title": "Coach Brooklyn Shoulder Bag 28",
+        "price": "$295",
+        "destination": "https://coach.com/products/brooklyn-shoulder-bag-28",
+        "platform": "Direct product URL",
+        "creativeBriefFormat": "12s vertical video",
+        "creativeBriefHook": "One bag, three easy outfits.",
+        "creativeBriefObjective": "Shop the Brooklyn Bag",
+        "creativeBriefTitle": "Everyday style switch",
+        "imageCount": 3
       }
     }
   },
   {
-    "label": "Render + Account Handoff",
-    "note": "Once approved, the experience moves into background rendering, then lands on advertiser/identity setup with explicit ownership signals.",
+    "label": "Preview",
+    "state": {
+      "screen": "render",
+      "phaseLabel": "Preview",
+      "headline": "Preview the video.",
+      "summary": "Review the selected storyboard as a short draft. Nothing is connected to TikTok Ads yet.",
+      "primaryCta": "Approve preview",
+      "secondaryCta": "Edit storyboard",
+      "timeline": [
+        {
+          "id": "product",
+          "label": "Product",
+          "status": "done",
+          "owner": "user"
+        },
+        {
+          "id": "creative",
+          "label": "Storyboard",
+          "status": "done",
+          "owner": "chatgpt"
+        },
+        {
+          "id": "render",
+          "label": "Preview",
+          "status": "current",
+          "owner": "chatgpt"
+        },
+        {
+          "id": "accounts",
+          "label": "Account setup",
+          "status": "todo",
+          "owner": "tiktok"
+        },
+        {
+          "id": "publish",
+          "label": "Review",
+          "status": "todo",
+          "owner": "user"
+        }
+      ],
+      "checklist": [
+        {
+          "id": "concept",
+          "label": "Storyboard approved",
+          "detail": "The hook, product framing, and CTA were approved before rendering.",
+          "status": "done"
+        },
+        {
+          "id": "preview",
+          "label": "Preview video ready",
+          "detail": "Watch the generated preview and confirm it is launch-worthy.",
+          "status": "current"
+        },
+        {
+          "id": "campaign",
+          "label": "Continue to campaign setup",
+          "detail": "After preview approval, attach the asset context to the Smart+ draft flow.",
+          "status": "todo"
+        }
+      ],
+      "optionGroups": [
+        {
+          "title": "Creative lanes",
+          "description": "Each lane should feel like a deliberate product choice, not an API fallback.",
+          "options": [
+            {
+              "id": "generate",
+              "title": "Generate a fresh ad",
+              "kicker": "Recommended for first launch",
+              "description": "Use the product page, approved images, and a clear business goal to create a storyboard and then a rendered preview.",
+              "status": "recommended",
+              "meta": [
+                "Best for new advertisers",
+                "Keeps the app differentiated"
+              ]
+            },
+            {
+              "id": "reuse",
+              "title": "Reuse an existing TikTok post",
+              "kicker": "MCP-backed asset path",
+              "description": "Once identity access is ready, the app can guide the user to pick a usable post instead of generating from scratch.",
+              "status": "ready",
+              "meta": [
+                "Maps to identity_video_get",
+                "Needs a usable identity first"
+              ]
+            },
+            {
+              "id": "hybrid",
+              "title": "Start from existing product media",
+              "kicker": "Fast creative iteration",
+              "description": "Best when the advertiser has decent product imagery but still wants the app to script and package the ad.",
+              "status": "ready",
+              "meta": [
+                "Good for DTC products",
+                "Keeps visual review inside ChatGPT"
+              ]
+            }
+          ]
+        }
+      ],
+      "creativeAssets": [
+        {
+          "id": "asset-1",
+          "title": "Everyday style switch",
+          "source": "Generated storyboard",
+          "description": "Hook the viewer with the problem first, then reveal Coach Brooklyn Shoulder Bag 28 as the relief moment.",
+          "status": "recommended",
+          "meta": [
+            "User-guided direction",
+            "12s vertical video",
+            "Direct CTA"
+          ]
+        },
+        {
+          "id": "asset-2",
+          "title": "Existing TikTok post reuse",
+          "source": "Identity video library",
+          "description": "Use this lane when the brand already has a post with strong watch time or social proof.",
+          "status": "available",
+          "meta": [
+            "Requires identity selection",
+            "Maps to MCP asset discovery"
+          ]
+        },
+        {
+          "id": "asset-3",
+          "title": "Thumbnail + CTA polish",
+          "source": "Creative enhancement",
+          "description": "After a video ID exists, the app can guide thumbnail and CTA cleanup so the creative feels launch-ready.",
+          "status": "needs_input",
+          "meta": [
+            "Needs real video ID",
+            "Maps partly to file_video_suggestcover_get"
+          ]
+        }
+      ],
+      "angles": [
+        {
+          "id": "hook-01",
+          "title": "Everyday style switch",
+          "hook": "One bag, three easy outfits.",
+          "format": "12s vertical video",
+          "targetObjective": "Shop the Brooklyn Bag"
+        },
+        {
+          "id": "hook-02",
+          "title": "Proof-first social clip",
+          "hook": "Open on a believable proof point or social cue, then move quickly into the product benefit and click reason.",
+          "format": "Identity-post reuse",
+          "targetObjective": "Landing page views"
+        }
+      ],
+      "highlights": [
+        {
+          "label": "Preview",
+          "value": "12s vertical",
+          "tone": "good"
+        },
+        {
+          "label": "Asset",
+          "value": "video_preview_demo",
+          "tone": "accent"
+        },
+        {
+          "label": "TikTok upload",
+          "value": "Needed before publish",
+          "tone": "warn"
+        }
+      ],
+      "readiness": {
+        "accountConnection": "Needs TikTok Ads authorization",
+        "identity": "Will verify after account selection",
+        "payment": "Confirm in Ads Manager before publish",
+        "video": "Preview ready for review",
+        "recommendedObjective": "Smart+ Web Conversions"
+      },
+      "capabilityNotes": [
+        {
+          "id": "creative-live",
+          "title": "Existing post reuse is the strongest MCP-native creative path today",
+          "detail": "Identity-based post discovery is a natural bridge between TikTok-native content and campaign creation.",
+          "status": "live"
+        },
+        {
+          "id": "creative-gap",
+          "title": "Generated storyboard and render remain the signature ChatGPT layer",
+          "detail": "This is where the app adds the most product value beyond Ads Manager.",
+          "status": "mixed"
+        }
+      ],
+      "product": {
+        "title": "Coach Brooklyn Shoulder Bag 28",
+        "price": "$295",
+        "destination": "https://coach.com/products/brooklyn-shoulder-bag-28",
+        "platform": "Direct product URL",
+        "imageCount": 3,
+        "creativeBriefTitle": "Everyday style switch",
+        "creativeBriefHook": "One bag, three easy outfits.",
+        "creativeBriefFormat": "12s vertical video",
+        "creativeBriefObjective": "Shop the Brooklyn Bag"
+      },
+      "blockers": [
+        {
+          "id": "tiktok-upload",
+          "title": "Preview is not a TikTok-hosted video yet",
+          "detail": "The app can show the rendered preview now. Before final ad creative creation or publish, the renderer still needs to upload the MP4 to TikTok and return a real TikTok video_id.",
+          "severity": "medium"
+        }
+      ],
+      "videoPreview": {
+        "canCreateCampaign": true,
+        "creativeAssetId": "creative_asset_video_job_demo",
+        "durationSeconds": 12,
+        "height": 960,
+        "jobId": "video_job_demo",
+        "previewUrl": "/assets/mock-render-preview.mp4",
+        "status": "preview_ready",
+        "thumbnailUrl": "/assets/mock-render-poster.svg",
+        "videoId": "video_preview_demo",
+        "width": 540
+      }
+    }
+  },
+  {
+    "label": "Account setup",
     "state": {
       "screen": "onboarding",
       "phaseLabel": "Account setup",
-      "headline": "Connected account is ready for identity and product setup",
-      "summary": "The TikTok Ads connection is live. The next best move is to verify the identity path and move this advertiser into product and creative setup.",
-      "primaryCta": "Continue with this advertiser",
-      "secondaryCta": "Review details",
+      "headline": "Account setup.",
+      "summary": "Connect TikTok Ads so Hooray can find the right Business Center, advertiser account, and TikTok Account.",
+      "primaryCta": "Authorize TikTok Ads",
+      "secondaryCta": "Why this is needed",
       "timeline": [
         {
-          "id": "onboarding",
-          "label": "Account setup",
-          "status": "current",
-          "owner": "tiktok"
-        },
-        {
           "id": "product",
-          "label": "Choose product",
+          "label": "Product",
           "status": "todo",
           "owner": "user"
         },
         {
           "id": "creative",
-          "label": "Creative source",
+          "label": "Storyboard",
+          "status": "todo",
+          "owner": "chatgpt"
+        },
+        {
+          "id": "render",
+          "label": "Preview",
           "status": "todo",
           "owner": "chatgpt"
         },
         {
           "id": "accounts",
-          "label": "Campaign setup",
-          "status": "todo",
+          "label": "Account setup",
+          "status": "current",
           "owner": "tiktok"
         },
         {
           "id": "publish",
-          "label": "Review + publish",
+          "label": "Review",
           "status": "todo",
           "owner": "user"
-        },
-        {
-          "id": "reporting",
-          "label": "Reporting setup",
-          "status": "todo",
-          "owner": "chatgpt"
         }
       ],
       "checklist": [
         {
           "id": "auth",
           "label": "Authorize TikTok Ads",
-          "detail": "The app can now read real advertiser data.",
-          "status": "done"
+          "detail": "Use the MCP OAuth bridge so account discovery and reporting can stay inside the same app session.",
+          "status": "current"
         },
         {
           "id": "account",
-          "label": "Choose advertiser owner",
-          "detail": "Make the selected account visible and explicit before the app writes anything.",
-          "status": "current"
+          "label": "Select an advertiser",
+          "detail": "Show one clear account card at a time, with business center, currency, and account status.",
+          "status": "todo"
         },
         {
           "id": "identity",
           "label": "Confirm delivery identity",
-          "detail": "If no identity exists, route into identity setup before creative or draft creation.",
-          "status": "done"
+          "detail": "Before draft creation, verify at least one usable TikTok identity under the chosen advertiser.",
+          "status": "todo"
         },
         {
-          "id": "billing",
-          "label": "Prepare billing handoff",
-          "detail": "Keep payment readiness visible as a guided pre-publish task.",
+          "id": "tiktok_account",
+          "label": "Confirm TikTok Account",
+          "detail": "Choose the TikTok profile that will appear as the ad identity.",
           "status": "todo"
         }
       ],
       "highlights": [
         {
-          "label": "Advertiser accounts",
-          "value": "1",
-          "tone": "accent"
+          "label": "Connected advertiser accounts",
+          "value": "0",
+          "tone": "warn"
         },
         {
-          "label": "Selected identities",
-          "value": "1",
-          "tone": "good"
+          "label": "Identity path",
+          "value": "Check immediately after account selection"
         },
         {
-          "label": "Recommended next step",
-          "value": "Choose product path"
+          "label": "TikTok Account",
+          "value": "Check after advertiser selection"
         }
       ],
-      "accounts": [
-        {
-          "advertiserId": "707500000000000001",
-          "advertiserName": "Hooray DTC Footwear",
-          "advertiserRole": "ADMIN",
-          "bcName": "Hooray Growth Lab",
-          "country": "US",
-          "currency": "USD",
-          "identityCount": 2,
-          "status": "ACTIVE",
-          "timezone": "America/Los_Angeles"
-        }
-      ],
-      "identities": [
-        {
-          "availableStatus": "AVAILABLE",
-          "displayName": "Hooray Shoes",
-          "identityId": "identity_001",
-          "identityType": "TT_USER",
-          "username": "hoorayshoes"
-        }
-      ],
-      "readiness": {
-        "accountConnection": "1 advertiser account(s) available",
-        "identity": "1 usable identity found",
-        "payment": "Confirm in Ads Manager before publish",
-        "video": "Choose or generate after product selection",
-        "recommendedObjective": "Smart+ Web Conversions"
-      },
       "optionGroups": [
         {
-          "title": "Why this step matters",
+          "title": "What this step should optimize for",
           "options": [
             {
-              "id": "ownership",
-              "title": "Prevent wrong-account drafts",
-              "kicker": "Advertiser need",
-              "description": "A guided account selection step is more trustworthy than hidden account context.",
+              "id": "clarity",
+              "title": "Reduce setup anxiety",
+              "kicker": "Content design",
+              "description": "Use plain-language labels like 'Which ad account should own this launch?' instead of TikTok API terminology.",
               "status": "recommended",
               "meta": [
-                "Reduces support load",
-                "Avoids destructive mistakes"
+                "Best for SMBs",
+                "One decision per card"
               ]
             },
             {
-              "id": "identity-reuse",
-              "title": "Unlock existing TikTok post reuse",
-              "kicker": "Creative payoff",
-              "description": "Once identity is known, the app can recommend existing TikTok posts as creative candidates.",
+              "id": "trust",
+              "title": "Surface ownership early",
+              "kicker": "Advertiser need",
+              "description": "The user should see account name, currency, timezone, and identity count before any campaign write happens.",
               "status": "ready",
               "meta": [
-                "Connects setup to creative flow",
-                "Feels distinctly TikTok-native"
+                "Prevents wrong-account drafts",
+                "Builds trust before publish"
               ]
             }
           ]
         }
       ],
-      "product": {
-        "title": "Nike Men's Air Max LTD 3 Sneaker - Grey/Black",
-        "price": "$129",
-        "destination": "https://www.famousfootwear.com/product/nike-mens-air-max-ltd-3-sneaker-1054683/grey-black-74030",
-        "platform": "Direct product URL"
+      "readiness": {
+        "accountConnection": "Not authorized yet",
+        "identity": "Will verify after account selection",
+        "payment": "Confirm in Ads Manager before publish",
+        "video": "Choose or generate after product selection",
+        "recommendedObjective": "Smart+ Web Conversions"
       },
       "capabilityNotes": [
         {
@@ -1224,59 +1198,65 @@ window.__POC_MOCK_GALLERY__ = [
         },
         {
           "id": "billing-gap",
-          "title": "Payment readiness is still a guided handoff",
-          "detail": "There is no direct payment-readiness endpoint in the current MCP surface, so the app should escalate billing setup in plain language.",
+          "title": "Payment readiness is checked before publish",
+          "detail": "If billing needs attention, the app should guide the advertiser before anything goes live.",
           "status": "gap"
+        }
+      ],
+      "auth": {
+        "status": "needs_authorization",
+        "authorizationUrl": "https://ads.tiktok.com/api/chatgpt_app/auth",
+        "redirectUri": "https://mcp.hoorayads.org/callback"
+      },
+      "blockers": [
+        {
+          "id": "oauth",
+          "title": "TikTok Ads authorization required",
+          "detail": "Complete the authorization flow once, then return to the same Hooray TikTok Ads session and continue.",
+          "severity": "high"
         }
       ]
     }
   },
   {
-    "label": "Draft Review",
-    "note": "The Smart+ draft review card summarizes launch readiness in plain language so a first-launch advertiser can approve confidently.",
+    "label": "Review",
     "state": {
       "screen": "draft",
-      "phaseLabel": "Review + publish",
-      "headline": "Smart+ draft is ready for review inside the guided launch workspace",
-      "summary": "This review step should feel like a launch checklist, not a settings dump: budget, country, identity, creative, and publish risk in one clean card.",
-      "primaryCta": "Approve parameters",
-      "secondaryCta": "Adjust settings",
+      "phaseLabel": "Review",
+      "headline": "Review before launch.",
+      "summary": "Check the video, budget, destination, and report plan. We’ll publish only after you confirm.",
+      "primaryCta": "Approve launch settings",
+      "secondaryCta": "Edit campaign details",
       "timeline": [
         {
-          "id": "onboarding",
-          "label": "Account setup",
-          "status": "done",
-          "owner": "tiktok"
-        },
-        {
           "id": "product",
-          "label": "Choose product",
+          "label": "Product",
           "status": "done",
           "owner": "user"
         },
         {
           "id": "creative",
-          "label": "Creative source",
+          "label": "Storyboard",
+          "status": "done",
+          "owner": "chatgpt"
+        },
+        {
+          "id": "render",
+          "label": "Preview",
           "status": "done",
           "owner": "chatgpt"
         },
         {
           "id": "accounts",
-          "label": "Campaign setup",
+          "label": "Account setup",
           "status": "done",
           "owner": "tiktok"
         },
         {
           "id": "publish",
-          "label": "Review + publish",
+          "label": "Review",
           "status": "current",
           "owner": "user"
-        },
-        {
-          "id": "reporting",
-          "label": "Reporting setup",
-          "status": "todo",
-          "owner": "chatgpt"
         }
       ],
       "checklist": [
@@ -1322,7 +1302,7 @@ window.__POC_MOCK_GALLERY__ = [
         "recommendedObjective": "Smart+ Web Conversions"
       },
       "draft": {
-        "name": "Nike Air Max LTD 3 | Smart+ | US",
+        "name": "Coach Brooklyn Bag | Smart+ | US",
         "objective": "Web Conversions",
         "fields": [
           {
@@ -1342,7 +1322,7 @@ window.__POC_MOCK_GALLERY__ = [
           },
           {
             "label": "Daily budget",
-            "value": "$80",
+            "value": "$50",
             "editable": true
           },
           {
@@ -1362,8 +1342,8 @@ window.__POC_MOCK_GALLERY__ = [
           }
         ],
         "warnings": [
-          "If payment is missing, the app should return a clear TTAM handoff instead of a raw API error.",
-          "Only publish after explicit user approval of campaign parameters."
+          "If billing needs attention, we’ll guide you to finish it before publish.",
+          "Nothing goes live until you approve the final launch settings."
         ]
       },
       "optionGroups": [
@@ -1410,288 +1390,21 @@ window.__POC_MOCK_GALLERY__ = [
         },
         {
           "id": "billing-gap",
-          "title": "Payment readiness is still a guided handoff",
-          "detail": "There is no direct payment-readiness endpoint in the current MCP surface, so the app should escalate billing setup in plain language.",
+          "title": "Payment readiness is checked before publish",
+          "detail": "If billing needs attention, the app should guide the advertiser before anything goes live.",
           "status": "gap"
         }
       ],
       "product": {
-        "title": "Nike Men's Air Max LTD 3 Sneaker - Grey/Black",
-        "price": "$129",
-        "destination": "https://www.famousfootwear.com/product/nike-mens-air-max-ltd-3-sneaker-1054683/grey-black-74030",
-        "platform": "Direct product URL"
-      }
-    }
-  },
-  {
-    "label": "Launch Complete",
-    "note": "After publish, the UI shifts into a success and follow-through posture: celebrate briefly, confirm the campaign, and set expectations.",
-    "state": {
-      "screen": "publish",
-      "phaseLabel": "Launch complete",
-      "headline": "Campaign submitted successfully, and the next best move is follow-through",
-      "summary": "A strong launch state should celebrate briefly, confirm the campaign ID, and immediately guide the advertiser into reporting expectations so they know what success looks like next.",
-      "primaryCta": "Set up reporting digest",
-      "secondaryCta": "View in Ads Manager",
-      "timeline": [
-        {
-          "id": "onboarding",
-          "label": "Account setup",
-          "status": "done",
-          "owner": "tiktok"
-        },
-        {
-          "id": "product",
-          "label": "Choose product",
-          "status": "done",
-          "owner": "user"
-        },
-        {
-          "id": "creative",
-          "label": "Creative source",
-          "status": "done",
-          "owner": "chatgpt"
-        },
-        {
-          "id": "accounts",
-          "label": "Campaign setup",
-          "status": "done",
-          "owner": "tiktok"
-        },
-        {
-          "id": "publish",
-          "label": "Review + publish",
-          "status": "current",
-          "owner": "user"
-        },
-        {
-          "id": "reporting",
-          "label": "Reporting setup",
-          "status": "todo",
-          "owner": "chatgpt"
-        }
-      ],
-      "highlights": [
-        {
-          "label": "Launch state",
-          "value": "Submitted",
-          "tone": "good"
-        },
-        {
-          "label": "Campaign",
-          "value": "spc_poc_20260624_001"
-        },
-        {
-          "label": "Recommended follow-up",
-          "value": "Weekly digest",
-          "tone": "accent"
-        }
-      ],
-      "publish": {
-        "state": "submitted",
-        "campaignId": "spc_poc_20260624_001",
-        "nextCheckIn": "Tell the advertiser that learning and performance signals usually need time to stabilize before major changes."
-      },
-      "reportPlan": {
-        "cadence": "weekly",
-        "delivery": "ChatGPT digest",
-        "nextRun": "Next Monday at 9:00 AM advertiser time",
-        "focus": "conversion",
-        "metrics": [
-          "spend",
-          "CTR",
-          "landing page views",
-          "CPA / conversion quality"
-        ],
-        "notes": [
-          "The first digest should explain whether the campaign is delivering cleanly before recommending optimization.",
-          "Keep the first report lightweight and focused on trust-building, not dashboard overload."
-        ]
-      },
-      "capabilityNotes": [
-        {
-          "id": "launch-to-report",
-          "title": "The publish step should naturally hand off into reporting setup",
-          "detail": "That follow-through is part of the product, not an afterthought.",
-          "status": "live"
-        }
-      ],
-      "readiness": {
-        "accountConnection": "Live advertiser selected",
-        "identity": "Live identity attached",
-        "payment": "Assumed ready for launch",
-        "video": "Live creative attached",
-        "recommendedObjective": "Smart+ Web Conversions"
-      },
-      "product": {
-        "title": "Nike Men's Air Max LTD 3 Sneaker - Grey/Black",
-        "price": "$129",
-        "destination": "https://www.famousfootwear.com/product/nike-mens-air-max-ltd-3-sneaker-1054683/grey-black-74030",
-        "platform": "Direct product URL"
-      }
-    }
-  },
-  {
-    "label": "Reporting Follow-Through",
-    "note": "The journey ends by setting a simple reporting lane so the advertiser knows what happens next and when to come back.",
-    "state": {
-      "screen": "reporting",
-      "phaseLabel": "Reporting follow-through",
-      "headline": "Set up a reporting lane while the launch context is still fresh",
-      "summary": "Most advertisers do not just need a campaign published. They need a light-touch follow-up lane that tells them what happened, what to change, and when to come back. This is where the app should set that expectation and wire the right reporting mode.",
-      "primaryCta": "Save reporting plan",
-      "secondaryCta": "Compare delivery options",
-      "timeline": [
-        {
-          "id": "onboarding",
-          "label": "Account setup",
-          "status": "done",
-          "owner": "tiktok"
-        },
-        {
-          "id": "product",
-          "label": "Choose product",
-          "status": "done",
-          "owner": "user"
-        },
-        {
-          "id": "creative",
-          "label": "Creative source",
-          "status": "done",
-          "owner": "chatgpt"
-        },
-        {
-          "id": "accounts",
-          "label": "Campaign setup",
-          "status": "done",
-          "owner": "tiktok"
-        },
-        {
-          "id": "publish",
-          "label": "Review + publish",
-          "status": "done",
-          "owner": "user"
-        },
-        {
-          "id": "reporting",
-          "label": "Reporting setup",
-          "status": "current",
-          "owner": "chatgpt"
-        }
-      ],
-      "checklist": [
-        {
-          "id": "focus",
-          "label": "Choose the first reporting lens",
-          "detail": "Start with the question the advertiser cares about most: delivery, creative, or conversions.",
-          "status": "current"
-        },
-        {
-          "id": "cadence",
-          "label": "Choose a reporting cadence",
-          "detail": "Default to weekly for most SMB advertisers; daily only when they are actively learning or troubleshooting.",
-          "status": "current"
-        },
-        {
-          "id": "delivery",
-          "label": "Choose delivery mode",
-          "detail": "Let the user pick between in-chat digests, async exports, or webhooks if the integration is ready.",
-          "status": "todo"
-        }
-      ],
-      "highlights": [
-        {
-          "label": "Cadence",
-          "value": "weekly",
-          "tone": "accent"
-        },
-        {
-          "label": "Delivery mode",
-          "value": "chatgpt digest"
-        },
-        {
-          "label": "Focus",
-          "value": "conversion",
-          "tone": "good"
-        }
-      ],
-      "optionGroups": [
-        {
-          "title": "Reporting delivery modes",
-          "description": "Different advertisers need different levels of fidelity and automation.",
-          "options": [
-            {
-              "id": "digest",
-              "title": "ChatGPT digest",
-              "kicker": "Recommended default",
-              "description": "A friendly recurring summary with a few metrics, a diagnosis, and 1-2 next actions is the best first reporting experience for most advertisers.",
-              "status": "recommended",
-              "meta": [
-                "Best for SMBs",
-                "Needs thread-side scheduling"
-              ]
-            },
-            {
-              "id": "export",
-              "title": "Async export",
-              "kicker": "Ops-friendly",
-              "description": "Good for agencies or analysts who want a CSV/XLSX task and will review the data outside the chat flow.",
-              "status": "ready",
-              "meta": [
-                "Maps to report_task_create",
-                "Good for larger accounts"
-              ]
-            },
-            {
-              "id": "webhook",
-              "title": "Webhook subscription",
-              "kicker": "Advanced / allowlist-sensitive",
-              "description": "Great when the integration wants push-style updates, but this path needs a durable callback service and may be allowlist-limited.",
-              "status": "blocked",
-              "meta": [
-                "Maps to subscription_subscribe_create",
-                "Not the best default UX"
-              ]
-            }
-          ]
-        }
-      ],
-      "reportPlan": {
-        "cadence": "weekly",
-        "delivery": "chatgpt digest",
-        "nextRun": "Next Monday at 9:00 AM advertiser time",
-        "focus": "conversion",
-        "metrics": [
-          "clicks",
-          "landing page views",
-          "CPA / conversion signals"
-        ],
-        "notes": [
-          "Use synchronous integrated reports for lightweight in-chat summaries.",
-          "Use async report tasks when the user wants exportable files or larger result sets.",
-          "Use webhook subscriptions only when the integration is ready for a callback-based reporting lane."
-        ]
-      },
-      "capabilityNotes": [
-        {
-          "id": "reports-live",
-          "title": "Reporting APIs are one of the strongest MCP-backed surfaces",
-          "detail": "Synchronous reports, async exports, and benchmark-style follow-ups are all feasible paths for a guided reporting experience.",
-          "status": "live"
-        },
-        {
-          "id": "webhook-caution",
-          "title": "Webhook-driven reporting needs extra product plumbing",
-          "detail": "It is powerful, but it should not be the default until callback reliability, scheduling, and notification UX are in place.",
-          "status": "mixed"
-        }
-      ],
-      "readiness": {
-        "accountConnection": "Advertiser 707500000000000001",
-        "identity": "No longer the main risk",
-        "payment": "Not relevant for reporting",
-        "video": "Use creative metrics only when the asset is live",
-        "recommendedObjective": "Smart+ Web Conversions"
+        "title": "Coach Brooklyn Shoulder Bag 28",
+        "price": "$295",
+        "destination": "https://coach.com/products/brooklyn-shoulder-bag-28",
+        "platform": "Direct product URL",
+        "creativeBriefFormat": "12s vertical video",
+        "creativeBriefHook": "One bag, three easy outfits.",
+        "creativeBriefObjective": "Shop the Brooklyn Bag",
+        "creativeBriefTitle": "Everyday style switch",
+        "imageCount": 3
       }
     }
   }
