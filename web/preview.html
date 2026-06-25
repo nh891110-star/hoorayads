@@ -3,52 +3,108 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>TikTok Ads Agent POC Preview</title>
+    <title>Hooray TikTok Ads Guided Preview</title>
     <link rel="stylesheet" href="./widget.css">
   </head>
   <body>
     <div id="app"></div>
     <script>
       window.__POC_PREVIEW_STATE__ = {
-        screen: "draft",
-        headline: "Smart+ campaign draft is ready for review",
+        screen: "reporting",
+        phaseLabel: "Reporting follow-through",
+        headline: "Set up a reporting lane while the launch context is still fresh",
         summary:
-          "This preview now matches the broader TikTok ChatGPT App PRD: scrape, storyboard, render, account selection, Smart+ draft, then publish.",
-        primaryCta: "Approve parameters",
-        secondaryCta: "Adjust budget",
+          "This preview shows the richer guided workspace layer: launch flow, setup checklist, reporting options, and capability notes in one TikTok-themed view.",
+        primaryCta: "Save reporting plan",
+        secondaryCta: "Compare delivery options",
         timeline: [
-          { id: "scrape", label: "Product scraped", status: "done", owner: "chatgpt" },
-          { id: "storyboard", label: "Storyboard approved", status: "done", owner: "user" },
-          { id: "render", label: "Video rendering", status: "done", owner: "chatgpt" },
-          { id: "account", label: "Ad account + identity", status: "done", owner: "tiktok" },
-          { id: "publish", label: "Publish", status: "current", owner: "user" }
+          { id: "onboarding", label: "Account setup", status: "done", owner: "tiktok" },
+          { id: "product", label: "Choose product", status: "done", owner: "user" },
+          { id: "creative", label: "Creative source", status: "done", owner: "chatgpt" },
+          { id: "accounts", label: "Campaign setup", status: "done", owner: "tiktok" },
+          { id: "publish", label: "Review + publish", status: "done", owner: "user" },
+          { id: "reporting", label: "Reporting setup", status: "current", owner: "chatgpt" }
+        ],
+        checklist: [
+          { id: "focus", label: "Choose the first reporting lens", detail: "Start with the question the advertiser cares about most: delivery, creative, or conversions.", status: "current" },
+          { id: "cadence", label: "Choose a reporting cadence", detail: "Default to weekly for most SMB advertisers; daily only when they are actively learning or troubleshooting.", status: "current" },
+          { id: "delivery", label: "Choose delivery mode", detail: "Let the user pick between in-chat digests, async exports, or webhooks if the integration is ready.", status: "todo" }
+        ],
+        highlights: [
+          { label: "Cadence", value: "weekly", tone: "accent" },
+          { label: "Delivery mode", value: "chatgpt digest" },
+          { label: "Focus", value: "conversion", tone: "good" }
+        ],
+        readiness: {
+          accountConnection: "Advertiser 707500000000000001",
+          identity: "No longer the main risk",
+          payment: "Not relevant for reporting",
+          video: "Use creative metrics only when the asset is live",
+          recommendedObjective: "Smart+ Web Conversions"
+        },
+        optionGroups: [
+          {
+            title: "Reporting delivery modes",
+            description: "Different advertisers need different levels of fidelity and automation.",
+            options: [
+              {
+                id: "digest",
+                title: "ChatGPT digest",
+                kicker: "Recommended default",
+                description: "A friendly recurring summary with a few metrics, a diagnosis, and 1-2 next actions is the best first reporting experience for most advertisers.",
+                status: "recommended",
+                meta: ["Best for SMBs", "Needs thread-side scheduling"]
+              },
+              {
+                id: "export",
+                title: "Async export",
+                kicker: "Ops-friendly",
+                description: "Good for agencies or analysts who want a CSV/XLSX task and will review the data outside the chat flow.",
+                status: "ready",
+                meta: ["Maps to report_task_create", "Good for larger accounts"]
+              },
+              {
+                id: "webhook",
+                title: "Webhook subscription",
+                kicker: "Advanced / allowlist-sensitive",
+                description: "Great when the integration wants push-style updates, but this path needs a durable callback service and may be allowlist-limited.",
+                status: "blocked",
+                meta: ["Maps to subscription_subscribe_create", "Not the best default UX"]
+              }
+            ]
+          }
+        ],
+        reportPlan: {
+          cadence: "weekly",
+          delivery: "chatgpt digest",
+          nextRun: "Next Monday at 9:00 AM advertiser time",
+          focus: "conversion",
+          metrics: ["spend", "CTR", "landing page views", "CPA / conversion quality"],
+          notes: [
+            "Use synchronous integrated reports for lightweight in-chat summaries.",
+            "Use async report tasks when the user wants exportable files or larger result sets.",
+            "Use webhook subscriptions only when callback reliability and notification UX are in place."
+          ]
+        },
+        capabilityNotes: [
+          {
+            id: "reports-live",
+            title: "Reporting APIs are one of the strongest MCP-backed surfaces",
+            detail: "Synchronous reports, async exports, and benchmark-style follow-ups are all feasible paths for a guided reporting experience.",
+            status: "live"
+          },
+          {
+            id: "webhook-caution",
+            title: "Webhook-driven reporting needs extra product plumbing",
+            detail: "It is powerful, but it should not be the default until callback reliability, scheduling, and notification UX are in place.",
+            status: "mixed"
+          }
         ],
         product: {
           title: "CloudSoft Compression Pillow",
           price: "$49",
           destination: "https://merchant.example/products/cloudsoft-pillow",
           platform: "Direct product URL"
-        },
-        readiness: {
-          accountConnection: "Selected: Little Shop H CA",
-          identity: "Connected",
-          payment: "Ready",
-          video: "Watermarked preview complete",
-          recommendedObjective: "Smart+ Web Conversions"
-        },
-        draft: {
-          name: "CloudSoft Pillow | Smart+ | CA",
-          objective: "Web Conversions",
-          fields: [
-            { label: "Daily budget", value: "$80", editable: true },
-            { label: "Country", value: "CA", editable: true },
-            { label: "Optimization goal", value: "Landing page views", editable: true },
-            { label: "Bidding strategy", value: "Maximum delivery", editable: true }
-          ],
-          warnings: [
-            "Only the final publish step should trigger real write calls.",
-            "If payment or policy blocks publish, return a plain-language next action instead of a raw API error."
-          ]
         }
       };
     </script>

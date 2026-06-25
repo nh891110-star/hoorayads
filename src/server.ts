@@ -10,6 +10,8 @@ import {
   approveCampaignParametersInput,
   approveCampaignParametersOutput,
   capabilityMap,
+  choosePromotedProductInput,
+  choosePromotedProductOutput,
   createSmartplusCampaignInput,
   createSmartplusCampaignOutput,
   generateStoryboardInput,
@@ -20,10 +22,16 @@ import {
   getAdAccountsOutput,
   getVideoStatusInput,
   getVideoStatusOutput,
+  loadCreativeOptionsInput,
+  loadCreativeOptionsOutput,
+  planAccountSetupInput,
+  planAccountSetupOutput,
   publishCampaignInput,
   publishCampaignOutput,
   scrapeProductInput,
   scrapeProductOutput,
+  setupReportingDigestInput,
+  setupReportingDigestOutput,
   updateProductImagesInput,
   updateProductImagesOutput,
   verifyOrConnectTikTokIdentityInput,
@@ -35,12 +43,16 @@ import {
   accountAuthorizationResult,
   accountErrorResult,
   accountResult,
+  creativeWorkspaceResult,
   draftResult,
   identityConnectResult,
   liveAccountResult,
+  onboardingWorkspaceResult,
   previewState,
+  productSelectionResult,
   publishResult,
   renderPendingResult,
+  reportingSetupResult,
   scrapeResult,
   storyboardResult
 } from "./mock-data.js";
@@ -64,7 +76,7 @@ export function createTikTokAdsPocServer() {
     { name: "tiktok-ads-agent-poc", version: "0.3.0" },
     {
       instructions:
-        "Follow the original TikTok ChatGPT App flow: scrape product, review images, review storyboard, generate video, verify account and identity, create Smart+ draft, then publish only after explicit approval. Keep responses visual and concise."
+        "Guide the advertiser through account setup, promoted-product choice, creative selection or generation, Smart+ draft review, publish, and reporting setup. Keep responses visual, specific, and beginner-safe."
     }
   );
 
@@ -98,6 +110,85 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         }
       ]
     })
+  );
+
+  server.registerTool(
+    "plan_account_setup",
+    {
+      title: "Plan account setup",
+      description: "Guide the advertiser through TikTok authorization, advertiser selection, identity readiness, and billing handoff.",
+      inputSchema: planAccountSetupInput,
+      outputSchema: planAccountSetupOutput,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false
+      }
+    },
+    async () => {
+      try {
+        const result = await listTikTokAdvertiserAccounts();
+
+        if (result.status === "needs_authorization") {
+          return {
+            structuredContent: {
+              stage: "needs_authorization",
+              widgetState: accountAuthorizationResult(result.authorizationUrl, result.redirectUri)
+            },
+            content: [{ type: "text", text: "Authorize TikTok Ads first, then continue account setup in the same workspace." }],
+            _meta: {
+              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              source: "tiktok-mcp-oauth"
+            }
+          };
+        }
+
+        if (result.status === "misconfigured") {
+          return {
+            structuredContent: {
+              stage: "needs_authorization",
+              widgetState: accountErrorResult(result.message)
+            },
+            content: [{ type: "text", text: result.message }],
+            _meta: {
+              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              source: "config-error"
+            }
+          };
+        }
+
+        return {
+          structuredContent: {
+            stage: result.data.accounts.length > 0 ? "account_selection" : "setup_review",
+            widgetState: onboardingWorkspaceResult({
+              accounts: result.data.accounts,
+              connected: true,
+              userDisplayName: result.data.userDisplayName
+            })
+          },
+          content: [{ type: "text", text: "Account setup workspace is ready. The user can now pick an advertiser and continue the launch flow." }],
+          _meta: {
+            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            source: "tiktok-mcp",
+            mappedCapabilities:
+              capabilityMap.find((item) => item.productTool === "plan_account_setup")?.currentTikTokAdsCapabilities ?? []
+          }
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error while planning account setup.";
+        return {
+          structuredContent: {
+            stage: "needs_authorization",
+            widgetState: accountErrorResult(message)
+          },
+          content: [{ type: "text", text: `Could not load the account setup workspace: ${message}` }],
+          _meta: {
+            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            source: "tiktok-mcp-error"
+          }
+        };
+      }
+    }
   );
 
   server.registerTool(
@@ -150,6 +241,46 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       _meta: {
         [RESOURCE_URI_META_KEY]: WIDGET_URI,
         source: "mock"
+      }
+    })
+  );
+
+  server.registerTool(
+    "choose_promoted_product",
+    {
+      title: "Choose promoted product",
+      description: "Guide the advertiser into the right promoted-product path before creative or campaign setup begins.",
+      inputSchema: choosePromotedProductInput,
+      outputSchema: choosePromotedProductOutput,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false
+      }
+    },
+    async ({
+      productLabel,
+      productSource,
+      productUrl
+    }: {
+      productLabel?: string;
+      productSource: "website" | "tiktok_shop" | "lead_generation" | "app";
+      productUrl?: string;
+    }) => ({
+      structuredContent: {
+        selectedSource: productSource,
+        widgetState: productSelectionResult({
+          productLabel,
+          productSource,
+          productUrl
+        })
+      },
+      content: [{ type: "text", text: "Product-path guidance is ready. Let the user choose the simplest viable launch lane before creative work starts." }],
+      _meta: {
+        [RESOURCE_URI_META_KEY]: WIDGET_URI,
+        source: "guided-experience",
+        mappedCapabilities:
+          capabilityMap.find((item) => item.productTool === "choose_promoted_product")?.currentTikTokAdsCapabilities ?? []
       }
     })
   );
@@ -255,6 +386,34 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       _meta: {
         [RESOURCE_URI_META_KEY]: WIDGET_URI,
         source: "mock"
+      }
+    })
+  );
+
+  server.registerTool(
+    "load_creative_options",
+    {
+      title: "Load creative options",
+      description: "Show whether the advertiser should reuse existing TikTok content or generate fresh creative inside the guided flow.",
+      inputSchema: loadCreativeOptionsInput,
+      outputSchema: loadCreativeOptionsOutput,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false
+      }
+    },
+    async ({ productLabel }: { productLabel?: string }) => ({
+      structuredContent: {
+        creativeCount: 3,
+        widgetState: creativeWorkspaceResult({ productLabel })
+      },
+      content: [{ type: "text", text: "Creative lanes are ready. The advertiser can choose between existing TikTok content, product-media reuse, or a net-new generated ad." }],
+      _meta: {
+        [RESOURCE_URI_META_KEY]: WIDGET_URI,
+        source: "guided-experience",
+        mappedCapabilities:
+          capabilityMap.find((item) => item.productTool === "load_creative_options")?.currentTikTokAdsCapabilities ?? []
       }
     })
   );
@@ -677,6 +836,57 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       _meta: {
         [RESOURCE_URI_META_KEY]: WIDGET_URI,
         source: "mock"
+      }
+    })
+  );
+
+  server.registerTool(
+    "setup_reporting_digest",
+    {
+      title: "Setup reporting digest",
+      description: "Guide the advertiser into a lightweight reporting lane after launch, from in-chat digests to async exports or webhooks.",
+      inputSchema: setupReportingDigestInput,
+      outputSchema: setupReportingDigestOutput,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false
+      }
+    },
+    async ({
+      advertiserId,
+      cadence,
+      deliveryMode,
+      focus
+    }: {
+      advertiserId: string;
+      cadence: "daily" | "weekly" | "monthly";
+      deliveryMode: "chatgpt_digest" | "async_export" | "webhook";
+      focus: "creative" | "delivery" | "conversion";
+    }) => ({
+      structuredContent: {
+        planStatus: deliveryMode === "webhook" ? "allowlist_limited" : "ready",
+        widgetState: reportingSetupResult({
+          advertiserId,
+          cadence,
+          deliveryMode,
+          focus
+        })
+      },
+      content: [
+        {
+          type: "text",
+          text:
+            deliveryMode === "webhook"
+              ? "Reporting setup is ready, but webhook delivery should be framed as an advanced path with callback and allowlist caveats."
+              : "Reporting setup is ready. The user can save a lightweight post-launch reporting lane directly from this workspace."
+        }
+      ],
+      _meta: {
+        [RESOURCE_URI_META_KEY]: WIDGET_URI,
+        source: "guided-experience",
+        mappedCapabilities:
+          capabilityMap.find((item) => item.productTool === "setup_reporting_digest")?.currentTikTokAdsCapabilities ?? []
       }
     })
   );

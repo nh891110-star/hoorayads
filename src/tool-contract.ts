@@ -75,6 +75,13 @@ export const getAdAccountsOutput = {
   widgetState: z.record(z.any())
 };
 
+export const planAccountSetupInput = {};
+
+export const planAccountSetupOutput = {
+  stage: z.enum(["needs_authorization", "account_selection", "setup_review"]),
+  widgetState: z.record(z.any())
+};
+
 export const verifyOrConnectTikTokIdentityInput = {
   advertiserId: z.string()
 };
@@ -92,6 +99,30 @@ export const verifyPaymentMethodInput = {
 
 export const verifyPaymentMethodOutput = {
   status: z.enum(["ready", "missing"]),
+  widgetState: z.record(z.any())
+};
+
+export const choosePromotedProductInput = {
+  productLabel: z.string().optional(),
+  productSource: z.enum(["website", "tiktok_shop", "lead_generation", "app"]).default("website"),
+  productUrl: z.string().url().optional()
+};
+
+export const choosePromotedProductOutput = {
+  selectedSource: z.string(),
+  widgetState: z.record(z.any())
+};
+
+export const loadCreativeOptionsInput = {
+  advertiserId: z.string().optional(),
+  identityAuthorizedBcId: z.string().optional(),
+  identityId: z.string().optional(),
+  identityType: z.enum(["TT_USER", "BC_AUTH_TT"]).optional(),
+  productLabel: z.string().optional()
+};
+
+export const loadCreativeOptionsOutput = {
+  creativeCount: z.number(),
   widgetState: z.record(z.any())
 };
 
@@ -144,6 +175,18 @@ export const publishCampaignOutput = {
   widgetState: z.record(z.any())
 };
 
+export const setupReportingDigestInput = {
+  advertiserId: z.string(),
+  cadence: z.enum(["daily", "weekly", "monthly"]).default("weekly"),
+  deliveryMode: z.enum(["chatgpt_digest", "async_export", "webhook"]).default("chatgpt_digest"),
+  focus: z.enum(["creative", "delivery", "conversion"]).default("conversion")
+};
+
+export const setupReportingDigestOutput = {
+  planStatus: z.enum(["ready", "needs_access", "allowlist_limited"]),
+  widgetState: z.record(z.any())
+};
+
 export type CapabilityMapping = {
   productTool: string;
   purpose: string;
@@ -152,6 +195,22 @@ export type CapabilityMapping = {
 };
 
 export const capabilityMap: CapabilityMapping[] = [
+  {
+    productTool: "plan_account_setup",
+    purpose: "Guide the advertiser through authorization, account selection, identity readiness, pixel readiness, and billing handoff.",
+    currentTikTokAdsCapabilities: [
+      "user_info_get",
+      "bc_get",
+      "bc_asset_get",
+      "advertiser_info_get",
+      "identity_get",
+      "pixel_list_get"
+    ],
+    gaps: [
+      "There is still no direct payment-method readiness API in the current MCP surface.",
+      "Billing setup still needs a TTAM or Business Center handoff."
+    ]
+  },
   {
     productTool: "scrape_product",
     purpose: "Extract product title, description, price, and reference images from a submitted URL.",
@@ -168,6 +227,18 @@ export const capabilityMap: CapabilityMapping[] = [
     gaps: [
       "Image validation and storage are outside the current TikTok Ads MCP.",
       "ChatGPT file handling should feed this tool in a production build."
+    ]
+  },
+  {
+    productTool: "choose_promoted_product",
+    purpose: "Guide the advertiser into the right promoted-product path before creative or campaign setup begins.",
+    currentTikTokAdsCapabilities: [
+      "catalog_location_currency_get",
+      "campaign_gmv_max_create"
+    ],
+    gaps: [
+      "Arbitrary product scraping is still external to TikTok Ads MCP.",
+      "GMV Max and TikTok Shop product paths have extra eligibility and allowlist constraints."
     ]
   },
   {
@@ -201,6 +272,18 @@ export const capabilityMap: CapabilityMapping[] = [
     currentTikTokAdsCapabilities: [],
     gaps: [
       "Needs render-job persistence and file hosting."
+    ]
+  },
+  {
+    productTool: "load_creative_options",
+    purpose: "Show the advertiser whether to reuse an existing TikTok post, select an existing asset, or generate a fresh ad concept.",
+    currentTikTokAdsCapabilities: [
+      "identity_video_get",
+      "file_video_suggestcover_get",
+      "creative_report_get"
+    ],
+    gaps: [
+      "Net-new storyboard and video generation still needs an OpenAI and rendering pipeline outside TikTok Ads MCP."
     ]
   },
   {
@@ -267,6 +350,22 @@ export const capabilityMap: CapabilityMapping[] = [
     ],
     gaps: [
       "Final publish should normalize review, payment, and policy outcomes into user-facing states."
+    ]
+  },
+  {
+    productTool: "setup_reporting_digest",
+    purpose: "Set up a recurring reporting lane with either synchronous views, async exports, or webhook-based digests.",
+    currentTikTokAdsCapabilities: [
+      "report_integrated_get",
+      "report_task_create",
+      "report_task_check",
+      "subscription_subscribe_create",
+      "creative_report_get",
+      "creative_fatigue_get"
+    ],
+    gaps: [
+      "Webhook-based report subscriptions can be allowlist-limited and need a durable callback + notification layer.",
+      "A polished recurring ChatGPT digest still needs thread-side scheduling and summarization orchestration."
     ]
   }
 ];
