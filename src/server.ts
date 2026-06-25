@@ -90,6 +90,13 @@ const TOOL_WIDGET_META = {
   "openai/toolInvocation/invoking": "Preparing TikTok Ads workspace...",
   "openai/toolInvocation/invoked": "TikTok Ads workspace ready."
 } as const;
+const RESULT_WIDGET_META = {
+  [RESOURCE_URI_META_KEY]: WIDGET_URI,
+  ui: {
+    resourceUri: WIDGET_URI
+  },
+  "openai/outputTemplate": WIDGET_URI
+} as const;
 
 function withWidgetToolMeta<T extends object>(definition: T): T & { _meta: Record<string, unknown> } {
   return {
@@ -621,7 +628,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             },
             content: [{ type: "text", text: "Authorize TikTok Ads first, then continue account setup in the same workspace." }],
             _meta: {
-              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              ...RESULT_WIDGET_META,
               source: "tiktok-mcp-oauth"
             }
           };
@@ -635,7 +642,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             },
             content: [{ type: "text", text: result.message }],
             _meta: {
-              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              ...RESULT_WIDGET_META,
               source: "config-error"
             }
           };
@@ -652,7 +659,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
           content: [{ type: "text", text: "Account setup workspace is ready. The user can now pick an advertiser and continue the launch flow." }],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "tiktok-mcp",
             mappedCapabilities:
               capabilityMap.find((item) => item.productTool === "plan_account_setup")?.currentTikTokAdsCapabilities ?? []
@@ -667,7 +674,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
           content: [{ type: "text", text: `Could not load the account setup workspace: ${message}` }],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "tiktok-mcp-error"
           }
         };
@@ -699,7 +706,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: "Scraped product details are ready for review." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "heuristic-scrape",
           capabilityGaps: capabilityMap.find((item) => item.productTool === "scrape_product")?.gaps ?? []
         }
@@ -738,7 +745,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             }
           ],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "guided-experience"
           }
         };
@@ -756,7 +763,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: "Reference images updated. Ask the user to confirm them before moving on." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience"
         }
       };
@@ -804,7 +811,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: "Product details corrected. The launch flow can continue without re-scraping the product." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience"
         }
       };
@@ -851,7 +858,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: "Product-path guidance is ready. Let the user choose the simplest viable launch lane before creative work starts." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience",
           mappedCapabilities:
             capabilityMap.find((item) => item.productTool === "choose_promoted_product")?.currentTikTokAdsCapabilities ?? []
@@ -897,7 +904,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: "Storyboard ready. Keep the review in rich UI and wait for explicit approval." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience"
         }
       };
@@ -951,7 +958,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           }
         ],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience"
         }
       };
@@ -1000,7 +1007,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: renderError ? renderError.message : "Video generation started. Poll for completion instead of blocking." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience"
         }
       };
@@ -1038,7 +1045,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
           content: [{ type: "text", text: error.message }],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "guided-experience"
           }
         };
@@ -1063,7 +1070,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
           content: [{ type: "text", text: error.message }],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "guided-experience"
           }
         };
@@ -1097,7 +1104,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             previewResourceLink(preview)
           ],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "guided-experience",
             videoPreview: preview
           }
@@ -1116,7 +1123,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           }
         ],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience"
         }
       };
@@ -1150,7 +1157,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: "Creative lanes are ready. The advertiser can choose between existing TikTok content, product-media reuse, or a net-new generated ad." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience",
           mappedCapabilities:
             capabilityMap.find((item) => item.productTool === "load_creative_options")?.currentTikTokAdsCapabilities ?? []
@@ -1189,7 +1196,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               }
             ],
             _meta: {
-              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              ...RESULT_WIDGET_META,
               source: "tiktok-mcp-oauth"
             }
           };
@@ -1203,7 +1210,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             },
             content: [{ type: "text", text: result.message }],
             _meta: {
-              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              ...RESULT_WIDGET_META,
               source: "config-error"
             }
           };
@@ -1228,7 +1235,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             }
           ],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "tiktok-mcp",
             mappedCapabilities:
               capabilityMap.find((item) => item.productTool === "get_ad_accounts")?.currentTikTokAdsCapabilities ?? []
@@ -1243,7 +1250,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
           content: [{ type: "text", text: `Could not load advertiser accounts: ${message}` }],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "tiktok-mcp-error"
           }
         };
@@ -1283,7 +1290,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
               }
             ],
             _meta: {
-              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              ...RESULT_WIDGET_META,
               source: "tiktok-mcp-oauth"
             }
           };
@@ -1299,7 +1306,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             },
             content: [{ type: "text", text: result.message }],
             _meta: {
-              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              ...RESULT_WIDGET_META,
               source: "config-error"
             }
           };
@@ -1318,7 +1325,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             },
             content: [{ type: "text", text: "TikTok identity is available for the selected advertiser." }],
             _meta: {
-              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              ...RESULT_WIDGET_META,
               source: "tiktok-mcp"
             }
           };
@@ -1339,7 +1346,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             }
           ],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "tiktok-mcp-error"
           }
         };
@@ -1360,7 +1367,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             }
           ],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "config-backed"
           }
         };
@@ -1373,7 +1380,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
         content: [{ type: "text", text: "TikTok identity is available for the selected advertiser." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "mock"
         }
       };
@@ -1404,7 +1411,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
           content: [{ type: "text", text: "Authorize TikTok Ads first. Payment readiness cannot be checked before advertiser access is live." }],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "tiktok-mcp-oauth"
           }
         };
@@ -1418,7 +1425,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
           content: [{ type: "text", text: accountsResult.message }],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "config-error"
           }
         };
@@ -1431,7 +1438,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: "Payment path looks ready for draft review and publish." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience"
         }
       };
@@ -1473,7 +1480,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             },
             content: [{ type: "text", text: "TikTok Ads authorization is required before Smart+ draft creation can continue." }],
             _meta: {
-              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              ...RESULT_WIDGET_META,
               source: "tiktok-mcp-oauth"
             }
           };
@@ -1495,7 +1502,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             },
             content: [{ type: "text", text: result.message }],
             _meta: {
-              [RESOURCE_URI_META_KEY]: WIDGET_URI,
+              ...RESULT_WIDGET_META,
               source: "config-error"
             }
           };
@@ -1549,7 +1556,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
             }
           ],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "tiktok-mcp",
             mappedCapabilities:
               capabilityMap.find((item) => item.productTool === "create_smartplus_campaign")?.currentTikTokAdsCapabilities ?? []
@@ -1572,7 +1579,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
           content: [{ type: "text", text: `Could not create the Smart+ draft: ${message}` }],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "tiktok-mcp-error"
           }
         };
@@ -1607,7 +1614,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
           content: [{ type: "text", text: "Campaign approval is blocked because this launch session does not yet have a matching Smart+ draft." }],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "guided-experience"
           }
         };
@@ -1630,7 +1637,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: "Campaign parameters approved. The app may now publish." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience"
         }
       };
@@ -1677,7 +1684,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           },
           content: [{ type: "text", text: "Publish is blocked because this session does not have a matching approved Smart+ draft yet." }],
           _meta: {
-            [RESOURCE_URI_META_KEY]: WIDGET_URI,
+            ...RESULT_WIDGET_META,
             source: "guided-experience"
           }
         };
@@ -1690,7 +1697,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         },
         content: [{ type: "text", text: "Campaign submitted. Switch the user into a celebratory post-launch state with a TTAM handoff." }],
         _meta: {
-          [RESOURCE_URI_META_KEY]: WIDGET_URI,
+          ...RESULT_WIDGET_META,
           source: "guided-experience"
         }
       };
@@ -1740,7 +1747,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         }
       ],
       _meta: {
-        [RESOURCE_URI_META_KEY]: WIDGET_URI,
+        ...RESULT_WIDGET_META,
         source: "guided-experience",
         mappedCapabilities:
           capabilityMap.find((item) => item.productTool === "setup_reporting_digest")?.currentTikTokAdsCapabilities ?? []
