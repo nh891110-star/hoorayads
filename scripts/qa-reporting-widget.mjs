@@ -6,7 +6,6 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   CallToolResultSchema,
-  ListToolsResultSchema,
   ReadResourceResultSchema
 } from "@modelcontextprotocol/sdk/types.js";
 import { chromium } from "playwright";
@@ -123,7 +122,7 @@ async function main() {
 
   let browser;
   try {
-    const tools = await client.request({ method: "tools/list", params: {} }, ListToolsResultSchema);
+    const tools = await client.listTools();
     const reportTool = tools.tools.find((tool) => tool.name === "get_ads_report");
     assert(reportTool, "get_ads_report is missing from tools/list.");
     assert(reportTool._meta?.ui?.resourceUri === REPORT_URI, "Tool descriptor has the wrong ui.resourceUri.");
@@ -145,13 +144,10 @@ async function main() {
     assert(resourceHtml.includes("ui/notifications/tool-result"), "Widget resource is missing the tool-result bridge.");
     assert(!JSON.stringify({ reportTool, resource }).includes("tiktok-ads-report-v1"), "A stale v1 widget URI remains.");
 
-    const toolResult = await client.request(
+    const toolResult = await client.callTool(
       {
-        method: "tools/call",
-        params: {
-          name: "get_ads_report",
-          arguments: { mode: "demo", level: "campaign", comparePreviousPeriod: true }
-        }
+        name: "get_ads_report",
+        arguments: { mode: "demo", level: "campaign", comparePreviousPeriod: true }
       },
       CallToolResultSchema
     );
