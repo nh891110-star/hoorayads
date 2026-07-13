@@ -21,7 +21,7 @@ ChatGPT can cache an older tool descriptor after a widget URI is versioned. If t
 - Serve the current HTML and `text/html;profile=mcp-app` MIME type from every alias.
 - Do not write QA that requires old URIs to disappear. QA should require them to remain readable and byte-equivalent to the current template.
 
-The reporting widget currently uses `v3` and preserves `v2` and `v1` aliases.
+The reporting widget currently uses `v4` and preserves `v3`, `v2`, and `v1` aliases.
 
 ## Claude `mcp_session_terminated`
 

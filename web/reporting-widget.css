@@ -488,6 +488,24 @@ footer {
   padding: 12px;
 }
 
+.filter-bar .account-field {
+  grid-column: 1 / -1;
+}
+
+.filter-bar .account-field small {
+  color: #7a8583;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.filter-bar .account-field select:disabled {
+  opacity: 1;
+  background: var(--wash);
+  color: #465250;
+  cursor: not-allowed;
+}
+
 .filter-bar label {
   display: grid;
   gap: 4px;
@@ -723,6 +741,11 @@ td:first-child small {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+}
+
+.status-shell .filter-bar {
+  width: min(980px, 100%);
+  margin: 0 auto 20px;
 }
 
 .account-options {

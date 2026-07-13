@@ -95,8 +95,9 @@ const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget.js"), "utf8");
 const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
-const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v3.html";
+const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v4.html";
 const LEGACY_REPORT_WIDGET_URIS = [
+  "ui://widget/tiktok-ads-report-v3.html",
   "ui://widget/tiktok-ads-report-v2.html",
   "ui://widget/tiktok-ads-report-v1.html"
 ];
@@ -489,10 +490,14 @@ function escapeMarkdownCell(value: string) {
 
 function claudeReportFallback(reportState: ReportState) {
   if (reportState.status !== "ready") {
+    const accountChoices = (reportState.accountOptions || []).map(
+      (account) => `- ${account.advertiserName} (${account.advertiserId}, ${account.currency})`
+    );
     return [
       "### TikTok Ads performance report",
       "",
-      reportState.message || `Report status: ${reportState.status.replaceAll("_", " ")}.`
+      reportState.message || `Report status: ${reportState.status.replaceAll("_", " ")}.`,
+      ...(accountChoices.length > 0 ? ["", "**Advertiser Account options:**", ...accountChoices] : [])
     ].join("\n");
   }
 
@@ -913,7 +918,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     );
   };
 
-  registerReportWidgetResource("tiktok-ads-report-v3", REPORT_WIDGET_URI);
+  registerReportWidgetResource("tiktok-ads-report-v4", REPORT_WIDGET_URI);
   LEGACY_REPORT_WIDGET_URIS.forEach((uri, index) => {
     registerReportWidgetResource(`tiktok-ads-report-legacy-${index + 1}`, uri);
   });
@@ -924,7 +929,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     {
       title: "Get TikTok Ads report",
       description:
-        "Generate an interactive TikTok Ads performance report. Uses the Flat MCP reporting API in live mode and a clearly labeled deterministic sample in demo mode. advertiserId is required by TikTok for a BASIC report, but this app can auto-select it when the authorized user has exactly one account. If multiple accounts are available, the result asks the user to choose one. Defaults to the last 7 complete days, campaign level, and previous-period comparison.",
+        "Generate an interactive TikTok Ads performance report. Advertiser Account is the first visible report input because advertiserId is required by TikTok for a BASIC report. The app auto-selects it when the authorized user has exactly one account and asks the user to choose when multiple accounts are available. Uses the Flat MCP reporting API in live mode and a clearly labeled deterministic sample in demo mode. Defaults to the last 7 complete days, campaign level, and previous-period comparison.",
       inputSchema: getAdsReportInput,
       outputSchema: getAdsReportOutput,
       _meta: TOOL_REPORT_META,

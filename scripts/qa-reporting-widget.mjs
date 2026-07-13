@@ -10,8 +10,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { chromium } from "playwright";
 
-const REPORT_URI = "ui://widget/tiktok-ads-report-v3.html";
+const REPORT_URI = "ui://widget/tiktok-ads-report-v4.html";
 const LEGACY_REPORT_URIS = [
+  "ui://widget/tiktok-ads-report-v3.html",
   "ui://widget/tiktok-ads-report-v2.html",
   "ui://widget/tiktok-ads-report-v1.html"
 ];
@@ -52,6 +53,7 @@ function createHostHarness(resourceHtml, toolResult) {
       const toolResult = JSON.parse(decode(${JSON.stringify(encodedResult)}));
       const frame = document.getElementById("report-frame");
       const state = document.getElementById("harness-state");
+      window.__lastToolCall = null;
 
       const send = (message) => frame.contentWindow.postMessage({ jsonrpc: "2.0", ...message }, "*");
       const updateMountedState = () => {
@@ -94,6 +96,12 @@ function createHostHarness(resourceHtml, toolResult) {
 
         if (message.method === "ui/request-display-mode" && message.id !== undefined) {
           send({ id: message.id, result: { displayMode: message.params.mode } });
+          return;
+        }
+
+        if (message.method === "tools/call" && message.id !== undefined) {
+          window.__lastToolCall = message.params;
+          send({ id: message.id, result: toolResult });
           return;
         }
 
@@ -146,6 +154,11 @@ async function main() {
     assert(resourceHtml.length > 0, "Widget resource HTML is empty.");
     assert(resourceHtml.includes('id="report-root"'), "Widget resource is missing #report-root.");
     assert(resourceHtml.includes("ui/notifications/tool-result"), "Widget resource is missing the tool-result bridge.");
+    assert(resourceHtml.includes('data-filter="advertiserId"'), "Widget resource is missing the advertiser account filter.");
+    assert(
+      resourceHtml.indexOf('data-filter="advertiserId"') < resourceHtml.indexOf('data-filter="level"'),
+      "Advertiser Account must appear before Level in the shared widget."
+    );
     for (const legacyUri of LEGACY_REPORT_URIS) {
       const legacyResource = await client.request(
         { method: "resources/read", params: { uri: legacyUri } },
@@ -166,6 +179,8 @@ async function main() {
     );
     const reportState = toolResult.structuredContent?.reportState;
     assert(reportState?.status === "ready", "Demo report state is not ready.");
+    assert(reportState?.advertiser?.name === "Sample Advertiser Account", "Demo account is not clearly labeled as a sample.");
+    assert(reportState?.accountOptions?.length === 1, "Demo report should include one sample account option.");
     assert(Array.isArray(reportState.kpis) && reportState.kpis.length === 4, "Demo report KPIs are invalid.");
     assert(Array.isArray(reportState.rows) && reportState.rows.length > 0, "Demo report rows are invalid.");
     assert(Array.isArray(reportState.trend) && reportState.trend.length === 7, "Demo report trend is invalid.");
@@ -194,6 +209,57 @@ async function main() {
     assert(rootHtml.trim().length > 0, "The report widget root remained empty.");
     assert(widgetText.includes(reportState.advertiser.name), "The mounted widget did not receive the tool result.");
     assert((await widgetFrame.locator(".kpi-card").count()) === 4, "The mounted widget did not render four KPI cards.");
+
+    await widgetFrame.locator('[data-action="expand"]').click();
+    await widgetFrame.locator(".filter-bar").waitFor({ timeout: 5000 });
+    const filterLabels = await widgetFrame.locator(".filter-bar > label").allTextContents();
+    assert(filterLabels[0]?.trim().startsWith("Advertiser Account"), "Advertiser Account is not the first report control.");
+    const accountFilter = widgetFrame.locator('[data-filter="advertiserId"]');
+    const modeFilter = widgetFrame.locator('[data-filter="mode"]');
+    assert((await accountFilter.inputValue()) === "demo-advertiser-001", "Demo account is not selected in the account control.");
+    assert(await accountFilter.isDisabled(), "Demo account control should be locked to prevent fake live selection.");
+    await modeFilter.selectOption("live");
+    assert(!(await accountFilter.isDisabled()), "Advertiser Account should become selectable in Live mode.");
+    assert((await accountFilter.inputValue()) === "", "Live mode should start with authorized-account discovery.");
+    await modeFilter.selectOption("demo");
+    assert(await accountFilter.isDisabled(), "Switching back to Demo should lock the sample account again.");
+
+    const needsAccountResult = {
+      ...toolResult,
+      structuredContent: {
+        reportState: {
+          ...reportState,
+          status: "needs_account",
+          source: "live",
+          advertiser: null,
+          accountOptions: [
+            { advertiserId: "adv-001", advertiserName: "North America Shop", currency: "USD", timezone: "America/Los_Angeles" },
+            { advertiserId: "adv-002", advertiserName: "Europe Shop", currency: "EUR", timezone: "Europe/Paris" }
+          ],
+          kpis: [],
+          trend: [],
+          rows: [],
+          insights: [],
+          message: "Choose an advertiser account to generate the report."
+        }
+      }
+    };
+    const setupPage = await browser.newPage({ viewport: { width: 1180, height: 900 } });
+    await setupPage.setContent(createHostHarness(resourceHtml, needsAccountResult), { waitUntil: "load" });
+    await setupPage.locator('#harness-state[data-mounted="true"]').waitFor({ timeout: 10000 });
+    const setupFrame = setupPage.frames().find((frame) => frame !== setupPage.mainFrame());
+    assert(setupFrame, "The advertiser setup iframe did not mount.");
+    const setupLabels = await setupFrame.locator(".filter-bar > label").allTextContents();
+    assert(setupLabels[0]?.trim().startsWith("Advertiser Account"), "Account selection is not first in the setup state.");
+    const setupAccountFilter = setupFrame.locator('[data-filter="advertiserId"]');
+    assert(!(await setupAccountFilter.isDisabled()), "Live advertiser account selection should be enabled.");
+    await setupAccountFilter.selectOption("adv-002");
+    await setupFrame.locator('[data-action="apply"]').click();
+    await setupPage.waitForFunction(() => Boolean(window.__lastToolCall), null, { timeout: 5000 });
+    const setupToolCall = await setupPage.evaluate(() => window.__lastToolCall);
+    assert(setupToolCall?.arguments?.advertiserId === "adv-002", "Apply did not send the selected advertiserId.");
+    assert(setupToolCall?.arguments?.level === "campaign", "Apply did not preserve the selected report level.");
+    await setupPage.close();
 
     const screenshotPath = process.env.REPORT_WIDGET_SCREENSHOT;
     if (screenshotPath) {
@@ -224,6 +290,9 @@ async function main() {
         iframeMounted: true,
         rootBytes: Buffer.byteLength(rootHtml),
         kpiCards: 4,
+        firstFilter: filterLabels[0]?.trim() || null,
+        demoAccountLocked: await accountFilter.isDisabled(),
+        selectedAdvertiserIdSent: setupToolCall.arguments.advertiserId,
         consoleMessages,
         pageErrors,
         failedRequests,

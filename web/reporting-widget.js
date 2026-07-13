@@ -73,10 +73,18 @@ function createPreviewState() {
     generatedAt: new Date().toISOString(),
     advertiser: {
       id: "demo-advertiser-001",
-      name: "Hooray Demo Account",
+      name: "Sample Advertiser Account",
       currency: "USD",
       timezone: "America/Los_Angeles"
     },
+    accountOptions: [
+      {
+        advertiserId: "demo-advertiser-001",
+        advertiserName: "Sample Advertiser Account",
+        currency: "USD",
+        timezone: "America/Los_Angeles"
+      }
+    ],
     filters: {
       startDate: formatDate(start),
       endDate: formatDate(end),
@@ -252,7 +260,7 @@ function sourceBadge() {
 }
 
 function renderHeader() {
-  const account = reportState?.advertiser?.name || "TikTok Ads report";
+  const account = reportState?.advertiser?.name || "TikTok Ads performance report";
   return `
     <header class="report-header">
       <div class="brand-lockup">
@@ -319,8 +327,41 @@ function renderMobileInsight() {
 
 function renderFilters() {
   const filters = reportState?.filters || {};
+  const source = reportState?.source || "live";
+  const selectedAdvertiserId = reportState?.advertiser?.id || "";
+  const accountMap = new Map();
+  for (const account of reportState?.accountOptions || []) {
+    if (!String(account.advertiserId || "").startsWith("demo-")) {
+      accountMap.set(account.advertiserId, account);
+    }
+  }
+  if (reportState?.advertiser && !selectedAdvertiserId.startsWith("demo-") && !accountMap.has(selectedAdvertiserId)) {
+    accountMap.set(selectedAdvertiserId, {
+      advertiserId: selectedAdvertiserId,
+      advertiserName: reportState.advertiser.name,
+      currency: reportState.advertiser.currency,
+      timezone: reportState.advertiser.timezone
+    });
+  }
+  const liveOptions = [...accountMap.values()]
+    .map((account) => {
+      const detail = [account.advertiserId, account.currency].filter(Boolean).join(" · ");
+      return `<option value="${escapeHtml(account.advertiserId)}" ${source === "live" && selectedAdvertiserId === account.advertiserId ? "selected" : ""}>${escapeHtml(`${account.advertiserName} · ${detail}`)}</option>`;
+    })
+    .join("");
+  const accountHelp = source === "demo"
+    ? "Sample data only. Switch Data source to Live to use an authorized TikTok advertiser account."
+    : "Required by the TikTok Reporting API. One account is auto-selected; multiple accounts require a choice.";
   return `
     <section class="filter-bar">
+      <label class="account-field">Advertiser Account
+        <select data-filter="advertiserId" ${source === "demo" ? "disabled" : ""}>
+          <option value="" ${source === "live" && !selectedAdvertiserId ? "selected" : ""}>${liveOptions ? "Select advertiser account" : "Auto-detect authorized account"}</option>
+          <option value="demo-advertiser-001" hidden ${source === "demo" ? "selected" : ""}>Sample Advertiser Account · Demo</option>
+          ${liveOptions}
+        </select>
+        <small data-account-help>${escapeHtml(accountHelp)}</small>
+      </label>
       <label>Level<select data-filter="level"><option value="campaign" ${filters.level === "campaign" ? "selected" : ""}>Campaign</option><option value="adgroup" ${filters.level === "adgroup" ? "selected" : ""}>Ad group</option><option value="ad" ${filters.level === "ad" ? "selected" : ""}>Ad</option></select></label>
       <label>Start<input type="date" data-filter="startDate" value="${escapeHtml(filters.startDate || "")}"></label>
       <label>End<input type="date" data-filter="endDate" value="${escapeHtml(filters.endDate || "")}"></label>
@@ -382,7 +423,7 @@ function renderStatus() {
     empty: "No delivery data yet",
     error: "Report unavailable"
   }[state.status] || "Preparing report";
-  const accounts = state.accountOptions || [];
+  const showReportControls = state.status === "needs_account" || (state.status === "empty" && Boolean(state.advertiser));
   return `
     <main class="report-shell status-shell">
       ${renderHeader()}
@@ -391,12 +432,12 @@ function renderStatus() {
         <p class="section-kicker">TIKTOK ADS REPORTING</p>
         <h2>${escapeHtml(title)}</h2>
         <p>${escapeHtml(state.message || "Your report will appear here when the required information is available.")}</p>
-        ${accounts.length ? `<div class="account-options">${accounts.map((account) => `<button data-account="${escapeHtml(account.advertiserId)}"><strong>${escapeHtml(account.advertiserName)}</strong><span>${escapeHtml(account.currency)} · ${escapeHtml(account.timezone)}</span></button>`).join("")}</div>` : ""}
         ${state.authorizationUrl ? `<button class="primary-button" data-action="authorize">Connect TikTok Ads</button>` : ""}
-        ${state.status === "empty" ? `<button class="secondary-button" data-action="refresh">Refresh</button>` : ""}
+        ${state.status === "empty" && !showReportControls ? `<button class="secondary-button" data-action="refresh">Refresh</button>` : ""}
         ${state.status === "error" ? `<div class="status-actions"><button class="primary-button" data-action="refresh">Retry live report</button><button class="secondary-button" data-action="demo">Open demo data</button></div>` : ""}
         ${state.technicalDetail ? `<details><summary>Technical detail</summary><pre>${escapeHtml(state.technicalDetail)}</pre></details>` : ""}
       </section>
+      ${showReportControls ? renderFilters() : ""}
       ${loading ? `<div class="loading-cover"><span></span><p>Loading report…</p></div>` : ""}
     </main>`;
 }
@@ -540,17 +581,35 @@ function bindInteractions() {
       if (action === "authorize") await openAuthorization();
       if (action === "demo") await callReportTool(reportArguments({ mode: "demo", advertiserId: undefined }));
       if (action === "apply") {
+        const advertiserId = root.querySelector('[data-filter="advertiserId"]')?.value;
         const startDate = root.querySelector('[data-filter="startDate"]')?.value;
         const endDate = root.querySelector('[data-filter="endDate"]')?.value;
         const level = root.querySelector('[data-filter="level"]')?.value;
         const mode = root.querySelector('[data-filter="mode"]')?.value;
         const comparePreviousPeriod = Boolean(root.querySelector('[data-filter="compare"]')?.checked);
-        await callReportTool(reportArguments({ startDate, endDate, level, mode, comparePreviousPeriod }));
+        await callReportTool(reportArguments({
+          advertiserId: mode === "live" && advertiserId ? advertiserId : undefined,
+          startDate,
+          endDate,
+          level,
+          mode,
+          comparePreviousPeriod
+        }));
       }
     });
   });
-  root.querySelectorAll("[data-account]").forEach((button) => {
-    button.addEventListener("click", () => callReportTool(reportArguments({ advertiserId: button.getAttribute("data-account"), mode: "live" })));
+  const modeFilter = root.querySelector('[data-filter="mode"]');
+  const accountFilter = root.querySelector('[data-filter="advertiserId"]');
+  modeFilter?.addEventListener("change", () => {
+    const isDemo = modeFilter.value === "demo";
+    accountFilter.disabled = isDemo;
+    accountFilter.value = isDemo ? "demo-advertiser-001" : reportState?.source === "live" ? reportState?.advertiser?.id || "" : "";
+    const help = root.querySelector("[data-account-help]");
+    if (help) {
+      help.textContent = isDemo
+        ? "Sample data only. Switch Data source to Live to use an authorized TikTok advertiser account."
+        : "Required by the TikTok Reporting API. One account is auto-selected; multiple accounts require a choice.";
+    }
   });
   root.querySelectorAll("[data-trend]").forEach((button) => {
     button.addEventListener("click", () => {

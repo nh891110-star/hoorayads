@@ -458,6 +458,22 @@ function accountOption(account: TikTokAdvertiserAccount): ReportAccountOption {
   };
 }
 
+const DEMO_ACCOUNT: ReportAccountOption = {
+  advertiserId: "demo-advertiser-001",
+  advertiserName: "Sample Advertiser Account",
+  currency: "USD",
+  timezone: "America/Los_Angeles"
+};
+
+function fallbackAccountOption(advertiserId: string): ReportAccountOption {
+  return {
+    advertiserId,
+    advertiserName: `TikTok Ads Account ${advertiserId.slice(-6)}`,
+    currency: "USD",
+    timezone: "Account timezone"
+  };
+}
+
 function makeDemoState(input: GetAdsReportInput): ReportState {
   const state = baseState(input, "demo");
   const labels = ["Summer Sale | Prospecting", "Always-on Retargeting", "Creator Spark Test", "Catalog Best Sellers", "App Install | US"];
@@ -499,11 +515,12 @@ function makeDemoState(input: GetAdsReportInput): ReportState {
     ...state,
     status: "ready",
     advertiser: {
-      id: input.advertiserId || "demo-advertiser-001",
-      name: "Hooray Demo Account",
-      currency: "USD",
-      timezone: "America/Los_Angeles"
+      id: DEMO_ACCOUNT.advertiserId,
+      name: DEMO_ACCOUNT.advertiserName,
+      currency: DEMO_ACCOUNT.currency,
+      timezone: DEMO_ACCOUNT.timezone
     },
+    accountOptions: [DEMO_ACCOUNT],
     totals,
     kpis: buildKpis(totals, state.filters.comparePreviousPeriod ? previous : undefined),
     trend,
@@ -535,6 +552,7 @@ export async function getTikTokAdsReport(input: GetAdsReportInput = {}): Promise
   const configuredAdvertiserId = input.advertiserId || process.env.REPORTING_DEFAULT_ADVERTISER_ID?.trim();
   let selectedAccount: TikTokAdvertiserAccount | undefined;
   let advertiserId = configuredAdvertiserId || "";
+  let accountOptions: ReportAccountOption[] = [];
 
   try {
     if (!advertiserId) {
@@ -553,16 +571,29 @@ export async function getTikTokAdsReport(input: GetAdsReportInput = {}): Promise
       if (accountsResponse.data.accounts.length === 0) {
         return { ...state, status: "empty", message: "No TikTok advertiser accounts were available for this user." };
       }
+      accountOptions = accountsResponse.data.accounts.map(accountOption);
       if (accountsResponse.data.accounts.length > 1) {
         return {
           ...state,
           status: "needs_account",
-          accountOptions: accountsResponse.data.accounts.map(accountOption),
+          accountOptions,
           message: "Choose an advertiser account to generate the report."
         };
       }
       selectedAccount = accountsResponse.data.accounts[0];
       advertiserId = selectedAccount.advertiserId;
+    } else {
+      // Keep account discovery non-blocking when an explicit advertiser ID was supplied.
+      // This preserves direct reporting while still letting the UI offer account switching.
+      const accountsResponse = await listTikTokAdvertiserAccounts("flat");
+      if (accountsResponse.status === "connected") {
+        accountOptions = accountsResponse.data.accounts.map(accountOption);
+        selectedAccount = accountsResponse.data.accounts.find((account) => account.advertiserId === advertiserId);
+      }
+    }
+
+    if (accountOptions.length === 0) {
+      accountOptions = [selectedAccount ? accountOption(selectedAccount) : fallbackAccountOption(advertiserId)];
     }
 
     const currentResponse = await fetchReportRows({
@@ -588,6 +619,7 @@ export async function getTikTokAdsReport(input: GetAdsReportInput = {}): Promise
       return {
         ...state,
         status: "empty",
+        accountOptions,
         advertiser: {
           id: advertiserId,
           name: selectedAccount?.advertiserName || `TikTok Ads Account ${advertiserId.slice(-6)}`,
@@ -629,6 +661,7 @@ export async function getTikTokAdsReport(input: GetAdsReportInput = {}): Promise
       ...state,
       status: "ready",
       advertiser,
+      accountOptions,
       totals: current.totals,
       kpis: buildKpis(current.totals, previousTotals),
       trend: current.trend,
