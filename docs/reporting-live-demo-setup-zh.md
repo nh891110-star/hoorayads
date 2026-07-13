@@ -6,7 +6,7 @@
 
 - 一个工具：`get_ads_report`
 - 一个数据协议：`ReportState`
-- 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v8.html`，并保留旧版本资源别名用于宿主缓存兼容
+- 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v9.html`，并保留旧版本资源别名用于宿主缓存兼容
 - ChatGPT 入口：`/mcp/chatgpt`
 - Claude 入口：`/mcp/claude`
 - Progressive MCP：保留现有建广告流程

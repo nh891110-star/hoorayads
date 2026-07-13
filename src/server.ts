@@ -96,8 +96,9 @@ const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget.js"), "utf8");
 const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
-const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v8.html";
+const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v9.html";
 const LEGACY_REPORT_WIDGET_URIS = [
+  "ui://widget/tiktok-ads-report-v8.html",
   "ui://widget/tiktok-ads-report-v7.html",
   "ui://widget/tiktok-ads-report-v6.html",
   "ui://widget/tiktok-ads-report-v5.html",
@@ -493,7 +494,57 @@ function escapeMarkdownCell(value: string) {
   return value.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
-function claudeReportFallback(reportState: ReportState) {
+function claudeBreakdownTable(reportState: ReportState, currency: string) {
+  const rows = reportState.rows.slice(0, 10);
+  if (reportState.filters.level === "adgroup") {
+    return [
+      "#### Ad group performance",
+      "",
+      "| Name | Status | Ad group ID | Budget | Bid | Ad scheduling | Attribution setting |",
+      "|---|---|---|---|---|---|---|",
+      ...rows.map((row) =>
+        [
+          row.name,
+          row.status,
+          row.details.adgroupId || row.id,
+          row.details.budget || "--",
+          row.details.bid || "--",
+          row.details.adScheduling || "--",
+          row.details.attributionSetting || "--"
+        ].map((value) => escapeMarkdownCell(value)).join(" | ")
+      ).map((row) => `| ${row} |`)
+    ];
+  }
+  if (reportState.filters.level === "ad") {
+    return [
+      "#### Ad performance",
+      "",
+      "| Name | Status | Source | Ad group ID | Ad group name | Ad ID |",
+      "|---|---|---|---|---|---|",
+      ...rows.map((row) =>
+        [
+          row.name,
+          row.status,
+          row.details.source || "--",
+          row.details.adgroupId || "--",
+          row.details.adgroupName || "--",
+          row.details.adId || row.id
+        ].map((value) => escapeMarkdownCell(value)).join(" | ")
+      ).map((row) => `| ${row} |`)
+    ];
+  }
+  return [
+    "#### Campaign performance",
+    "",
+    "| Name | Status | Campaign budget | Spend | CPC (destination) | CPM | Impressions |",
+    "|---|---|---|---:|---:|---:|---:|",
+    ...rows.map((row) =>
+      `| ${escapeMarkdownCell(row.name)} | ${escapeMarkdownCell(row.status)} | ${escapeMarkdownCell(row.details.campaignBudget || "--")} | ${formatReportNumber(row.spend)} ${currency} | ${formatReportNumber(row.cpc)} ${currency} | ${formatReportNumber(row.cpm)} ${currency} | ${formatReportNumber(row.impressions, 0)} |`
+    )
+  ];
+}
+
+export function claudeReportFallback(reportState: ReportState) {
   if (reportState.status !== "ready") {
     const accountChoices = (reportState.accountOptions || []).map(
       (account) => `- ${account.advertiserName} (${account.advertiserId}, ${account.currency})`
@@ -520,12 +571,7 @@ function claudeReportFallback(reportState: ReportState) {
         : `${kpi.deltaPercent >= 0 ? "+" : ""}${formatReportNumber(kpi.deltaPercent, 1)}%`;
     return `| ${escapeMarkdownCell(kpi.label)} | ${formatReportNumber(kpi.value)}${suffix} | ${delta} |`;
   });
-  const entityRows = reportState.rows.slice(0, 10).map(
-    (row) =>
-      `| ${escapeMarkdownCell(row.name)} | ${formatReportNumber(row.spend)} ${currency} | ${formatReportNumber(row.impressions, 0)} | ${formatReportNumber(row.clicks, 0)} | ${formatReportNumber(row.ctr)}% | ${formatReportNumber(row.cpc)} ${currency} |`
-  );
-  const entityLabel =
-    reportState.filters.level === "campaign" ? "Campaign" : reportState.filters.level === "adgroup" ? "Ad group" : "Ad";
+  const breakdownTable = claudeBreakdownTable(reportState, currency);
 
   return [
     "### TikTok Ads performance report",
@@ -538,11 +584,7 @@ function claudeReportFallback(reportState: ReportState) {
     "|---|---:|---:|",
     ...metricRows,
     "",
-    `#### Top ${reportState.filters.level} results`,
-    "",
-    `| ${entityLabel} | Spend | Impressions | Clicks | CTR | CPC |`,
-    "|---|---:|---:|---:|---:|---:|",
-    ...entityRows,
+    ...breakdownTable,
     ...(reportState.diagnosis?.status === "clear"
       ? ["", "#### TikTok Diagnosis", "", "Looking good. No current TikTok recommendations."]
       : reportState.diagnosis?.status === "no_ads"
@@ -935,7 +977,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     );
   };
 
-  registerReportWidgetResource("tiktok-ads-report-v8", REPORT_WIDGET_URI);
+  registerReportWidgetResource("tiktok-ads-report-v9", REPORT_WIDGET_URI);
   LEGACY_REPORT_WIDGET_URIS.forEach((uri, index) => {
     registerReportWidgetResource(`tiktok-ads-report-legacy-${index + 1}`, uri);
   });

@@ -729,24 +729,33 @@ footer {
 
 table {
   width: 100%;
-  min-width: 720px;
   border-collapse: collapse;
   font-size: 12px;
+}
+
+.breakdown-table.level-campaign {
+  min-width: 980px;
+}
+
+.breakdown-table.level-adgroup {
+  min-width: 1240px;
+}
+
+.breakdown-table.level-ad {
+  min-width: 940px;
 }
 
 th,
 td {
   border-bottom: 1px solid #edf1f0;
   padding: 11px 16px;
-  text-align: right;
+  text-align: left;
   white-space: nowrap;
 }
 
-th:first-child,
-td:first-child,
-th:nth-child(2),
-td:nth-child(2) {
-  text-align: left;
+th.number-cell,
+td.number-cell {
+  text-align: right;
 }
 
 th {
@@ -757,18 +766,8 @@ th {
   text-transform: uppercase;
 }
 
-td:first-child strong,
-td:first-child small {
+td:first-child strong {
   display: block;
-}
-
-td:first-child small {
-  max-width: 280px;
-  margin-top: 2px;
-  overflow: hidden;
-  color: #8a9593;
-  font-size: 9px;
-  text-overflow: ellipsis;
 }
 
 .status-pill {

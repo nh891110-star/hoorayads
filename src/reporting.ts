@@ -20,10 +20,23 @@ export type ReportKpi = {
   deltaPercent: number | null;
 };
 
+export type ReportRowDetails = {
+  campaignBudget?: string;
+  adgroupId?: string;
+  budget?: string;
+  bid?: string;
+  adScheduling?: string;
+  attributionSetting?: string;
+  source?: string;
+  adgroupName?: string;
+  adId?: string;
+};
+
 export type ReportRow = ReportMetrics & {
   id: string;
   name: string;
   status: string;
+  details: ReportRowDetails;
 };
 
 export type ReportTrendPoint = {
@@ -117,6 +130,7 @@ type EntityMetadata = {
   id: string;
   name: string;
   status: string;
+  details: ReportRowDetails;
 };
 
 type RawDiagnosisResult = {
@@ -128,30 +142,76 @@ type RawDiagnosisResult = {
 
 type DiagnosisCategory = ReportDiagnosisSuggestion["category"];
 
-const LEVEL_CONFIG: Record<
-  ReportLevel,
-  { dataLevel: "AUCTION_CAMPAIGN" | "AUCTION_ADGROUP" | "AUCTION_AD"; dimension: string; metadataTool: string; idField: string; nameField: string }
-> = {
+type LevelConfig = {
+  dataLevel: "AUCTION_CAMPAIGN" | "AUCTION_ADGROUP" | "AUCTION_AD";
+  dimension: string;
+  metadataTool: string;
+  idField: string;
+  nameField: string;
+  metadataFields: string[];
+};
+
+const LEVEL_CONFIG: Record<ReportLevel, LevelConfig> = {
   campaign: {
     dataLevel: "AUCTION_CAMPAIGN",
     dimension: "campaign_id",
     metadataTool: "campaign_get",
     idField: "campaign_id",
-    nameField: "campaign_name"
+    nameField: "campaign_name",
+    metadataFields: [
+      "campaign_id",
+      "campaign_name",
+      "operation_status",
+      "secondary_status",
+      "budget",
+      "budget_mode"
+    ]
   },
   adgroup: {
     dataLevel: "AUCTION_ADGROUP",
     dimension: "adgroup_id",
     metadataTool: "adgroup_get",
     idField: "adgroup_id",
-    nameField: "adgroup_name"
+    nameField: "adgroup_name",
+    metadataFields: [
+      "adgroup_id",
+      "adgroup_name",
+      "operation_status",
+      "secondary_status",
+      "budget",
+      "budget_mode",
+      "bid_price",
+      "bid_type",
+      "conversion_bid_price",
+      "deep_cpa_bid",
+      "roas_bid",
+      "schedule_type",
+      "schedule_start_time",
+      "schedule_end_time",
+      "dayparting",
+      "click_attribution_window",
+      "view_attribution_window",
+      "engaged_view_attribution_window"
+    ]
   },
   ad: {
     dataLevel: "AUCTION_AD",
     dimension: "ad_id",
     metadataTool: "ad_get",
     idField: "ad_id",
-    nameField: "ad_name"
+    nameField: "ad_name",
+    metadataFields: [
+      "ad_name",
+      "operation_status",
+      "secondary_status",
+      "tiktok_item_id",
+      "identity_type",
+      "creative_type",
+      "ad_format",
+      "adgroup_id",
+      "adgroup_name",
+      "ad_id"
+    ]
   }
 };
 
@@ -187,7 +247,7 @@ export function buildEntityMetadataRequest(advertiserId: string, level: ReportLe
     arguments: {
       advertiser_id: advertiserId,
       filtering: { [`${config.dimension}s`]: ids },
-      fields: [config.idField, config.nameField, "operation_status", "secondary_status"],
+      fields: config.metadataFields,
       page: 1,
       page_size: 100
     }
@@ -304,6 +364,145 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function readOptionalString(record: Record<string, unknown>, keys: string[]) {
   const value = readString(record, keys);
   return value || undefined;
+}
+
+function readableEnum(value: string, prefixes: string[] = []) {
+  let normalized = value;
+  for (const prefix of prefixes) {
+    if (normalized.startsWith(prefix)) {
+      normalized = normalized.slice(prefix.length);
+    }
+  }
+  return normalized
+    .split("_")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0)}${part.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
+function formatEntityAmount(value: unknown, currency: string) {
+  if ((typeof value !== "string" && typeof value !== "number") || String(value).trim() === "") {
+    return undefined;
+  }
+  const numericValue = Number(String(value).replaceAll(",", ""));
+  const displayValue = Number.isFinite(numericValue)
+    ? new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(numericValue)
+    : String(value).trim();
+  return currency ? `${displayValue} ${currency}` : displayValue;
+}
+
+function formatBudget(item: Record<string, unknown>, currency: string) {
+  const budgetMode = readString(item, ["budget_mode"]).toUpperCase();
+  if (budgetMode.includes("INFINITE")) {
+    return "No limit";
+  }
+  const budget = formatEntityAmount(item.budget, currency);
+  const mode = budgetMode.includes("DAY")
+    ? "Daily"
+    : budgetMode.includes("TOTAL")
+      ? "Lifetime"
+      : readableEnum(budgetMode, ["BUDGET_MODE_"]);
+  return [budget, mode].filter(Boolean).join(" | ") || "--";
+}
+
+function formatBid(item: Record<string, unknown>, currency: string) {
+  const bidType = readString(item, ["bid_type"]).toUpperCase();
+  if (bidType === "BID_TYPE_NO_BID") {
+    return "Maximum delivery";
+  }
+
+  const currencyBid = readOptionalString(item, ["bid_price", "conversion_bid_price", "deep_cpa_bid"]);
+  const roasBid = readOptionalString(item, ["roas_bid"]);
+  const amount = currencyBid
+    ? formatEntityAmount(currencyBid, currency)
+    : roasBid
+      ? `${roasBid} ROAS`
+      : undefined;
+  const type = readableEnum(bidType, ["BID_TYPE_"]);
+  return [amount, type].filter(Boolean).join(" | ") || "--";
+}
+
+function formatAdScheduling(item: Record<string, unknown>) {
+  const scheduleType = readString(item, ["schedule_type"]).toUpperCase();
+  const start = readOptionalString(item, ["schedule_start_time"]);
+  const end = readOptionalString(item, ["schedule_end_time"]);
+  if (start && end) {
+    return `${start} to ${end}`;
+  }
+  if (start) {
+    return scheduleType.includes("START_END") ? start : `${start} onward`;
+  }
+  return readableEnum(scheduleType, ["SCHEDULE_"]) || "--";
+}
+
+function formatAttributionWindow(value: string, label: string) {
+  const normalized = value.toUpperCase();
+  if (!normalized || normalized === "OFF" || normalized === "NONE") {
+    return "";
+  }
+  const dayLabels: Record<string, string> = {
+    ONE_DAY: "1-day",
+    SEVEN_DAYS: "7-day",
+    FOURTEEN_DAYS: "14-day",
+    TWENTY_EIGHT_DAYS: "28-day"
+  };
+  const days = dayLabels[normalized] || readableEnum(normalized);
+  return `${days} ${label}`;
+}
+
+function formatAttributionSetting(item: Record<string, unknown>) {
+  const settings = [
+    formatAttributionWindow(readString(item, ["click_attribution_window"]), "click"),
+    formatAttributionWindow(readString(item, ["view_attribution_window"]), "view"),
+    formatAttributionWindow(readString(item, ["engaged_view_attribution_window"]), "engaged view")
+  ].filter(Boolean);
+  return settings.join(" | ") || "--";
+}
+
+function formatAdSource(item: Record<string, unknown>) {
+  if (readString(item, ["tiktok_item_id"])) {
+    return "Spark Ad";
+  }
+  const identityType = readString(item, ["identity_type"]).toUpperCase();
+  if (identityType.includes("CUSTOMIZED_USER")) {
+    return "Custom identity";
+  }
+  if (identityType) {
+    return "TikTok account";
+  }
+  return readableEnum(readString(item, ["creative_type", "ad_format"])) || "--";
+}
+
+export function normalizeReportEntityMetadata(
+  level: ReportLevel,
+  item: Record<string, unknown>,
+  currency = ""
+) {
+  const config = LEVEL_CONFIG[level];
+  const id = readString(item, [config.idField]);
+  const details: ReportRowDetails = level === "campaign"
+    ? { campaignBudget: formatBudget(item, currency) }
+    : level === "adgroup"
+      ? {
+          adgroupId: id || "--",
+          budget: formatBudget(item, currency),
+          bid: formatBid(item, currency),
+          adScheduling: formatAdScheduling(item),
+          attributionSetting: formatAttributionSetting(item)
+        }
+      : {
+          source: formatAdSource(item),
+          adgroupId: readString(item, ["adgroup_id"]) || "--",
+          adgroupName: readString(item, ["adgroup_name"]) || "--",
+          adId: id || "--"
+        };
+
+  return {
+    id,
+    name: readString(item, [config.nameField]) || id,
+    status: normalizeStatus(readString(item, ["secondary_status", "operation_status"])),
+    details
+  };
 }
 
 function formatDiagnosisAmount(value: unknown, currency: string) {
@@ -558,7 +757,8 @@ function aggregateReportRows(rawRows: RawReportRow[], level: ReportLevel) {
         ...ZERO_METRICS,
         id,
         name: `${level === "campaign" ? "Campaign" : level === "adgroup" ? "Ad group" : "Ad"} ${id}`,
-        status: "Unknown"
+        status: "Unknown",
+        details: level === "adgroup" ? { adgroupId: id } : level === "ad" ? { adId: id } : {}
       };
       current.spend += spend;
       current.impressions += impressions;
@@ -639,7 +839,7 @@ function normalizeStatus(value: string) {
   return value || "Unknown";
 }
 
-async function fetchEntityMetadata(advertiserId: string, level: ReportLevel, ids: string[]) {
+async function fetchEntityMetadata(advertiserId: string, level: ReportLevel, ids: string[], currency: string) {
   const config = LEVEL_CONFIG[level];
   const metadata = new Map<string, EntityMetadata>();
 
@@ -656,11 +856,7 @@ async function fetchEntityMetadata(advertiserId: string, level: ReportLevel, ids
       if (!id) {
         continue;
       }
-      metadata.set(id, {
-        id,
-        name: readString(item, [config.nameField]) || id,
-        status: normalizeStatus(readString(item, ["secondary_status", "operation_status"]))
-      });
+      metadata.set(id, normalizeReportEntityMetadata(level, item, currency));
     }
   }
 
@@ -708,7 +904,9 @@ async function fetchTikTokDiagnosis(advertiserId: string, currency: string): Pro
 function applyMetadata(rows: ReportRow[], metadata: Map<string, EntityMetadata>) {
   return rows.map((row) => {
     const item = metadata.get(row.id);
-    return item ? { ...row, name: item.name, status: item.status } : row;
+    return item
+      ? { ...row, name: item.name, status: item.status, details: { ...row.details, ...item.details } }
+      : row;
   });
 }
 
@@ -866,7 +1064,8 @@ export async function getTikTokAdsReport(input: GetAdsReportInput = {}): Promise
       fetchEntityMetadata(
         advertiserId,
         state.filters.level,
-        current.rows.map((row) => row.id)
+        current.rows.map((row) => row.id),
+        advertiser.currency
       ).catch(() => new Map<string, EntityMetadata>()),
       diagnosisPromise
     ]);

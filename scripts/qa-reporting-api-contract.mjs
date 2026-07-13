@@ -4,6 +4,7 @@ import {
   buildEntityMetadataRequest,
   buildIntegratedReportRequest,
   getReportLevelContract,
+  normalizeReportEntityMetadata,
   normalizeTikTokDiagnosis
 } from "../src/reporting.ts";
 
@@ -16,19 +17,30 @@ const expected = {
     dataLevel: "AUCTION_CAMPAIGN",
     dimension: "campaign_id",
     metadataTool: "campaign_get",
-    filterKey: "campaign_ids"
+    filterKey: "campaign_ids",
+    metadataFields: ["campaign_id", "campaign_name", "operation_status", "secondary_status", "budget", "budget_mode"]
   },
   adgroup: {
     dataLevel: "AUCTION_ADGROUP",
     dimension: "adgroup_id",
     metadataTool: "adgroup_get",
-    filterKey: "adgroup_ids"
+    filterKey: "adgroup_ids",
+    metadataFields: [
+      "adgroup_id", "adgroup_name", "operation_status", "secondary_status", "budget", "budget_mode",
+      "bid_price", "bid_type", "conversion_bid_price", "deep_cpa_bid", "roas_bid", "schedule_type",
+      "schedule_start_time", "schedule_end_time", "dayparting", "click_attribution_window",
+      "view_attribution_window", "engaged_view_attribution_window"
+    ]
   },
   ad: {
     dataLevel: "AUCTION_AD",
     dimension: "ad_id",
     metadataTool: "ad_get",
-    filterKey: "ad_ids"
+    filterKey: "ad_ids",
+    metadataFields: [
+      "ad_name", "operation_status", "secondary_status", "tiktok_item_id", "identity_type",
+      "creative_type", "ad_format", "adgroup_id", "adgroup_name", "ad_id"
+    ]
   }
 };
 
@@ -58,7 +70,61 @@ for (const [level, contractExpectation] of Object.entries(expected)) {
     JSON.stringify(metadataRequest.arguments.filtering) === JSON.stringify({ [contractExpectation.filterKey]: ["entity-1"] }),
     `${level} metadata lookup uses the wrong ID filter.`
   );
+  assert(
+    JSON.stringify(metadataRequest.arguments.fields) === JSON.stringify(contractExpectation.metadataFields),
+    `${level} metadata lookup does not request the exact breakdown fields.`
+  );
 }
+
+const campaignMetadata = normalizeReportEntityMetadata("campaign", {
+  campaign_id: "campaign-1",
+  campaign_name: "Summer sale",
+  operation_status: "ENABLE",
+  budget: 500,
+  budget_mode: "BUDGET_MODE_DAY"
+}, "USD");
+assert(campaignMetadata.details.campaignBudget === "500 USD | Daily", "Campaign budget was not normalized.");
+
+const adgroupMetadata = normalizeReportEntityMetadata("adgroup", {
+  adgroup_id: "adgroup-1",
+  adgroup_name: "Broad audience",
+  operation_status: "ENABLE",
+  budget: 100,
+  budget_mode: "BUDGET_MODE_DAY",
+  bid_price: 12,
+  bid_type: "BID_TYPE_CUSTOM",
+  schedule_type: "SCHEDULE_START_END",
+  schedule_start_time: "2026-07-01 00:00:00",
+  schedule_end_time: "2026-07-31 23:59:59",
+  click_attribution_window: "ONE_DAY",
+  view_attribution_window: "SEVEN_DAYS",
+  engaged_view_attribution_window: "ONE_DAY"
+}, "USD");
+assert(adgroupMetadata.details.adgroupId === "adgroup-1", "Ad group ID was not normalized.");
+assert(adgroupMetadata.details.budget === "100 USD | Daily", "Ad group budget was not normalized.");
+assert(adgroupMetadata.details.bid === "12 USD | Custom", "Ad group bid was not normalized.");
+assert(
+  adgroupMetadata.details.adScheduling === "2026-07-01 00:00:00 to 2026-07-31 23:59:59",
+  "Ad group scheduling was not normalized."
+);
+assert(
+  adgroupMetadata.details.attributionSetting === "1-day click | 7-day view | 1-day engaged view",
+  "Ad group attribution settings were not normalized."
+);
+
+const adMetadata = normalizeReportEntityMetadata("ad", {
+  ad_id: "ad-1",
+  ad_name: "Creator video",
+  operation_status: "ENABLE",
+  tiktok_item_id: "post-1",
+  identity_type: "AUTH_CODE",
+  adgroup_id: "adgroup-1",
+  adgroup_name: "Broad audience"
+}, "USD");
+assert(adMetadata.details.source === "Spark Ad", "Ad source was not derived from TikTok's Spark Ad fields.");
+assert(adMetadata.details.adgroupId === "adgroup-1", "Ad group ID was not preserved for the ad breakdown.");
+assert(adMetadata.details.adgroupName === "Broad audience", "Ad group name was not preserved for the ad breakdown.");
+assert(adMetadata.details.adId === "ad-1", "Ad ID was not preserved for the ad breakdown.");
 
 const diagnosisRequest = buildDiagnosisRequest(
   "7390012345",

@@ -15,19 +15,27 @@ function csvValue(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
 
-function reportCsv(reportState: ReportState) {
-  const header = ["ID", "Name", "Status", "Spend", "Impressions", "Clicks", "CTR", "CPC", "CPM"];
-  const body = reportState.rows.map((row) => [
-    row.id,
-    row.name,
-    row.status,
-    row.spend,
-    row.impressions,
-    row.clicks,
-    row.ctr,
-    row.cpc,
-    row.cpm
-  ]);
+export function reportCsv(reportState: ReportState) {
+  const { level } = reportState.filters;
+  const header = level === "campaign"
+    ? ["Name", "Status", "Campaign budget", "Spend", "CPC (destination)", "CPM", "Impressions"]
+    : level === "adgroup"
+      ? ["Name", "Status", "Ad group ID", "Budget", "Bid", "Ad scheduling", "Attribution setting"]
+      : ["Name", "Status", "Source", "Ad group ID", "Ad group name", "Ad ID"];
+  const body = reportState.rows.map((row) => level === "campaign"
+    ? [row.name, row.status, row.details.campaignBudget, row.spend, row.cpc, row.cpm, row.impressions]
+    : level === "adgroup"
+      ? [
+          row.name,
+          row.status,
+          row.details.adgroupId,
+          row.details.budget,
+          row.details.bid,
+          row.details.adScheduling,
+          row.details.attributionSetting
+        ]
+      : [row.name, row.status, row.details.source, row.details.adgroupId, row.details.adgroupName, row.details.adId]
+  );
   return [header, ...body].map((row) => row.map(csvValue).join(",")).join("\n");
 }
 

@@ -10,8 +10,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { chromium } from "playwright";
 
-const REPORT_URI = "ui://widget/tiktok-ads-report-v8.html";
+const REPORT_URI = "ui://widget/tiktok-ads-report-v9.html";
 const LEGACY_REPORT_URIS = [
+  "ui://widget/tiktok-ads-report-v8.html",
   "ui://widget/tiktok-ads-report-v7.html",
   "ui://widget/tiktok-ads-report-v6.html",
   "ui://widget/tiktok-ads-report-v5.html",
@@ -207,6 +208,49 @@ async function main() {
       assert(fallbackText.includes("### TikTok Ads performance report"), "Claude fallback heading is missing.");
     }
 
+    const liveResultsByLevel = { campaign: liveToolResult };
+    for (const level of ["adgroup", "ad"]) {
+      liveResultsByLevel[level] = await client.callTool(
+        {
+          name: "get_ads_report",
+          arguments: {
+            level,
+            startDate: "2026-07-06",
+            endDate: "2026-07-12",
+            comparePreviousPeriod: true
+          }
+        },
+        CallToolResultSchema
+      );
+    }
+    const requiredDetailKeys = {
+      campaign: ["campaignBudget"],
+      adgroup: ["adgroupId", "budget", "bid", "adScheduling", "attributionSetting"],
+      ad: ["source", "adgroupId", "adgroupName", "adId"]
+    };
+    const claudeFallbackHeaders = {
+      campaign: "| Name | Status | Campaign budget | Spend | CPC (destination) | CPM | Impressions |",
+      adgroup: "| Name | Status | Ad group ID | Budget | Bid | Ad scheduling | Attribution setting |",
+      ad: "| Name | Status | Source | Ad group ID | Ad group name | Ad ID |"
+    };
+    for (const [level, result] of Object.entries(liveResultsByLevel)) {
+      const state = result.structuredContent?.reportState;
+      assert(state, `Live ${level} report returned no report state.`);
+      if (state.status === "ready") {
+        assert(state.rows.length > 0, `Live ${level} report is ready but contains no rows.`);
+        assert(
+          requiredDetailKeys[level].every((key) => key in (state.rows[0].details || {})),
+          `Live ${level} rows are missing level-specific metadata.`
+        );
+        if (endpoint.endsWith("/mcp/claude")) {
+          const fallbackText = result.content?.find((item) => item.type === "text")?.text || "";
+          assert(fallbackText.includes(claudeFallbackHeaders[level]), `Claude ${level} fallback has the wrong breakdown schema.`);
+        }
+      } else {
+        assert((state.rows || []).length === 0, `Unavailable live ${level} report must not contain sample rows.`);
+      }
+    }
+
     const reportState = {
       status: "ready",
       generatedAt: "2026-07-13T12:00:00.000Z",
@@ -239,6 +283,7 @@ async function main() {
         id,
         name,
         status,
+        details: { campaignBudget: "500 USD | Daily" },
         spend,
         impressions,
         clicks,
@@ -307,7 +352,30 @@ async function main() {
       rows: reportState.rows.map((row, index) => ({
         ...row,
         id: `qa-adgroup-${index + 1}`,
-        name: ["Prospecting | Broad US", "Retargeting | 14-day visitors", "Creator audience | US", "Catalog | High intent", "App installs | iOS"][index]
+        name: ["Prospecting | Broad US", "Retargeting | 14-day visitors", "Creator audience | US", "Catalog | High intent", "App installs | iOS"][index],
+        details: {
+          adgroupId: `qa-adgroup-${index + 1}`,
+          budget: "100 USD | Daily",
+          bid: "12 USD | Custom",
+          adScheduling: "2026-07-01 00:00:00 to 2026-07-31 23:59:59",
+          attributionSetting: "1-day click | 7-day view | 1-day engaged view"
+        }
+      }))
+    };
+    const adResult = structuredClone(toolResult);
+    adResult.structuredContent.reportState = {
+      ...reportState,
+      filters: { ...reportState.filters, level: "ad" },
+      rows: reportState.rows.map((row, index) => ({
+        ...row,
+        id: `qa-ad-${index + 1}`,
+        name: ["Creator video A", "Product demo", "Spark testimonial", "Catalog card", "App install video"][index],
+        details: {
+          source: index === 2 ? "Spark Ad" : "TikTok account",
+          adgroupId: `qa-adgroup-${index + 1}`,
+          adgroupName: ["Prospecting | Broad US", "Retargeting | 14-day visitors", "Creator audience | US", "Catalog | High intent", "App installs | iOS"][index],
+          adId: `qa-ad-${index + 1}`
+        }
       }))
     };
     const consoleMessages = [];
@@ -319,7 +387,7 @@ async function main() {
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("requestfailed", (request) => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText || "failed"}`));
 
-    await page.setContent(createHostHarness(resourceHtml, toolResult, { adgroup: adgroupResult }), { waitUntil: "load" });
+    await page.setContent(createHostHarness(resourceHtml, toolResult, { adgroup: adgroupResult, ad: adResult }), { waitUntil: "load" });
     await page.locator('#harness-state[data-mounted="true"]').waitFor({ timeout: 10000 });
     const widgetFrame = page.frames().find((frame) => frame !== page.mainFrame());
     assert(widgetFrame, "The report iframe did not mount.");
@@ -348,6 +416,12 @@ async function main() {
 
     await widgetFrame.locator('[data-action="expand"]').click();
     await widgetFrame.locator(".filter-bar").waitFor({ timeout: 5000 });
+    const campaignHeaders = await widgetFrame.locator(".breakdown-table thead th").allTextContents();
+    assert(
+      JSON.stringify(campaignHeaders) === JSON.stringify(["Name", "Status", "Campaign budget", "Spend", "CPC (destination)", "CPM", "Impressions"]),
+      "Campaign breakdown columns do not match TikTok Ads Manager."
+    );
+    assert((await widgetFrame.locator('[data-columns]').count()) === 0, "The obsolete generic column preset is still shown.");
     await widgetFrame.locator('[data-action="export"]').click();
     await page.waitForFunction(() => Boolean(window.__lastOpenLink), null, { timeout: 5000 });
     const openedExportUrl = await page.evaluate(() => window.__lastOpenLink);
@@ -357,8 +431,24 @@ async function main() {
     await widgetFrame.locator('[data-filter="level"]').selectOption("adgroup");
     await widgetFrame.locator(".table-toolbar h2").filter({ hasText: "ad group performance" }).waitFor({ timeout: 5000 });
     assert((await widgetFrame.locator("tbody tr:first-child td:first-child strong").innerText()) === "Prospecting | Broad US", "Ad group selection did not replace campaign rows.");
+    const adgroupHeaders = await widgetFrame.locator(".breakdown-table thead th").allTextContents();
+    assert(
+      JSON.stringify(adgroupHeaders) === JSON.stringify(["Name", "Status", "Ad group ID", "Budget", "Bid", "Ad scheduling", "Attribution setting"]),
+      "Ad group breakdown columns do not match TikTok Ads Manager."
+    );
+    assert((await widgetFrame.locator("tbody tr:first-child td:nth-child(3)").innerText()) === "qa-adgroup-1", "Ad group ID is missing from the breakdown.");
     const levelToolCall = await page.evaluate(() => window.__lastToolCall);
     assert(levelToolCall?.arguments?.level === "adgroup", "Level selection did not call get_ads_report with adgroup level.");
+    await widgetFrame.locator('[data-filter="level"]').selectOption("ad");
+    await widgetFrame.locator(".table-toolbar h2").filter({ hasText: "ad performance" }).waitFor({ timeout: 5000 });
+    const adHeaders = await widgetFrame.locator(".breakdown-table thead th").allTextContents();
+    assert(
+      JSON.stringify(adHeaders) === JSON.stringify(["Name", "Status", "Source", "Ad group ID", "Ad group name", "Ad ID"]),
+      "Ad breakdown columns do not match TikTok Ads Manager."
+    );
+    assert((await widgetFrame.locator("tbody tr:nth-child(3) td:nth-child(3)").innerText()) === "Spark Ad", "Ad source is missing from the breakdown.");
+    const adLevelToolCall = await page.evaluate(() => window.__lastToolCall);
+    assert(adLevelToolCall?.arguments?.level === "ad", "Level selection did not call get_ads_report with ad level.");
     const accountFilter = widgetFrame.locator('[data-filter="advertiserId"]');
     assert((await widgetFrame.locator('[data-filter="mode"]').count()) === 0, "The report still exposes a data-source selector.");
     assert((await accountFilter.inputValue()).includes("Authorized Advertiser"), "Authorized account is not shown in the account input.");
@@ -444,7 +534,11 @@ async function main() {
         status: reportState.status,
         kpis: reportState.kpis.length,
         rows: reportState.rows.length,
-        trendPoints: reportState.trend.length
+        trendPoints: reportState.trend.length,
+        liveLevels: Object.fromEntries(Object.entries(liveResultsByLevel).map(([level, result]) => {
+          const state = result.structuredContent?.reportState;
+          return [level, { status: state?.status || "missing", rows: state?.rows?.length || 0 }];
+        }))
       },
       mount: {
         iframeMounted: true,

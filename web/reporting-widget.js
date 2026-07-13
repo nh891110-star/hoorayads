@@ -1,5 +1,5 @@
 const root = document.getElementById("report-root") || document.getElementById("app-root");
-const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.5.0" };
+const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.6.0" };
 const PROTOCOL_VERSION = "2026-01-26";
 
 let reportState = null;
@@ -10,7 +10,6 @@ let requestCounter = 0;
 let loading = false;
 let localExpanded = false;
 let searchQuery = "";
-let columnPreset = "basic";
 let trendMetric = "spend";
 let reportRequestVersion = 0;
 const pendingRequests = new Map();
@@ -344,31 +343,71 @@ function renderFilters() {
     </section>`;
 }
 
+function breakdownColumns(level) {
+  if (level === "adgroup") {
+    return [
+      { key: "name", label: "Name", value: (row) => row.name },
+      { key: "status", label: "Status", value: (row) => row.status },
+      { key: "adgroupId", label: "Ad group ID", value: (row) => row.details?.adgroupId || row.id || "--" },
+      { key: "budget", label: "Budget", value: (row) => row.details?.budget || "--" },
+      { key: "bid", label: "Bid", value: (row) => row.details?.bid || "--" },
+      { key: "adScheduling", label: "Ad scheduling", value: (row) => row.details?.adScheduling || "--" },
+      { key: "attributionSetting", label: "Attribution setting", value: (row) => row.details?.attributionSetting || "--" }
+    ];
+  }
+  if (level === "ad") {
+    return [
+      { key: "name", label: "Name", value: (row) => row.name },
+      { key: "status", label: "Status", value: (row) => row.status },
+      { key: "source", label: "Source", value: (row) => row.details?.source || "--" },
+      { key: "adgroupId", label: "Ad group ID", value: (row) => row.details?.adgroupId || "--" },
+      { key: "adgroupName", label: "Ad group name", value: (row) => row.details?.adgroupName || "--" },
+      { key: "adId", label: "Ad ID", value: (row) => row.details?.adId || row.id || "--" }
+    ];
+  }
+  return [
+    { key: "name", label: "Name", value: (row) => row.name },
+    { key: "status", label: "Status", value: (row) => row.status },
+    { key: "campaignBudget", label: "Campaign budget", value: (row) => row.details?.campaignBudget || "--" },
+    { key: "spend", label: "Spend", numeric: true, value: (row) => formatMetric("spend", row.spend) },
+    { key: "cpc", label: "CPC (destination)", numeric: true, value: (row) => formatMetric("cpc", row.cpc) },
+    { key: "cpm", label: "CPM", numeric: true, value: (row) => formatMetric("cpm", row.cpm) },
+    { key: "impressions", label: "Impressions", numeric: true, value: (row) => formatMetric("impressions", row.impressions) }
+  ];
+}
+
+function renderBreakdownCell(row, column) {
+  const value = column.value(row);
+  const className = column.numeric ? "number-cell" : "";
+  if (column.key === "name") {
+    return `<td class="${className}"><strong>${escapeHtml(value)}</strong></td>`;
+  }
+  if (column.key === "status") {
+    const statusClass = String(value).toLowerCase().replaceAll(" ", "-");
+    return `<td class="${className}"><span class="status-pill ${statusClass}">${escapeHtml(value)}</span></td>`;
+  }
+  return `<td class="${className}">${escapeHtml(value)}</td>`;
+}
+
 function renderTable() {
   const rows = (reportState?.rows || []).filter((row) => row.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  const costColumns = columnPreset === "efficiency";
+  const level = reportState?.filters?.level || "campaign";
+  const columns = breakdownColumns(level);
   return `
     <section class="table-panel">
       <div class="table-toolbar">
-        <div><span class="section-kicker">BREAKDOWN</span><h2>${escapeHtml((reportState?.filters?.level || "campaign").replace("adgroup", "ad group"))} performance</h2></div>
+        <div><span class="section-kicker">BREAKDOWN</span><h2>${escapeHtml(level.replace("adgroup", "ad group"))} performance</h2></div>
         <div class="table-actions">
           <label class="search-box">⌕<input type="search" data-search placeholder="Search names" value="${escapeHtml(searchQuery)}"></label>
-          <select data-columns aria-label="Column preset"><option value="basic" ${!costColumns ? "selected" : ""}>Basic columns</option><option value="efficiency" ${costColumns ? "selected" : ""}>Cost efficiency</option></select>
           <button class="secondary-button" data-action="export">Export CSV</button>
         </div>
       </div>
       <div class="table-wrap">
-        <table>
-          <thead><tr><th>Name</th><th>Status</th><th>Spend</th>${costColumns ? "<th>CPC</th><th>CPM</th>" : "<th>Impressions</th><th>Clicks</th><th>CTR</th>"}</tr></thead>
+        <table class="breakdown-table level-${escapeHtml(level)}">
+          <thead><tr>${columns.map((column) => `<th class="${column.numeric ? "number-cell" : ""}">${escapeHtml(column.label)}</th>`).join("")}</tr></thead>
           <tbody>${rows
-            .map(
-              (row) => `<tr><td><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.id)}</small></td><td><span class="status-pill ${String(row.status).toLowerCase().replaceAll(" ", "-")}">${escapeHtml(row.status)}</span></td><td>${escapeHtml(formatMetric("spend", row.spend))}</td>${
-                costColumns
-                  ? `<td>${escapeHtml(formatMetric("cpc", row.cpc))}</td><td>${escapeHtml(formatMetric("cpm", row.cpm))}</td>`
-                  : `<td>${escapeHtml(formatMetric("impressions", row.impressions))}</td><td>${escapeHtml(formatMetric("clicks", row.clicks))}</td><td>${escapeHtml(formatMetric("ctr", row.ctr))}</td>`
-              }</tr>`
-            )
-            .join("") || `<tr><td colspan="7" class="empty-cell">No rows match this search.</td></tr>`}</tbody>
+            .map((row) => `<tr>${columns.map((column) => renderBreakdownCell(row, column)).join("")}</tr>`)
+            .join("") || `<tr><td colspan="${columns.length}" class="empty-cell">No rows match this search.</td></tr>`}</tbody>
         </table>
       </div>
     </section>`;
@@ -526,8 +565,9 @@ function csvValue(value) {
 
 function exportCsvFallback() {
   const rows = reportState?.rows || [];
-  const header = ["ID", "Name", "Status", "Spend", "Impressions", "Clicks", "CTR", "CPC", "CPM"];
-  const body = rows.map((row) => [row.id, row.name, row.status, row.spend, row.impressions, row.clicks, row.ctr, row.cpc, row.cpm]);
+  const columns = breakdownColumns(reportState?.filters?.level || "campaign");
+  const header = columns.map((column) => column.label);
+  const body = rows.map((row) => columns.map((column) => column.value(row)));
   const csv = [header, ...body].map((row) => row.map(csvValue).join(",")).join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const anchor = document.createElement("a");
@@ -681,10 +721,6 @@ function bindInteractions() {
     const next = root.querySelector("[data-search]");
     next?.focus();
     next?.setSelectionRange(cursor, cursor);
-  });
-  root.querySelector("[data-columns]")?.addEventListener("change", (event) => {
-    columnPreset = event.target.value;
-    render();
   });
 }
 
