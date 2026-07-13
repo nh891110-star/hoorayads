@@ -156,7 +156,6 @@ button {
   gap: 8px;
 }
 
-.source-badge,
 .date-chip {
   display: inline-flex;
   align-items: center;
@@ -165,26 +164,6 @@ button {
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
-}
-
-.source-badge {
-  gap: 6px;
-  padding: 0 10px;
-  background: var(--teal-soft);
-  color: var(--teal-dark);
-}
-
-.source-badge.demo {
-  background: #fff2da;
-  color: #8b5700;
-}
-
-.source-badge i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 0 3px rgba(0, 143, 140, 0.13);
 }
 
 .date-chip {
@@ -328,8 +307,12 @@ button {
   margin-top: 10px;
 }
 
+.overview-grid.trend-only {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .trend-panel,
-.insights-panel,
+.diagnosis-panel,
 .table-panel,
 .filter-bar {
   border: 1px solid var(--line);
@@ -337,7 +320,7 @@ button {
 }
 
 .trend-panel,
-.insights-panel {
+.diagnosis-panel {
   min-width: 0;
   border-radius: 16px;
   padding: 10px 12px;
@@ -381,11 +364,20 @@ button {
 }
 
 .trend-svg {
+  --trend-color: var(--teal);
   display: block;
   width: 100%;
   height: 108px;
   margin-top: 3px;
   overflow: visible;
+}
+
+.trend-svg.metric-clicks {
+  --trend-color: #e05b3f;
+}
+
+.trend-svg.metric-impressions {
+  --trend-color: #2f6fbd;
 }
 
 .expanded .trend-svg {
@@ -397,13 +389,9 @@ button {
   stroke-width: 1;
 }
 
-.chart-area {
-  fill: url(#report-area);
-}
-
 .chart-line {
   fill: none;
-  stroke: var(--teal);
+  stroke: var(--trend-color);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 3;
@@ -411,7 +399,7 @@ button {
 
 .chart-dots circle {
   fill: #fff;
-  stroke: var(--teal);
+  stroke: var(--trend-color);
   stroke-width: 2.4;
 }
 
@@ -431,43 +419,84 @@ button {
   font-size: 12px;
 }
 
-.insight-list {
+.diagnosis-list {
   display: grid;
   gap: 8px;
   margin: 10px 0 9px;
 }
 
-.insight {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  align-items: start;
-  gap: 8px;
+.diagnosis-item {
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
 }
 
-.insight > span {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-  place-items: center;
+.diagnosis-item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.diagnosis-category {
+  display: inline-flex;
+  margin-bottom: 5px;
+  border-radius: 999px;
+  padding: 3px 7px;
   background: var(--teal-soft);
   color: var(--teal-dark);
-  font-family: Georgia, serif;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.insight p,
-.mobile-insight p,
-.muted {
-  margin: 1px 0 0;
+.diagnosis-item > strong {
+  display: block;
+  font-size: 11px;
+}
+
+.diagnosis-item p,
+.diagnosis-empty > p {
+  margin: 4px 0 0;
   color: #465250;
   font-size: 10px;
   line-height: 1.38;
 }
 
-.mobile-insight {
-  display: none;
+.diagnosis-item small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.diagnosis-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.diagnosis-values span {
+  color: var(--muted);
+}
+
+.diagnosis-item details,
+.all-diagnoses {
+  margin-top: 7px;
+  color: var(--teal-dark);
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.diagnosis-item ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  color: #465250;
+  font-weight: 500;
+}
+
+.diagnosis-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 footer {
@@ -636,13 +665,13 @@ footer {
   margin-top: 14px;
 }
 
-.expanded .trend-panel,
-.expanded .insights-panel {
-  padding: 16px;
+.expanded .overview-grid.trend-only {
+  grid-template-columns: minmax(0, 1fr);
 }
 
-.expanded .insight p {
-  font-size: 12px;
+.expanded .trend-panel,
+.expanded .diagnosis-panel {
+  padding: 16px;
 }
 
 .table-panel {
@@ -928,7 +957,6 @@ details pre {
     font-size: 17px;
   }
 
-  .source-badge,
   .date-chip {
     display: none;
   }
@@ -969,35 +997,12 @@ details pre {
     padding: 8px 9px;
   }
 
-  .compact .insights-panel {
+  .compact .diagnosis-panel {
     display: none;
   }
 
   .compact .trend-svg {
     height: 82px;
-  }
-
-  .compact .mobile-insight {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-    gap: 8px;
-    margin-top: 6px;
-    border-radius: 10px;
-    padding: 7px 9px;
-    background: var(--teal-soft);
-  }
-
-  .mobile-insight span {
-    color: var(--teal-dark);
-    font-size: 8px;
-    font-weight: 900;
-    letter-spacing: 0.08em;
-  }
-
-  .mobile-insight p {
-    margin: 0;
-    font-size: 9px;
   }
 
   footer {

@@ -6,11 +6,11 @@
 
 - 一个工具：`get_ads_report`
 - 一个数据协议：`ReportState`
-- 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v5.html`，并保留旧版本资源别名用于宿主缓存兼容
+- 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v8.html`，并保留旧版本资源别名用于宿主缓存兼容
 - ChatGPT 入口：`/mcp/chatgpt`
 - Claude 入口：`/mcp/claude`
 - Progressive MCP：保留现有建广告流程
-- Flat MCP：负责 reporting、campaign/ad group/ad metadata 查询
+- Flat MCP：负责 reporting、campaign/ad group/ad metadata 与官方 Ad Diagnosis 查询
 
 UI 优先使用 MCP Apps 标准 `_meta.ui.resourceUri`、`ui/initialize`、`ui/notifications/tool-result` 和 `tools/call`。`window.openai` 只作为 ChatGPT 兼容 fallback，所以不按 host 复制代码。
 
@@ -34,7 +34,7 @@ ChatGPT custom MCP apps 当前适用于 Business、Enterprise 和 Edu 的 ChatGP
 2. Enterprise/Edu admin 先在 `Workspace settings > Permissions & Roles > Connected Data` 授权 Developer mode；被授权用户再到 `Settings > Apps > Advanced settings` 打开开关。
 3. 从 `Settings > Apps > Create` 创建 app；admin/owner 也可以从 `Workspace settings > Apps > Create` 创建。
 4. Name 填 `Hooray TikTok Ads Reporting`。
-5. Description 填 `Generate interactive TikTok Ads performance reports from live Flat MCP data or demo data.`
+5. Description 填 `Generate interactive TikTok Ads performance reports from the TikTok Ads Flat MCP.`
 6. MCP server URL 填 `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`。
 7. App authentication 选择无认证；TikTok advertiser 授权由 `get_ads_report` 的 live flow 单独发起。
 8. 点击 `Scan Tools`，确认工具列表包含 `get_ads_report`，然后点击 `Create`。
@@ -63,13 +63,7 @@ Team / Enterprise：
 
 官方说明：<https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp>
 
-## 5. 演示 Prompt
-
-无需 TikTok 授权：
-
-```text
-Show a demo TikTok Ads report.
-```
+## 5. 测试 Prompt
 
 真实数据默认流程：
 
@@ -85,7 +79,7 @@ Show ad group performance from 2026-07-01 to 2026-07-07.
 Show the ad-level report and sort by spend.
 ```
 
-默认值是 Live、最近 7 个完整自然日、Campaign level、对比上一周期。没有授权时卡片显示 Connect；有多个 advertiser account 时卡片显示账户选择；没有数据时显示 Empty state。
+默认值是最近 7 个完整自然日、Campaign level、对比上一周期。生产 MCP 不提供 Demo mode：没有授权时卡片只显示 Connect；有多个 advertiser account 时卡片显示账户选择；没有数据时显示 Empty state。
 
 ## 6. TikTok Reporting API 映射
 
@@ -109,6 +103,17 @@ Basic report 实际必须完整提供：
 
 随后按层级调用 `campaign_get`、`adgroup_get` 或 `ad_get`，把 ID 补成用户可读的名称和投放状态。
 
+Diagnosis 区域调用 `tool_diagnosis_get`，对应 `/open_api/v1.3/tool/diagnosis/get/`：
+
+- 必填：`advertiser_id`
+- 可选：`filtering.adgroup_ids`，最多 20 个；当前默认不传，以免只展示局部账户建议
+- 可选：`filtering.issue_category`，支持 `CREATIVE`、`BID_AND_BUDGET`、`EVENT_TRACK`
+- 返回：active ad groups 的 TikTok 官方 suggestions；没有 suggestion 的 ad group 不会出现在结果中
+- API 不返回 severity，因此 UI 不显示自定义 High、Medium 或 Low
+- 空 suggestions 时再调用 `adgroup_get` 读取未删除 ad groups 的 `operation_status`：存在 `ENABLE` 时显示 `Looking good`，没有则显示 `Nothing to diagnose yet`
+
+该诊断与所选 reporting date range 无关，展示的是 TikTok API 返回的最新诊断时间。诊断调用失败不会阻断主报表，也不会退化为本地 CTR、CPC 或 spend 规则。
+
 ## 7. 环境变量
 
 Render 必须配置：
@@ -127,7 +132,7 @@ REPORTING_DEFAULT_ADVERTISER_ID=<optional>
 
 TikTok developer portal 的 allowlisted redirect URI 必须与 `TIKTOK_REDIRECT_URI` 完全一致。原来的 `https://mcp.hoorayads.org/callback` 当前 DNS 不可用，不应继续作为 demo callback。
 
-## 8. Demo 与生产边界
+## 8. 当前能力与生产边界
 
 已适合真实产品演示：
 
@@ -135,7 +140,7 @@ TikTok developer portal 的 allowlisted redirect URI 必须与 `TIKTOK_REDIRECT_
 - Live authorization state
 - Flat report 查询和 pagination
 - Previous-period comparison
-- KPI、趋势、洞察、breakdown table
+- KPI、不同指标趋势、TikTok 官方诊断占位契约、breakdown table
 - Refresh、筛选、搜索、列预设、CSV export
 - 320px responsive 和 500px inline height
 
@@ -151,6 +156,8 @@ TikTok developer portal 的 allowlisted redirect URI 必须与 `TIKTOK_REDIRECT_
 ```bash
 node --import tsx src/http-server.ts
 node .local/qa-reporting-flow.mjs
+pnpm run qa:reporting-api-contract
+pnpm run qa:report-export
 ```
 
-验证项包括 ChatGPT/Claude 两个 endpoint、tools/list、resource read、demo report、live authorization state 和 UI resource metadata。
+验证项包括 ChatGPT/Claude 两个 endpoint、tools/list、resource read、三个 report level 的真实 API 参数映射、live authorization state 和 UI resource metadata。浏览器 UI fixture 只存在于 QA 脚本中；生产 `get_ads_report` 没有 Demo input、环境开关或示例数据回退。

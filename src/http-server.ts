@@ -12,6 +12,7 @@ import { createTikTokAdsPocServer } from "./server.js";
 import type { HostSurface } from "./server.js";
 import { getTikTokConfigSummary } from "./config.js";
 import { getTikTokMcpAuthSummary, saveTikTokMcpAuthorizationCode } from "./tiktok-mcp.js";
+import { getReportExport } from "./report-export.js";
 
 const port = process.env.PORT
   ? Number.parseInt(process.env.PORT, 10)
@@ -212,6 +213,18 @@ app.get("/report-preview", (_req: Request, res: Response) => {
       </body>
     </html>
   `);
+});
+app.get("/report-exports/:token.csv", (req: Request, res: Response) => {
+  const token = Array.isArray(req.params.token) ? req.params.token[0] : req.params.token;
+  const storedExport = getReportExport(token);
+  if (!storedExport) {
+    res.status(404).type("text").send("This report export has expired. Generate the report again to create a new CSV.");
+    return;
+  }
+
+  res.setHeader("Cache-Control", "private, no-store");
+  res.setHeader("Content-Disposition", `attachment; filename="${storedExport.filename}"`);
+  res.type("text/csv; charset=utf-8").send(`\uFEFF${storedExport.csv}`);
 });
 app.use(
   "/assets",

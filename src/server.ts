@@ -88,6 +88,7 @@ import {
 import type { TikTokAdvertiserAccount, TikTokIdentity } from "./tiktok-mcp.js";
 import { getTikTokAdsReport } from "./reporting.js";
 import type { GetAdsReportInput, ReportState } from "./reporting.js";
+import { createReportExport } from "./report-export.js";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
@@ -95,8 +96,11 @@ const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget.js"), "utf8");
 const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
-const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v5.html";
+const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v8.html";
 const LEGACY_REPORT_WIDGET_URIS = [
+  "ui://widget/tiktok-ads-report-v7.html",
+  "ui://widget/tiktok-ads-report-v6.html",
+  "ui://widget/tiktok-ads-report-v5.html",
   "ui://widget/tiktok-ads-report-v4.html",
   "ui://widget/tiktok-ads-report-v3.html",
   "ui://widget/tiktok-ads-report-v2.html",
@@ -117,7 +121,7 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.HOORAY_PUBLI
 const WIDGET_DESCRIPTION =
   "Display-only TikTok Ads workspace for product intake, creative review, campaign drafting, publish, and reporting. The user controls each step through chat.";
 const REPORT_WIDGET_DESCRIPTION =
-  "Interactive TikTok Ads performance report with a compact cross-host summary and fullscreen filters, trend, insights, breakdown table, refresh, and CSV export.";
+  "Interactive TikTok Ads performance report with a compact cross-host summary and fullscreen filters, metric-specific trends, TikTok diagnosis, breakdown table, refresh, and CSV export.";
 export type HostSurface = "chatgpt" | "claude" | "generic";
 
 function computeClaudeAppDomain(mcpServerUrl: string) {
@@ -528,7 +532,7 @@ function claudeReportFallback(reportState: ReportState) {
     "",
     `**Account:** ${reportState.advertiser?.name || "TikTok Ads account"}`,
     `**Period:** ${reportState.filters.startDate} to ${reportState.filters.endDate}`,
-    `**Level:** ${reportState.filters.level} | **Source:** ${reportState.source}`,
+    `**Level:** ${reportState.filters.level}`,
     "",
     "| Metric | Value | Change vs previous period |",
     "|---|---:|---:|",
@@ -539,8 +543,20 @@ function claudeReportFallback(reportState: ReportState) {
     `| ${entityLabel} | Spend | Impressions | Clicks | CTR | CPC |`,
     "|---|---:|---:|---:|---:|---:|",
     ...entityRows,
-    "",
-    ...(reportState.insights.length > 0 ? ["#### Quick insights", "", ...reportState.insights.map((insight) => `- ${insight}`)] : [])
+    ...(reportState.diagnosis?.status === "clear"
+      ? ["", "#### TikTok Diagnosis", "", "Looking good. No current TikTok recommendations."]
+      : reportState.diagnosis?.status === "no_ads"
+        ? ["", "#### TikTok Diagnosis", "", "Nothing to diagnose yet. No active ads found."]
+        : reportState.diagnosis?.suggestions?.length
+          ? [
+              "",
+              "#### TikTok Diagnosis",
+              "",
+              ...reportState.diagnosis.suggestions.map(
+                (suggestion) => `- **${escapeMarkdownCell(suggestion.entityName)}:** ${escapeMarkdownCell(suggestion.message)}`
+              )
+            ]
+          : [])
   ].join("\n");
 }
 
@@ -566,7 +582,7 @@ export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
           "openai/widgetCSP": {
             connect_domains: [],
             resource_domains: [],
-            redirect_domains: ["https://ads.tiktok.com", "https://business-api.tiktok.com"]
+            redirect_domains: [PUBLIC_BASE_URL, "https://ads.tiktok.com", "https://business-api.tiktok.com"]
           }
         })
   });
@@ -919,7 +935,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     );
   };
 
-  registerReportWidgetResource("tiktok-ads-report-v5", REPORT_WIDGET_URI);
+  registerReportWidgetResource("tiktok-ads-report-v8", REPORT_WIDGET_URI);
   LEGACY_REPORT_WIDGET_URIS.forEach((uri, index) => {
     registerReportWidgetResource(`tiktok-ads-report-legacy-${index + 1}`, uri);
   });
@@ -930,7 +946,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     {
       title: "Get TikTok Ads report",
       description:
-        "Generate an interactive TikTok Ads performance report. Advertiser Account is the first visible report input because advertiserId is required by TikTok for a BASIC report. The app auto-selects it when the authorized user has exactly one account and asks the user to choose when multiple accounts are available. Uses the Flat MCP reporting API in live mode and a clearly labeled deterministic sample in demo mode. Defaults to the last 7 complete days, campaign level, and previous-period comparison.",
+        "Generate an interactive TikTok Ads performance report from the Flat MCP reporting API and add official active-ad-group recommendations from tool_diagnosis_get. Advertiser Account is the first visible input because advertiserId is required for both APIs. The app auto-selects it when the authorized user has exactly one account and asks the user to choose when multiple accounts are available. Changing Level reruns the report at campaign, ad group, or ad level. Defaults to the last 7 complete days, campaign level, and previous-period comparison.",
       inputSchema: getAdsReportInput,
       outputSchema: getAdsReportOutput,
       _meta: TOOL_REPORT_META,
@@ -942,13 +958,15 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       }
     },
     async (input: GetAdsReportInput) => {
-      const reportState = await getTikTokAdsReport(input);
+      const generatedReportState = await getTikTokAdsReport(input);
+      const exportUrl = createReportExport(generatedReportState, PUBLIC_BASE_URL);
+      const reportState = exportUrl ? { ...generatedReportState, exportUrl } : generatedReportState;
       const textByStatus = {
         ready: "Show the interactive TikTok Ads performance report.",
         needs_authorization: "Show the TikTok Ads connection step inside the report card.",
         needs_account: "Show the advertiser account choices inside the report card.",
         empty: "Show the empty report state and selected date range.",
-        error: "Show the report error state with retry and demo options."
+        error: "Show the report error state with a retry option."
       } as const;
 
       return {
@@ -963,7 +981,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         ],
         _meta: {
           ...RESULT_REPORT_META,
-          source: reportState.source,
+          diagnosisApi: "tool_diagnosis_get",
           reportApi: "report_integrated_get",
           reportMcpSurface: "flat"
         }

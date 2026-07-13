@@ -12,7 +12,7 @@ The base journey is now:
 6. verify ad account, identity, and payment readiness
 7. create a Smart+ draft
 8. publish after explicit approval
-9. generate a live or demo TikTok Ads performance report
+9. generate a live TikTok Ads performance report
 
 This is not Shopify-only. It is meant for any novice SMB advertiser who has a promotable product URL, with TikTok MCP handling the account and campaign side wherever possible.
 
@@ -27,7 +27,7 @@ This is not Shopify-only. It is meant for any novice SMB advertiser who has a pr
 - `web/`
   Self-contained MCP App UIs for the campaign workflow and cross-host reporting.
 - `src/reporting.ts`
-  Flat MCP reporting client, normalization, previous-period comparison, metadata enrichment, insights, and deterministic demo state.
+  Flat MCP reporting client, level-specific requests, previous-period comparison, metadata enrichment, and official TikTok Ad Diagnosis normalization.
 - `docs/capability-map.md`
   The concrete mapping between PRD flow steps and current TikTok Ads MCP coverage.
 - `docs/mcp-app-compatibility-playbook.md`
@@ -44,7 +44,9 @@ Already validated in the current environment:
 - Advertiser, identity, Smart+, ad, and reporting APIs are exposed
 - `get_ads_report` returns the reporting MCP App directly
 - ChatGPT and Claude endpoint aliases expose the same portable UI and data contract
-- Demo mode and the unauthenticated live state pass end-to-end MCP tests
+- Campaign, ad group, and ad level request mappings pass contract tests
+- `tool_diagnosis_get` supplies the report's Issues & recommendations module; the app does not generate performance diagnosis rules
+- The unauthenticated state returns the TikTok Ads connection step instead of sample report data
 
 Still needed for production:
 
@@ -110,7 +112,6 @@ Start the MCP service and open `http://localhost:3010/report-preview`. This read
 Example prompts:
 
 - `Show my TikTok Ads report for the last 7 complete days.`
-- `Show a demo TikTok Ads report.`
 - `Compare campaign performance with the previous period.`
 - `Show the ad-level report from 2026-07-01 to 2026-07-07.`
 

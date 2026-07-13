@@ -1,5 +1,5 @@
 const root = document.getElementById("report-root") || document.getElementById("app-root");
-const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.2.0" };
+const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.5.0" };
 const PROTOCOL_VERSION = "2026-01-26";
 
 let reportState = null;
@@ -12,6 +12,7 @@ let localExpanded = false;
 let searchQuery = "";
 let columnPreset = "basic";
 let trendMetric = "spend";
+let reportRequestVersion = 0;
 const pendingRequests = new Map();
 
 function escapeHtml(value) {
@@ -31,88 +32,22 @@ function createPreviewState() {
   end.setUTCDate(end.getUTCDate() - 1);
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - 6);
-  const rows = [
-    ["Summer Sale | Prospecting", "Active", 1842.6, 284100, 4688],
-    ["Always-on Retargeting", "Active", 1260.4, 146220, 3224],
-    ["Creator Spark Test", "Active", 922.15, 121800, 2777],
-    ["Catalog Best Sellers", "Active", 714.8, 103700, 1984],
-    ["App Install | US", "Paused", 466.25, 89700, 1421]
-  ].map(([name, status, spend, impressions, clicks], index) => ({
-    id: `demo-${index + 1}`,
-    name,
-    status,
-    spend,
-    impressions,
-    clicks,
-    ctr: (clicks / impressions) * 100,
-    cpc: spend / clicks,
-    cpm: (spend / impressions) * 1000
-  }));
-  const totals = completeMetrics(rows.reduce(
-    (sum, row) => ({
-      spend: sum.spend + row.spend,
-      impressions: sum.impressions + row.impressions,
-      clicks: sum.clicks + row.clicks
-    }),
-    { spend: 0, impressions: 0, clicks: 0 }
-  ));
-  const weights = [0.11, 0.13, 0.12, 0.15, 0.14, 0.17, 0.18];
-  const trend = weights.map((weight, index) => {
-    const date = new Date(start);
-    date.setUTCDate(date.getUTCDate() + index);
-    return {
-      date: formatDate(date),
-      spend: totals.spend * weight,
-      impressions: Math.round(totals.impressions * weight),
-      clicks: Math.round(totals.clicks * weight)
-    };
-  });
   return {
-    status: "ready",
-    source: "demo",
+    status: "needs_authorization",
     generatedAt: new Date().toISOString(),
-    advertiser: {
-      id: "demo-advertiser-001",
-      name: "Sample Advertiser Account",
-      currency: "USD",
-      timezone: "America/Los_Angeles"
-    },
-    accountOptions: [
-      {
-        advertiserId: "demo-advertiser-001",
-        advertiserName: "Sample Advertiser Account",
-        currency: "USD",
-        timezone: "America/Los_Angeles"
-      }
-    ],
+    advertiser: null,
+    accountOptions: [],
     filters: {
       startDate: formatDate(start),
       endDate: formatDate(end),
       level: "campaign",
       comparePreviousPeriod: true
     },
-    totals,
-    kpis: [
-      { key: "spend", label: "Spend", value: totals.spend, deltaPercent: 12.4 },
-      { key: "impressions", label: "Impressions", value: totals.impressions, deltaPercent: 8.6 },
-      { key: "clicks", label: "Clicks", value: totals.clicks, deltaPercent: 15.8 },
-      { key: "ctr", label: "CTR", value: totals.ctr, deltaPercent: 6.7 }
-    ],
-    trend,
-    rows,
-    insights: [
-      "Summer Sale | Prospecting drove 35% of spend in this period.",
-      "Creator Spark Test had the strongest CTR at 2.28%."
-    ]
-  };
-}
-
-function completeMetrics(metrics) {
-  return {
-    ...metrics,
-    ctr: metrics.impressions > 0 ? (metrics.clicks / metrics.impressions) * 100 : 0,
-    cpc: metrics.clicks > 0 ? metrics.spend / metrics.clicks : 0,
-    cpm: metrics.impressions > 0 ? (metrics.spend / metrics.impressions) * 1000 : 0
+    totals: { spend: 0, impressions: 0, clicks: 0, ctr: 0, cpc: 0, cpm: 0 },
+    kpis: [],
+    trend: [],
+    rows: [],
+    message: "Connect TikTok Ads to load reporting data."
   };
 }
 
@@ -215,7 +150,7 @@ function humanDateRange(filters) {
   if (!filters?.startDate || !filters?.endDate) return "Last 7 days";
   const start = new Date(`${filters.startDate}T00:00:00Z`);
   const end = new Date(`${filters.endDate}T00:00:00Z`);
-  const formatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+  const formatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
   return `${formatter.format(start)} – ${formatter.format(end)}`;
 }
 
@@ -243,20 +178,18 @@ function sparkline(points, key) {
         `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="3.5"><title>${escapeHtml(point.date)}: ${escapeHtml(formatMetric(key, point.value))}</title></circle>`
     )
     .join("");
+  const colors = { spend: "#008f8c", clicks: "#e05b3f", impressions: "#2f6fbd" };
+  const color = colors[key] || colors.spend;
+  const gradientId = `report-area-${key}`;
   return `
-    <svg class="trend-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(key)} trend">
-      <defs><linearGradient id="report-area" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#00a6a6" stop-opacity=".28"/><stop offset="100%" stop-color="#00a6a6" stop-opacity=".02"/></linearGradient></defs>
+    <svg class="trend-svg metric-${escapeHtml(key)}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(key)} trend">
+      <defs><linearGradient id="${gradientId}" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".28"/><stop offset="100%" stop-color="${color}" stop-opacity=".02"/></linearGradient></defs>
       <line class="chart-grid" x1="${padding}" y1="${height * 0.34}" x2="${width - padding}" y2="${height * 0.34}"/>
       <line class="chart-grid" x1="${padding}" y1="${height * 0.67}" x2="${width - padding}" y2="${height * 0.67}"/>
-      <polygon class="chart-area" points="${area}"/>
+      <polygon class="chart-area" points="${area}" fill="url(#${gradientId})"/>
       <polyline class="chart-line" points="${polyline}"/>
       <g class="chart-dots">${dots}</g>
     </svg>`;
-}
-
-function sourceBadge() {
-  const demo = reportState?.source === "demo";
-  return `<span class="source-badge ${demo ? "demo" : "live"}"><i></i>${demo ? "Demo data" : "Live TikTok data"}</span>`;
 }
 
 function renderHeader() {
@@ -268,7 +201,6 @@ function renderHeader() {
         <div><p class="eyebrow">HOORAY REPORTING</p><h1>${escapeHtml(account)}</h1></div>
       </div>
       <div class="header-meta">
-        ${sourceBadge()}
         <span class="date-chip">${escapeHtml(humanDateRange(reportState?.filters))}</span>
         <button class="icon-button" data-action="refresh" aria-label="Refresh report" title="Refresh report">↻</button>
         <button class="primary-button" data-action="expand">${isExpanded() ? "Compact view" : "Expand report"}</button>
@@ -307,33 +239,36 @@ function renderTrend() {
     </article>`;
 }
 
-function renderInsights() {
-  const insights = reportState?.insights || [];
-  return `
-    <aside class="insights-panel">
-      <div class="panel-heading"><div><span class="section-kicker">WHAT CHANGED</span><strong>Quick read</strong></div></div>
-      <div class="insight-list">${insights
-        .slice(0, 2)
-        .map((insight, index) => `<div class="insight"><span>${index + 1}</span><p>${escapeHtml(insight)}</p></div>`)
-        .join("") || `<p class="muted">Insights appear when delivery data is available.</p>`}</div>
-      <button class="text-button" data-action="export">Export current view as CSV</button>
-    </aside>`;
+function renderDiagnosisSuggestion(suggestion) {
+  const values = suggestion.currentValue || suggestion.recommendedValue
+    ? `<p class="diagnosis-values">${suggestion.currentValue ? `<span>Current <strong>${escapeHtml(suggestion.currentValue)}</strong></span>` : ""}${suggestion.recommendedValue ? `<span>Recommended <strong>${escapeHtml(suggestion.recommendedValue)}</strong></span>` : ""}</p>`
+    : "";
+  const details = suggestion.details?.length
+    ? `<details><summary>View details</summary><ul>${suggestion.details.map((detail) => `<li>${escapeHtml(detail)}</li>`).join("")}</ul></details>`
+    : "";
+  return `<article class="diagnosis-item"><span class="diagnosis-category">${escapeHtml(String(suggestion.category || "recommendation").replaceAll("_", " & "))}</span><strong>${escapeHtml(suggestion.entityName || "TikTok Ads recommendation")}</strong><p>${escapeHtml(suggestion.message || "")}</p>${values}${suggestion.suggestionTime ? `<small>Diagnosed ${escapeHtml(suggestion.suggestionTime)}</small>` : ""}${details}</article>`;
 }
 
-function renderMobileInsight() {
-  const insight = reportState?.insights?.[0];
-  return insight ? `<div class="mobile-insight"><span>INSIGHT</span><p>${escapeHtml(insight)}</p></div>` : "";
+function renderDiagnosis() {
+  const diagnosis = reportState?.diagnosis;
+  if (!diagnosis) return "";
+  if (diagnosis.status === "clear") {
+    return `<aside class="diagnosis-panel diagnosis-empty"><div class="panel-heading"><div><span class="section-kicker">TIKTOK DIAGNOSIS</span><strong>Looking good</strong></div></div><p>No current TikTok recommendations.</p></aside>`;
+  }
+  if (diagnosis.status === "no_ads") {
+    return `<aside class="diagnosis-panel diagnosis-empty"><div class="panel-heading"><div><span class="section-kicker">TIKTOK DIAGNOSIS</span><strong>Nothing to diagnose yet</strong></div></div><p>No active ads found.</p></aside>`;
+  }
+  const suggestions = diagnosis.suggestions || [];
+  return `<aside class="diagnosis-panel"><div class="panel-heading"><div><span class="section-kicker">TIKTOK DIAGNOSIS</span><strong>Issues & recommendations</strong></div></div><div class="diagnosis-list">${suggestions.slice(0, 2).map(renderDiagnosisSuggestion).join("")}</div>${suggestions.length > 2 ? `<details class="all-diagnoses"><summary>View all recommendations</summary><div class="diagnosis-list">${suggestions.slice(2).map(renderDiagnosisSuggestion).join("")}</div></details>` : ""}</aside>`;
 }
 
 function reportAccountOptions() {
   const selectedAdvertiserId = reportState?.advertiser?.id || "";
   const accountMap = new Map();
   for (const account of reportState?.accountOptions || []) {
-    if (!String(account.advertiserId || "").startsWith("demo-")) {
-      accountMap.set(account.advertiserId, account);
-    }
+    accountMap.set(account.advertiserId, account);
   }
-  if (reportState?.advertiser && !selectedAdvertiserId.startsWith("demo-") && !accountMap.has(selectedAdvertiserId)) {
+  if (reportState?.advertiser && !accountMap.has(selectedAdvertiserId)) {
     accountMap.set(selectedAdvertiserId, {
       advertiserId: selectedAdvertiserId,
       advertiserName: reportState.advertiser.name,
@@ -348,10 +283,7 @@ function accountDisplayValue(account) {
   return [account?.advertiserName, account?.advertiserId, account?.currency].filter(Boolean).join(" · ");
 }
 
-function accountHelpText(source, hasOptions) {
-  if (source === "demo") {
-    return "Demo uses sample data. Click or type here to switch to Live and find an authorized advertiser account.";
-  }
+function accountHelpText(hasOptions) {
   return hasOptions
     ? "Search by account name or advertiser ID, then choose a result. You can also enter an exact advertiser ID."
     : "Type an exact advertiser ID, or leave this empty and Apply to load your authorized accounts.";
@@ -380,28 +312,23 @@ function resolveAdvertiserId(input) {
 
 function renderFilters() {
   const filters = reportState?.filters || {};
-  const source = reportState?.source || "live";
   const selectedAdvertiserId = reportState?.advertiser?.id || "";
   const accounts = reportAccountOptions();
   const selectedAccount = accounts.find((account) => account.advertiserId === selectedAdvertiserId);
-  const accountValue = source === "demo"
-    ? "Sample Advertiser Account · Demo"
-    : selectedAccount
-      ? accountDisplayValue(selectedAccount)
-      : selectedAdvertiserId;
+  const accountValue = selectedAccount ? accountDisplayValue(selectedAccount) : selectedAdvertiserId;
   const liveOptions = accounts
     .map((account) => {
       const searchText = accountDisplayValue(account).toLowerCase();
       return `<button type="button" class="account-option" role="option" data-advertiser-option="${escapeHtml(account.advertiserId)}" data-account-label="${escapeHtml(accountDisplayValue(account))}" data-account-search="${escapeHtml(searchText)}"><strong>${escapeHtml(account.advertiserName)}</strong><span>${escapeHtml([account.advertiserId, account.currency].filter(Boolean).join(" · "))}</span></button>`;
     })
     .join("");
-  const accountHelp = accountHelpText(source, accounts.length > 0);
+  const accountHelp = accountHelpText(accounts.length > 0);
   return `
     <section class="filter-bar">
       <div class="account-field">
         <span class="field-label">Advertiser Account</span>
         <div class="account-combobox" data-account-combobox>
-          <input type="search" data-filter="advertiserId" role="combobox" aria-autocomplete="list" aria-controls="advertiser-account-list" aria-expanded="false" autocomplete="off" placeholder="Search account name or advertiser ID" value="${escapeHtml(accountValue)}" data-selected-advertiser-id="${escapeHtml(source === "live" ? selectedAdvertiserId : "demo-advertiser-001")}">
+          <input type="search" data-filter="advertiserId" role="combobox" aria-autocomplete="list" aria-controls="advertiser-account-list" aria-expanded="false" autocomplete="off" placeholder="Search account name or advertiser ID" value="${escapeHtml(accountValue)}" data-selected-advertiser-id="${escapeHtml(selectedAdvertiserId)}">
           <span class="account-chevron" aria-hidden="true">⌄</span>
           <div class="account-menu" id="advertiser-account-list" role="listbox" hidden>
             ${liveOptions || `<div class="account-empty">No loaded accounts yet. Enter an exact ID or Apply to connect TikTok Ads.</div>`}
@@ -412,7 +339,6 @@ function renderFilters() {
       <label>Level<select data-filter="level"><option value="campaign" ${filters.level === "campaign" ? "selected" : ""}>Campaign</option><option value="adgroup" ${filters.level === "adgroup" ? "selected" : ""}>Ad group</option><option value="ad" ${filters.level === "ad" ? "selected" : ""}>Ad</option></select></label>
       <label>Start<input type="date" data-filter="startDate" value="${escapeHtml(filters.startDate || "")}"></label>
       <label>End<input type="date" data-filter="endDate" value="${escapeHtml(filters.endDate || "")}"></label>
-      <label>Data<select data-filter="mode"><option value="live" ${reportState?.source !== "demo" ? "selected" : ""}>Live</option><option value="demo" ${reportState?.source === "demo" ? "selected" : ""}>Demo</option></select></label>
       <label class="check-label"><input type="checkbox" data-filter="compare" ${filters.comparePreviousPeriod ? "checked" : ""}>Compare previous period</label>
       <button class="secondary-button" data-action="apply">Apply</button>
     </section>`;
@@ -449,13 +375,13 @@ function renderTable() {
 }
 
 function renderReady() {
+  const diagnosis = renderDiagnosis();
   return `
     <main class="report-shell ${isExpanded() ? "expanded" : "compact"}">
       ${renderHeader()}
       ${isExpanded() ? renderFilters() : ""}
       ${renderKpis()}
-      <section class="overview-grid">${renderTrend()}${renderInsights()}</section>
-      ${renderMobileInsight()}
+      <section class="overview-grid ${diagnosis ? "with-diagnosis" : "trend-only"}">${renderTrend()}${diagnosis}</section>
       ${isExpanded() ? renderTable() : ""}
       <footer><span>Generated ${escapeHtml(new Date(reportState.generatedAt || Date.now()).toLocaleString())}</span><span>Powered by TikTok Ads Flat MCP</span></footer>
       ${loading ? `<div class="loading-cover"><span></span><p>Refreshing TikTok Ads data…</p></div>` : ""}
@@ -481,7 +407,7 @@ function renderStatus() {
         <p>${escapeHtml(state.message || "Your report will appear here when the required information is available.")}</p>
         ${state.authorizationUrl ? `<button class="primary-button" data-action="authorize">Connect TikTok Ads</button>` : ""}
         ${state.status === "empty" && !showReportControls ? `<button class="secondary-button" data-action="refresh">Refresh</button>` : ""}
-        ${state.status === "error" ? `<div class="status-actions"><button class="primary-button" data-action="refresh">Retry live report</button><button class="secondary-button" data-action="demo">Open demo data</button></div>` : ""}
+        ${state.status === "error" ? `<div class="status-actions"><button class="primary-button" data-action="refresh">Retry report</button></div>` : ""}
         ${state.technicalDetail ? `<details><summary>Technical detail</summary><pre>${escapeHtml(state.technicalDetail)}</pre></details>` : ""}
       </section>
       ${showReportControls ? renderFilters() : ""}
@@ -502,17 +428,17 @@ function render() {
 
 function reportArguments(overrides = {}) {
   return {
-    ...(reportState?.advertiser?.id && !String(reportState.advertiser.id).startsWith("demo-") ? { advertiserId: reportState.advertiser.id } : {}),
+    ...(reportState?.advertiser?.id ? { advertiserId: reportState.advertiser.id } : {}),
     startDate: reportState?.filters?.startDate,
     endDate: reportState?.filters?.endDate,
     level: reportState?.filters?.level || "campaign",
-    mode: reportState?.source || "live",
     comparePreviousPeriod: reportState?.filters?.comparePreviousPeriod !== false,
     ...overrides
   };
 }
 
 async function callReportTool(args) {
+  const requestVersion = ++reportRequestVersion;
   loading = true;
   render();
   try {
@@ -523,24 +449,33 @@ async function callReportTool(args) {
       result = await window.openai.callTool("get_ads_report", args);
     } else if (window.parent === window) {
       reportState = createPreviewState();
-      reportState.source = args.mode || "demo";
+      reportState.filters = {
+        startDate: args.startDate || reportState.filters.startDate,
+        endDate: args.endDate || reportState.filters.endDate,
+        level: args.level || reportState.filters.level,
+        comparePreviousPeriod: args.comparePreviousPeriod !== false
+      };
       return;
     } else {
       throw new Error("This host did not expose MCP tool calls to the report app.");
     }
     const next = extractReportState(result);
     if (!next) throw new Error("The report tool returned no report state.");
-    reportState = next;
+    if (requestVersion === reportRequestVersion) reportState = next;
   } catch (error) {
-    reportState = {
-      ...(reportState || createPreviewState()),
-      status: "error",
-      message: "The report could not be refreshed.",
-      technicalDetail: error instanceof Error ? error.message : "Unknown host error"
-    };
+    if (requestVersion === reportRequestVersion) {
+      reportState = {
+        ...(reportState || createPreviewState()),
+        status: "error",
+        message: "The report could not be refreshed.",
+        technicalDetail: error instanceof Error ? error.message : "Unknown host error"
+      };
+    }
   } finally {
-    loading = false;
-    render();
+    if (requestVersion === reportRequestVersion) {
+      loading = false;
+      render();
+    }
   }
 }
 
@@ -589,7 +524,7 @@ function csvValue(value) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
 
-function exportCsv() {
+function exportCsvFallback() {
   const rows = reportState?.rows || [];
   const header = ["ID", "Name", "Status", "Spend", "Impressions", "Clicks", "CTR", "CPC", "CPM"];
   const body = rows.map((row) => [row.id, row.name, row.status, row.spend, row.impressions, row.clicks, row.ctr, row.cpc, row.cpm]);
@@ -598,12 +533,13 @@ function exportCsv() {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = `tiktok-ads-report-${reportState?.filters?.startDate || "export"}.csv`;
+  document.body.append(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-async function openAuthorization() {
-  const url = reportState?.authorizationUrl;
+async function openExternalUrl(url) {
   if (!url) return;
   try {
     if (initialized) {
@@ -618,54 +554,67 @@ async function openAuthorization() {
   }
 }
 
+async function exportCsv() {
+  if (reportState?.exportUrl) {
+    await openExternalUrl(reportState.exportUrl);
+    return;
+  }
+  exportCsvFallback();
+}
+
+async function openAuthorization() {
+  await openExternalUrl(reportState?.authorizationUrl);
+}
+
+function reportArgumentsFromControls(overrides = {}) {
+  const accountInput = root.querySelector('[data-filter="advertiserId"]');
+  const resolvedAccount = resolveAdvertiserId(accountInput);
+  if (resolvedAccount.error) {
+    return { error: resolvedAccount.error, accountInput };
+  }
+  return {
+    accountInput,
+    args: reportArguments({
+      advertiserId: resolvedAccount.advertiserId,
+      startDate: root.querySelector('[data-filter="startDate"]')?.value,
+      endDate: root.querySelector('[data-filter="endDate"]')?.value,
+      level: root.querySelector('[data-filter="level"]')?.value,
+      comparePreviousPeriod: Boolean(root.querySelector('[data-filter="compare"]')?.checked),
+      ...overrides
+    })
+  };
+}
+
+function showAccountError(message, accountInput) {
+  const help = root.querySelector("[data-account-help]");
+  if (help) {
+    help.textContent = message;
+    help.classList.add("error");
+  }
+  accountInput?.focus();
+}
+
 function bindInteractions() {
   root.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", async () => {
       const action = button.getAttribute("data-action");
       if (action === "refresh") await callReportTool(reportArguments());
       if (action === "expand") await requestExpand();
-      if (action === "export") exportCsv();
+      if (action === "export") await exportCsv();
       if (action === "authorize") await openAuthorization();
-      if (action === "demo") await callReportTool(reportArguments({ mode: "demo", advertiserId: undefined }));
       if (action === "apply") {
-        const accountInput = root.querySelector('[data-filter="advertiserId"]');
-        const startDate = root.querySelector('[data-filter="startDate"]')?.value;
-        const endDate = root.querySelector('[data-filter="endDate"]')?.value;
-        const level = root.querySelector('[data-filter="level"]')?.value;
-        const mode = root.querySelector('[data-filter="mode"]')?.value;
-        const comparePreviousPeriod = Boolean(root.querySelector('[data-filter="compare"]')?.checked);
-        const resolvedAccount = mode === "live" ? resolveAdvertiserId(accountInput) : { advertiserId: undefined };
-        if (resolvedAccount.error) {
-          const help = root.querySelector("[data-account-help]");
-          if (help) {
-            help.textContent = resolvedAccount.error;
-            help.classList.add("error");
-          }
-          accountInput?.focus();
+        const request = reportArgumentsFromControls();
+        if (request.error) {
+          showAccountError(request.error, request.accountInput);
           return;
         }
-        await callReportTool(reportArguments({
-          advertiserId: resolvedAccount.advertiserId,
-          startDate,
-          endDate,
-          level,
-          mode,
-          comparePreviousPeriod
-        }));
+        await callReportTool(request.args);
       }
     });
   });
-  const modeFilter = root.querySelector('[data-filter="mode"]');
   const accountFilter = root.querySelector('[data-filter="advertiserId"]');
   const accountMenu = root.querySelector("[data-account-combobox] .account-menu");
   const accountHelp = root.querySelector("[data-account-help]");
-  const setLiveAccountMode = () => {
-    if (modeFilter?.value !== "demo") return;
-    modeFilter.value = "live";
-    accountFilter.value = "";
-    accountFilter.dataset.selectedAdvertiserId = "";
-    if (accountHelp) accountHelp.textContent = accountHelpText("live", reportAccountOptions().length > 0);
-  };
   const showAccountMenu = (query = "") => {
     if (!accountMenu) return;
     const normalized = query.trim().toLowerCase();
@@ -679,26 +628,13 @@ function bindInteractions() {
     if (accountMenu) accountMenu.hidden = true;
     accountFilter?.setAttribute("aria-expanded", "false");
   };
-  modeFilter?.addEventListener("change", () => {
-    const isDemo = modeFilter.value === "demo";
-    const selected = reportAccountOptions().find((account) => account.advertiserId === reportState?.advertiser?.id);
-    accountFilter.value = isDemo ? "Sample Advertiser Account · Demo" : selected ? accountDisplayValue(selected) : "";
-    accountFilter.dataset.selectedAdvertiserId = isDemo ? "demo-advertiser-001" : selected?.advertiserId || "";
-    if (accountHelp) {
-      accountHelp.textContent = accountHelpText(isDemo ? "demo" : "live", reportAccountOptions().length > 0);
-      accountHelp.classList.remove("error");
-    }
-    hideAccountMenu();
-  });
   accountFilter?.addEventListener("focus", () => {
-    setLiveAccountMode();
     showAccountMenu(accountFilter.value);
   });
   accountFilter?.addEventListener("input", () => {
-    setLiveAccountMode();
     accountFilter.dataset.selectedAdvertiserId = "";
     if (accountHelp) {
-      accountHelp.textContent = accountHelpText("live", reportAccountOptions().length > 0);
+      accountHelp.textContent = accountHelpText(reportAccountOptions().length > 0);
       accountHelp.classList.remove("error");
     }
     showAccountMenu(accountFilter.value);
@@ -716,7 +652,7 @@ function bindInteractions() {
       accountFilter.value = option.dataset.accountLabel || option.dataset.advertiserOption || "";
       accountFilter.dataset.selectedAdvertiserId = option.dataset.advertiserOption || "";
       if (accountHelp) {
-        accountHelp.textContent = accountHelpText("live", true);
+        accountHelp.textContent = accountHelpText(true);
         accountHelp.classList.remove("error");
       }
       accountFilter.focus();
@@ -728,6 +664,14 @@ function bindInteractions() {
       trendMetric = button.getAttribute("data-trend") || "spend";
       render();
     });
+  });
+  root.querySelector('[data-filter="level"]')?.addEventListener("change", async (event) => {
+    const request = reportArgumentsFromControls({ level: event.target.value });
+    if (request.error) {
+      showAccountError(request.error, request.accountInput);
+      return;
+    }
+    await callReportTool(request.args);
   });
   const search = root.querySelector("[data-search]");
   search?.addEventListener("input", () => {

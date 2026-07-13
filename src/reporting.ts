@@ -2,7 +2,6 @@ import { callTikTokMcpTool, listTikTokAdvertiserAccounts } from "./tiktok-mcp.js
 import type { TikTokAdvertiserAccount, TikTokToolResponse } from "./tiktok-mcp.js";
 
 export type ReportLevel = "campaign" | "adgroup" | "ad";
-export type ReportSource = "live" | "demo";
 export type ReportStatus = "ready" | "needs_authorization" | "needs_account" | "empty" | "error";
 
 export type ReportMetrics = {
@@ -41,9 +40,28 @@ export type ReportAccountOption = {
   timezone: string;
 };
 
+export type ReportDiagnosisSuggestion = {
+  source: "tiktok";
+  category: "creative" | "bid_and_budget" | "event_track";
+  suggestionCode: string;
+  suggestionId?: string;
+  adgroupId?: string;
+  adId?: string;
+  entityName: string;
+  message: string;
+  currentValue?: string;
+  recommendedValue?: string;
+  suggestionTime?: string;
+  details?: string[];
+};
+
+export type ReportDiagnosis = {
+  status: "issues" | "clear" | "no_ads";
+  suggestions: ReportDiagnosisSuggestion[];
+};
+
 export type ReportState = {
   status: ReportStatus;
-  source: ReportSource;
   generatedAt: string;
   advertiser: {
     id: string;
@@ -61,9 +79,10 @@ export type ReportState = {
   totals: ReportMetrics;
   trend: ReportTrendPoint[];
   rows: ReportRow[];
-  insights: string[];
+  diagnosis?: ReportDiagnosis;
   accountOptions?: ReportAccountOption[];
   authorizationUrl?: string;
+  exportUrl?: string;
   message?: string;
   technicalDetail?: string;
 };
@@ -73,7 +92,6 @@ export type GetAdsReportInput = {
   startDate?: string;
   endDate?: string;
   level?: ReportLevel;
-  mode?: ReportSource;
   comparePreviousPeriod?: boolean;
 };
 
@@ -101,6 +119,15 @@ type EntityMetadata = {
   status: string;
 };
 
+type RawDiagnosisResult = {
+  adgroup_id?: unknown;
+  adgroup_name?: unknown;
+  diagnosis?: unknown;
+  [key: string]: unknown;
+};
+
+type DiagnosisCategory = ReportDiagnosisSuggestion["category"];
+
 const LEVEL_CONFIG: Record<
   ReportLevel,
   { dataLevel: "AUCTION_CAMPAIGN" | "AUCTION_ADGROUP" | "AUCTION_AD"; dimension: string; metadataTool: string; idField: string; nameField: string }
@@ -127,6 +154,66 @@ const LEVEL_CONFIG: Record<
     nameField: "ad_name"
   }
 };
+
+export function getReportLevelContract(level: ReportLevel) {
+  return { ...LEVEL_CONFIG[level] };
+}
+
+export function buildIntegratedReportRequest(
+  options: { advertiserId: string; startDate: string; endDate: string; level: ReportLevel },
+  page = 1
+) {
+  const config = LEVEL_CONFIG[options.level];
+  return {
+    advertiser_id: options.advertiserId,
+    report_type: "BASIC",
+    service_type: "AUCTION",
+    data_level: config.dataLevel,
+    dimensions: [config.dimension, "stat_time_day"],
+    metrics: ["spend", "impressions", "clicks", "ctr", "cpc", "cpm"],
+    start_date: options.startDate,
+    end_date: options.endDate,
+    order_field: "spend",
+    order_type: "DESC",
+    page,
+    page_size: 1000
+  };
+}
+
+export function buildEntityMetadataRequest(advertiserId: string, level: ReportLevel, ids: string[]) {
+  const config = LEVEL_CONFIG[level];
+  return {
+    tool: config.metadataTool,
+    arguments: {
+      advertiser_id: advertiserId,
+      filtering: { [`${config.dimension}s`]: ids },
+      fields: [config.idField, config.nameField, "operation_status", "secondary_status"],
+      page: 1,
+      page_size: 100
+    }
+  };
+}
+
+export function buildDiagnosisRequest(advertiserId: string, adgroupIds: string[] = []) {
+  const filteredAdgroupIds = [...new Set(adgroupIds.filter(Boolean))].slice(0, 20);
+  return {
+    tool: "tool_diagnosis_get",
+    arguments: {
+      advertiser_id: advertiserId,
+      ...(filteredAdgroupIds.length > 0 ? { filtering: { adgroup_ids: filteredAdgroupIds } } : {})
+    }
+  };
+}
+
+export function buildActiveAdgroupRequest(advertiserId: string, page = 1) {
+  return {
+    advertiser_id: advertiserId,
+    filtering: { primary_status: "STATUS_NOT_DELETE" },
+    fields: ["adgroup_id", "operation_status"],
+    page,
+    page_size: 1000
+  };
+}
 
 const ZERO_METRICS: ReportMetrics = {
   spend: 0,
@@ -210,6 +297,196 @@ function readString(record: Record<string, unknown>, keys: string[]) {
   return "";
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function readOptionalString(record: Record<string, unknown>, keys: string[]) {
+  const value = readString(record, keys);
+  return value || undefined;
+}
+
+function formatDiagnosisAmount(value: unknown, currency: string) {
+  if ((typeof value !== "string" && typeof value !== "number") || String(value).trim() === "") {
+    return undefined;
+  }
+  const rawValue = String(value).trim();
+  return currency && !rawValue.toUpperCase().includes(currency.toUpperCase()) ? `${rawValue} ${currency}` : rawValue;
+}
+
+const DIAGNOSIS_COPY: Record<string, string> = {
+  NOBGM: "Add background music to this video.",
+  VIDEO_LENGTH: "Use a longer video creative.",
+  VIDEO_RESOLUTION: "Replace this video with a higher-resolution version.",
+  SUGGEST_BID: "TikTok recommends adjusting the bid.",
+  SUGGEST_BUDGET: "TikTok recommends adjusting the budget.",
+  NOBID_SWITCH: "Switch the bidding strategy to Maximum Delivery.",
+  BUDGET_EDR: "Review TikTok's budget scenarios and estimated results.",
+  BID_EDR: "Review TikTok's bid scenarios and estimated costs.",
+  PIXEL: "Check and test the Pixel setup; TikTok detected no recent activity."
+};
+
+function diagnosisMessage(code: string) {
+  if (DIAGNOSIS_COPY[code]) {
+    return DIAGNOSIS_COPY[code];
+  }
+  const label = code.replaceAll("_", " ").toLowerCase();
+  return label ? `Review TikTok's ${label} recommendation.` : "Review this TikTok recommendation.";
+}
+
+function inferDiagnosisCategory(hint: string, suggestion: Record<string, unknown>): DiagnosisCategory | null {
+  const normalizedHint = hint.toUpperCase();
+  const code = readString(suggestion, ["issue_suggestion", "suggestion_code", "suggestion_type"]).toUpperCase();
+  if (normalizedHint.includes("CREATIVE") || ["NOBGM", "VIDEO_LENGTH", "VIDEO_RESOLUTION"].includes(code)) {
+    return "creative";
+  }
+  if (normalizedHint.includes("BID") || normalizedHint.includes("BUDGET") || ["SUGGEST_BID", "SUGGEST_BUDGET", "NOBID_SWITCH", "BUDGET_EDR", "BID_EDR"].includes(code)) {
+    return "bid_and_budget";
+  }
+  if (normalizedHint.includes("EVENT") || normalizedHint.includes("PIXEL") || code === "PIXEL") {
+    return "event_track";
+  }
+  return null;
+}
+
+function collectDiagnosisSuggestions(value: unknown) {
+  const collected: Array<{ categoryHint: string; suggestion: Record<string, unknown> }> = [];
+
+  const visit = (candidate: unknown, categoryHint = "") => {
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        visit(item, categoryHint);
+      }
+      return;
+    }
+
+    const record = asRecord(candidate);
+    if (!record) {
+      return;
+    }
+
+    const nestedKeys = ["creative", "bid_and_budget", "event_track"];
+    let foundNestedCategory = false;
+    for (const key of nestedKeys) {
+      if (record[key] !== undefined) {
+        foundNestedCategory = true;
+        visit(record[key], key);
+      }
+    }
+
+    if (!foundNestedCategory) {
+      collected.push({
+        categoryHint: readString(record, ["issue_category", "category", "suggestion_category"]) || categoryHint,
+        suggestion: record
+      });
+    }
+  };
+
+  visit(value);
+  return collected;
+}
+
+function diagnosisValues(
+  category: DiagnosisCategory,
+  code: string,
+  suggestion: Record<string, unknown>,
+  currency: string
+) {
+  if (category !== "bid_and_budget") {
+    return {};
+  }
+
+  if (code === "SUGGEST_BUDGET" || code === "BUDGET_EDR") {
+    return {
+      currentValue: formatDiagnosisAmount(suggestion.budget, currency),
+      recommendedValue: formatDiagnosisAmount(suggestion.suggest_budget, currency)
+    };
+  }
+  if (code === "SUGGEST_BID" || code === "BID_EDR") {
+    return {
+      currentValue: formatDiagnosisAmount(suggestion.bid, currency),
+      recommendedValue: formatDiagnosisAmount(suggestion.suggest_bid, currency)
+    };
+  }
+  if (code === "NOBID_SWITCH") {
+    return { recommendedValue: "Maximum Delivery" };
+  }
+  return {};
+}
+
+function diagnosisDetails(
+  result: RawDiagnosisResult,
+  suggestion: Record<string, unknown>,
+  code: string
+) {
+  const details: string[] = [];
+  const adgroupId = readOptionalString(result, ["adgroup_id"]);
+  const adId = readOptionalString(suggestion, ["ad_id"]);
+  const videoId = readOptionalString(suggestion, ["vid", "video_id"]);
+  const pixelId = readOptionalString(suggestion, ["pixel_id"]);
+  const pixelCode = readOptionalString(suggestion, ["pixel_code"]);
+  const costFloor = readOptionalString(suggestion, ["cost_floor"]);
+
+  if (adgroupId) details.push(`Ad group ID: ${adgroupId}`);
+  if (adId) details.push(`Ad ID: ${adId}`);
+  if (videoId) details.push(`Video ID: ${videoId}`);
+  if (pixelId) details.push(`Pixel ID: ${pixelId}`);
+  if (pixelCode) details.push(`Pixel code: ${pixelCode}`);
+  if (costFloor && (code === "BID_EDR" || code === "BUDGET_EDR")) details.push(`Cost floor: ${costFloor}`);
+  return details;
+}
+
+export function normalizeTikTokDiagnosis(payload: unknown, currency = ""): ReportDiagnosis {
+  const payloadRecord = asRecord(payload);
+  const nestedData = asRecord(payloadRecord?.data);
+  const rawResults = payloadRecord?.results ?? nestedData?.results;
+  const results = Array.isArray(rawResults) ? (rawResults as RawDiagnosisResult[]) : [];
+  const suggestions: ReportDiagnosisSuggestion[] = [];
+
+  for (const result of results) {
+    const diagnosis = asRecord(result.diagnosis) || result;
+    const diagnosisTime = readOptionalString(diagnosis, ["diagnosis_time"]);
+    const rawSuggestions = diagnosis.suggestions ?? diagnosis.suggestion;
+
+    for (const { categoryHint, suggestion } of collectDiagnosisSuggestions(rawSuggestions)) {
+      const category = inferDiagnosisCategory(categoryHint, suggestion);
+      if (!category) {
+        continue;
+      }
+      const suggestionCode = readString(suggestion, ["issue_suggestion", "suggestion_code", "suggestion_type"]).toUpperCase();
+      const suggestionId = readOptionalString(suggestion, ["suggestion_id"]);
+      const adgroupId = readOptionalString(result, ["adgroup_id"]);
+      const adId = readOptionalString(suggestion, ["ad_id"]);
+      const entityName =
+        readString(suggestion, ["name", "ad_name"]) ||
+        readString(result, ["adgroup_name"]) ||
+        (adgroupId ? `Ad group ${adgroupId}` : "TikTok Ads recommendation");
+      const details = diagnosisDetails(result, suggestion, suggestionCode);
+
+      suggestions.push({
+        source: "tiktok",
+        category,
+        suggestionCode,
+        ...(suggestionId ? { suggestionId } : {}),
+        ...(adgroupId ? { adgroupId } : {}),
+        ...(adId ? { adId } : {}),
+        entityName,
+        message: diagnosisMessage(suggestionCode),
+        ...diagnosisValues(category, suggestionCode, suggestion, currency),
+        ...(readOptionalString(suggestion, ["suggestion_time"]) || diagnosisTime
+          ? { suggestionTime: readOptionalString(suggestion, ["suggestion_time"]) || diagnosisTime }
+          : {}),
+        ...(details.length > 0 ? { details } : {})
+      });
+    }
+  }
+
+  return {
+    status: suggestions.length > 0 ? "issues" : "clear",
+    suggestions
+  };
+}
+
 function extractList(payload: unknown): RawReportRow[] {
   if (Array.isArray(payload)) {
     return payload as RawReportRow[];
@@ -239,24 +516,14 @@ async function fetchReportRows(options: {
   endDate: string;
   level: ReportLevel;
 }): Promise<TikTokToolResponse<{ rows: RawReportRow[] }>> {
-  const config = LEVEL_CONFIG[options.level];
   const rows: RawReportRow[] = [];
 
   for (let page = 1; page <= 20; page += 1) {
-    const response = await callTikTokMcpTool<RawReportPayload>("flat", "report_integrated_get", {
-      advertiser_id: options.advertiserId,
-      report_type: "BASIC",
-      service_type: "AUCTION",
-      data_level: config.dataLevel,
-      dimensions: [config.dimension, "stat_time_day"],
-      metrics: ["spend", "impressions", "clicks", "ctr", "cpc", "cpm"],
-      start_date: options.startDate,
-      end_date: options.endDate,
-      order_field: "spend",
-      order_type: "DESC",
-      page,
-      page_size: 1000
-    });
+    const response = await callTikTokMcpTool<RawReportPayload>(
+      "flat",
+      "report_integrated_get",
+      buildIntegratedReportRequest(options, page)
+    );
 
     if (response.status !== "connected") {
       return response;
@@ -378,14 +645,8 @@ async function fetchEntityMetadata(advertiserId: string, level: ReportLevel, ids
 
   for (let offset = 0; offset < Math.min(ids.length, 500); offset += 100) {
     const batch = ids.slice(offset, offset + 100);
-    const filterKey = `${config.dimension}s`;
-    const response = await callTikTokMcpTool<Record<string, unknown>>("flat", config.metadataTool, {
-      advertiser_id: advertiserId,
-      filtering: { [filterKey]: batch },
-      fields: [config.idField, config.nameField, "operation_status", "secondary_status"],
-      page: 1,
-      page_size: 100
-    });
+    const request = buildEntityMetadataRequest(advertiserId, level, batch);
+    const response = await callTikTokMcpTool<Record<string, unknown>>("flat", request.tool, request.arguments);
     if (response.status !== "connected") {
       break;
     }
@@ -406,6 +667,44 @@ async function fetchEntityMetadata(advertiserId: string, level: ReportLevel, ids
   return metadata;
 }
 
+async function hasActiveAdgroups(advertiserId: string): Promise<boolean | undefined> {
+  for (let page = 1; page <= 20; page += 1) {
+    const response = await callTikTokMcpTool<RawReportPayload>(
+      "flat",
+      "adgroup_get",
+      buildActiveAdgroupRequest(advertiserId, page)
+    );
+    if (response.status !== "connected") {
+      return undefined;
+    }
+
+    const rows = extractList(response.data);
+    if (rows.some((row) => readString(row, ["operation_status"]).toUpperCase() === "ENABLE")) {
+      return true;
+    }
+    if (page >= totalPages(response.data) || rows.length < 1000) {
+      return false;
+    }
+  }
+  return undefined;
+}
+
+async function fetchTikTokDiagnosis(advertiserId: string, currency: string): Promise<ReportDiagnosis | undefined> {
+  const request = buildDiagnosisRequest(advertiserId);
+  const response = await callTikTokMcpTool<Record<string, unknown>>("flat", request.tool, request.arguments);
+  if (response.status !== "connected") {
+    return undefined;
+  }
+
+  const diagnosis = normalizeTikTokDiagnosis(response.data, currency);
+  if (diagnosis.status !== "clear") {
+    return diagnosis;
+  }
+
+  const activeAdgroups = await hasActiveAdgroups(advertiserId);
+  return activeAdgroups === false ? { status: "no_ads", suggestions: [] } : diagnosis;
+}
+
 function applyMetadata(rows: ReportRow[], metadata: Map<string, EntityMetadata>) {
   return rows.map((row) => {
     const item = metadata.get(row.id);
@@ -413,26 +712,9 @@ function applyMetadata(rows: ReportRow[], metadata: Map<string, EntityMetadata>)
   });
 }
 
-function buildInsights(rows: ReportRow[], totals: ReportMetrics) {
-  if (rows.length === 0) {
-    return [];
-  }
-  const top = rows[0];
-  const spendShare = totals.spend > 0 ? (top.spend / totals.spend) * 100 : 0;
-  const bestCtr = [...rows].filter((row) => row.impressions >= 100).sort((a, b) => b.ctr - a.ctr)[0];
-  const insights = [`${top.name} drove ${spendShare.toFixed(0)}% of spend in this period.`];
-  if (bestCtr && bestCtr.id !== top.id) {
-    insights.push(`${bestCtr.name} had the strongest CTR at ${bestCtr.ctr.toFixed(2)}%.`);
-  } else if (totals.cpc > 0) {
-    insights.push(`Blended CPC was ${totals.cpc.toFixed(2)} for the selected period.`);
-  }
-  return insights;
-}
-
-function baseState(input: GetAdsReportInput, source: ReportSource): Omit<ReportState, "status"> {
+function baseState(input: GetAdsReportInput): Omit<ReportState, "status"> {
   const range = resolveDateRange(input);
   return {
-    source,
     generatedAt: new Date().toISOString(),
     advertiser: null,
     filters: {
@@ -444,8 +726,7 @@ function baseState(input: GetAdsReportInput, source: ReportSource): Omit<ReportS
     kpis: [],
     totals: { ...ZERO_METRICS },
     trend: [],
-    rows: [],
-    insights: []
+    rows: []
   };
 }
 
@@ -458,13 +739,6 @@ function accountOption(account: TikTokAdvertiserAccount): ReportAccountOption {
   };
 }
 
-const DEMO_ACCOUNT: ReportAccountOption = {
-  advertiserId: "demo-advertiser-001",
-  advertiserName: "Sample Advertiser Account",
-  currency: "USD",
-  timezone: "America/Los_Angeles"
-};
-
 function fallbackAccountOption(advertiserId: string): ReportAccountOption {
   return {
     advertiserId,
@@ -474,79 +748,15 @@ function fallbackAccountOption(advertiserId: string): ReportAccountOption {
   };
 }
 
-function makeDemoState(input: GetAdsReportInput): ReportState {
-  const state = baseState(input, "demo");
-  const labels = ["Summer Sale | Prospecting", "Always-on Retargeting", "Creator Spark Test", "Catalog Best Sellers", "App Install | US"];
-  const spend = [1842.6, 1260.4, 922.15, 714.8, 466.25];
-  const impressions = [284100, 146220, 121800, 103700, 89700];
-  const clicks = [4688, 3224, 2777, 1984, 1421];
-  const rows = labels.map((name, index) =>
-    completeMetrics({
-      id: `demo-${index + 1}`,
-      name,
-      status: index === 4 ? "Paused" : "Active",
-      spend: spend[index],
-      impressions: impressions[index],
-      clicks: clicks[index]
-    })
-  );
-  const totals = totalsFromRows(rows);
-  const range = resolveDateRange(input);
-  const dailyWeights = [0.11, 0.13, 0.12, 0.15, 0.14, 0.17, 0.18];
-  const trend: ReportTrendPoint[] = [];
-  for (let index = 0; index < Math.min(7, range.dayCount); index += 1) {
-    const date = new Date(range.start);
-    date.setUTCDate(date.getUTCDate() + index);
-    const weight = dailyWeights[index];
-    trend.push({
-      date: formatDate(date),
-      spend: totals.spend * weight,
-      impressions: Math.round(totals.impressions * weight),
-      clicks: Math.round(totals.clicks * weight)
-    });
-  }
-  const previous = completeMetrics({
-    spend: totals.spend / 1.124,
-    impressions: totals.impressions / 1.086,
-    clicks: totals.clicks / 1.158
-  });
-
-  return {
-    ...state,
-    status: "ready",
-    advertiser: {
-      id: DEMO_ACCOUNT.advertiserId,
-      name: DEMO_ACCOUNT.advertiserName,
-      currency: DEMO_ACCOUNT.currency,
-      timezone: DEMO_ACCOUNT.timezone
-    },
-    accountOptions: [DEMO_ACCOUNT],
-    totals,
-    kpis: buildKpis(totals, state.filters.comparePreviousPeriod ? previous : undefined),
-    trend,
-    rows,
-    insights: buildInsights(rows, totals)
-  };
-}
-
 export async function getTikTokAdsReport(input: GetAdsReportInput = {}): Promise<ReportState> {
-  if ((input.mode || "live") === "demo") {
-    try {
-      return makeDemoState(input);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Invalid demo report request.";
-      return { ...baseState({}, "demo"), status: "error", message };
-    }
-  }
-
   let state: Omit<ReportState, "status">;
   let range: ReturnType<typeof resolveDateRange>;
   try {
-    state = baseState(input, "live");
+    state = baseState(input);
     range = resolveDateRange(input);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid report request.";
-    return { ...baseState({}, "live"), status: "error", message };
+    return { ...baseState({}), status: "error", message };
   }
 
   const configuredAdvertiserId = input.advertiserId || process.env.REPORTING_DEFAULT_ADVERTISER_ID?.trim();
@@ -630,6 +840,14 @@ export async function getTikTokAdsReport(input: GetAdsReportInput = {}): Promise
       };
     }
 
+    const advertiser = {
+      id: advertiserId,
+      name: selectedAccount?.advertiserName || `TikTok Ads Account ${advertiserId.slice(-6)}`,
+      currency: selectedAccount?.currency || "USD",
+      timezone: selectedAccount?.timezone || "Account timezone"
+    };
+    const diagnosisPromise = fetchTikTokDiagnosis(advertiserId, advertiser.currency).catch(() => undefined);
+
     let previousTotals: ReportMetrics | undefined;
     if (state.filters.comparePreviousPeriod) {
       const previousRange = previousDateRange(range.start, range.dayCount);
@@ -644,18 +862,15 @@ export async function getTikTokAdsReport(input: GetAdsReportInput = {}): Promise
       }
     }
 
-    const metadata = await fetchEntityMetadata(
-      advertiserId,
-      state.filters.level,
-      current.rows.map((row) => row.id)
-    ).catch(() => new Map<string, EntityMetadata>());
+    const [metadata, diagnosis] = await Promise.all([
+      fetchEntityMetadata(
+        advertiserId,
+        state.filters.level,
+        current.rows.map((row) => row.id)
+      ).catch(() => new Map<string, EntityMetadata>()),
+      diagnosisPromise
+    ]);
     const rows = applyMetadata(current.rows, metadata);
-    const advertiser = {
-      id: advertiserId,
-      name: selectedAccount?.advertiserName || `TikTok Ads Account ${advertiserId.slice(-6)}`,
-      currency: selectedAccount?.currency || "USD",
-      timezone: selectedAccount?.timezone || "Account timezone"
-    };
 
     return {
       ...state,
@@ -666,14 +881,14 @@ export async function getTikTokAdsReport(input: GetAdsReportInput = {}): Promise
       kpis: buildKpis(current.totals, previousTotals),
       trend: current.trend,
       rows,
-      insights: buildInsights(rows, current.totals)
+      ...(diagnosis ? { diagnosis } : {})
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "TikTok Ads reporting failed.";
     return {
       ...state,
       status: "error",
-      message: "The report could not be generated. Retry, or switch to demo mode for the product walkthrough.",
+      message: "The report could not be generated. Check the account access and retry.",
       technicalDetail: message
     };
   }
