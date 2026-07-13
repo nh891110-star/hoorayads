@@ -10,8 +10,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { chromium } from "playwright";
 
-const REPORT_URI = "ui://widget/tiktok-ads-report-v9.html";
+const REPORT_URI = "ui://widget/tiktok-ads-report-v10.html";
 const LEGACY_REPORT_URIS = [
+  "ui://widget/tiktok-ads-report-v9.html",
   "ui://widget/tiktok-ads-report-v8.html",
   "ui://widget/tiktok-ads-report-v7.html",
   "ui://widget/tiktok-ads-report-v6.html",
@@ -153,6 +154,13 @@ async function main() {
     assert(reportTool.annotations?.openWorldHint === false, "Report tool must be closed-world.");
     assert(reportTool.annotations?.idempotentHint === true, "Report tool must be idempotent.");
     assert(!("mode" in (reportTool.inputSchema?.properties || {})), "Production get_ads_report must not expose a demo mode.");
+    const demoTool = tools.tools.find((tool) => tool.name === "get_ads_report_demo");
+    assert(demoTool, "get_ads_report_demo is missing from tools/list.");
+    assert(demoTool._meta?.ui?.resourceUri === REPORT_URI, "Demo tool descriptor has the wrong ui.resourceUri.");
+    assert(demoTool.annotations?.readOnlyHint === true, "Demo report tool must be read-only.");
+    assert(demoTool.annotations?.openWorldHint === false, "Demo report tool must be closed-world.");
+    assert(demoTool.annotations?.idempotentHint === true, "Demo report tool must be idempotent.");
+    assert(demoTool.description?.includes("does not call TikTok APIs"), "Demo tool does not clearly disclose data isolation.");
 
     const resource = await client.request(
       { method: "resources/read", params: { uri: REPORT_URI } },
@@ -251,133 +259,46 @@ async function main() {
       }
     }
 
-    const reportState = {
-      status: "ready",
-      generatedAt: "2026-07-13T12:00:00.000Z",
-      advertiser: { id: "7390012345", name: "Authorized Advertiser", currency: "USD", timezone: "America/Los_Angeles" },
-      accountOptions: [{ advertiserId: "7390012345", advertiserName: "Authorized Advertiser", currency: "USD", timezone: "America/Los_Angeles" }],
-      filters: { startDate: "2026-07-06", endDate: "2026-07-12", level: "campaign", comparePreviousPeriod: true },
-      totals: { spend: 5206.2, impressions: 745520, clicks: 14094, ctr: 1.89, cpc: 0.37, cpm: 6.98 },
-      kpis: [
-        { key: "spend", label: "Spend", value: 5206.2, deltaPercent: 12.4 },
-        { key: "impressions", label: "Impressions", value: 745520, deltaPercent: 8.6 },
-        { key: "clicks", label: "Clicks", value: 14094, deltaPercent: 15.8 },
-        { key: "ctr", label: "CTR", value: 1.89, deltaPercent: 6.7 }
-      ],
-      trend: [
-        ["2026-07-06", 520, 126738, 1268],
-        ["2026-07-07", 625, 104373, 2255],
-        ["2026-07-08", 469, 134194, 1691],
-        ["2026-07-09", 833, 82007, 2819],
-        ["2026-07-10", 677, 119283, 1409],
-        ["2026-07-11", 937, 96918, 2678],
-        ["2026-07-12", 1145, 82007, 1974]
-      ].map(([date, spend, impressions, clicks]) => ({ date, spend, impressions, clicks })),
-      rows: [
-        ["qa-campaign-1", "Summer Sale | Prospecting", "Active", 1842.6, 284100, 4688],
-        ["qa-campaign-2", "Always-on Retargeting", "Active", 1260.4, 146220, 3224],
-        ["qa-campaign-3", "Creator Spark Test", "Active", 922.15, 121800, 2777],
-        ["qa-campaign-4", "Catalog Best Sellers", "Active", 714.8, 103700, 1984],
-        ["qa-campaign-5", "App Install | US", "Paused", 466.25, 89700, 1421]
-      ].map(([id, name, status, spend, impressions, clicks]) => ({
-        id,
-        name,
-        status,
-        details: { campaignBudget: "500 USD | Daily" },
-        spend,
-        impressions,
-        clicks,
-        ctr: (clicks / impressions) * 100,
-        cpc: spend / clicks,
-        cpm: (spend / impressions) * 1000
-      })),
-      diagnosis: {
-        status: "issues",
-        suggestions: [
-          {
-            source: "tiktok",
-            category: "creative",
-            suggestionCode: "VIDEO_RESOLUTION",
-            suggestionId: "suggestion-creative-1",
-            adgroupId: "qa-adgroup-1",
-            adId: "qa-ad-1",
-            entityName: "Prospecting video A",
-            message: "Replace this video with a higher-resolution version.",
-            suggestionTime: "2026-07-13 10:30:00",
-            details: ["Ad group ID: qa-adgroup-1", "Ad ID: qa-ad-1"]
-          },
-          {
-            source: "tiktok",
-            category: "bid_and_budget",
-            suggestionCode: "SUGGEST_BUDGET",
-            suggestionId: "suggestion-budget-1",
-            adgroupId: "qa-adgroup-2",
-            entityName: "Retargeting | 14-day visitors",
-            message: "TikTok recommends adjusting the budget.",
-            currentValue: "100 USD",
-            recommendedValue: "140 USD",
-            suggestionTime: "2026-07-13 10:30:00"
-          },
-          {
-            source: "tiktok",
-            category: "event_track",
-            suggestionCode: "PIXEL",
-            suggestionId: "suggestion-pixel-1",
-            adgroupId: "qa-adgroup-3",
-            entityName: "Creator audience | US",
-            message: "Check and test the Pixel setup; TikTok detected no recent activity.",
-            suggestionTime: "2026-07-13 10:30:00"
+    const demoResultsByLevel = {};
+    for (const level of ["campaign", "adgroup", "ad"]) {
+      demoResultsByLevel[level] = await client.callTool(
+        {
+          name: "get_ads_report_demo",
+          arguments: {
+            level,
+            startDate: "2026-07-06",
+            endDate: "2026-07-12",
+            comparePreviousPeriod: true
           }
-        ]
-      },
-      exportUrl: "https://example.test/report.csv"
-    };
-    const toolResult = {
-      ...liveToolResult,
-      isError: false,
-      structuredContent: { reportState },
-      content: [{ type: "text", text: "QA fixture for widget rendering only." }]
-    };
-    assert(reportState.kpis.length === 4, "QA fixture KPIs are invalid.");
-    assert(reportState.rows.length > 0, "QA fixture rows are invalid.");
-    assert(reportState.trend.length === 7, "QA fixture trend is invalid.");
+        },
+        CallToolResultSchema
+      );
+      const state = demoResultsByLevel[level].structuredContent?.reportState;
+      assert(state?.status === "ready", `Demo ${level} report is not ready.`);
+      assert(state.requestTool === "get_ads_report_demo", `Demo ${level} report lost its request tool routing.`);
+      assert(state.rows.length === 5, `Demo ${level} report has the wrong row count.`);
+      assert(
+        requiredDetailKeys[level].every((key) => key in (state.rows[0].details || {})),
+        `Demo ${level} rows are missing level-specific metadata.`
+      );
+      if (endpoint.endsWith("/mcp/claude")) {
+        const fallbackText = demoResultsByLevel[level].content?.find((item) => item.type === "text")?.text || "";
+        assert(fallbackText.includes("Demo data for UI testing only."), "Claude demo fallback is missing its disclosure.");
+        assert(fallbackText.includes(claudeFallbackHeaders[level]), `Claude demo ${level} fallback has the wrong breakdown schema.`);
+      }
+    }
+
+    const toolResult = demoResultsByLevel.campaign;
+    const adgroupResult = demoResultsByLevel.adgroup;
+    const adResult = demoResultsByLevel.ad;
+    const reportState = toolResult.structuredContent.reportState;
+    assert(reportState.kpis.length === 4, "Demo KPIs are invalid.");
+    assert(reportState.rows.length > 0, "Demo rows are invalid.");
+    assert(reportState.trend.length === 7, "Demo trend is invalid.");
     const trendSignatures = ["spend", "clicks", "impressions"].map((key) =>
       reportState.trend.map((point) => point[key]).join(",")
     );
-    assert(new Set(trendSignatures).size === 3, "QA fixture metrics share the same trend series.");
-    const adgroupResult = structuredClone(toolResult);
-    adgroupResult.structuredContent.reportState = {
-      ...reportState,
-      filters: { ...reportState.filters, level: "adgroup" },
-      rows: reportState.rows.map((row, index) => ({
-        ...row,
-        id: `qa-adgroup-${index + 1}`,
-        name: ["Prospecting | Broad US", "Retargeting | 14-day visitors", "Creator audience | US", "Catalog | High intent", "App installs | iOS"][index],
-        details: {
-          adgroupId: `qa-adgroup-${index + 1}`,
-          budget: "100 USD | Daily",
-          bid: "12 USD | Custom",
-          adScheduling: "2026-07-01 00:00:00 to 2026-07-31 23:59:59",
-          attributionSetting: "1-day click | 7-day view | 1-day engaged view"
-        }
-      }))
-    };
-    const adResult = structuredClone(toolResult);
-    adResult.structuredContent.reportState = {
-      ...reportState,
-      filters: { ...reportState.filters, level: "ad" },
-      rows: reportState.rows.map((row, index) => ({
-        ...row,
-        id: `qa-ad-${index + 1}`,
-        name: ["Creator video A", "Product demo", "Spark testimonial", "Catalog card", "App install video"][index],
-        details: {
-          source: index === 2 ? "Spark Ad" : "TikTok account",
-          adgroupId: `qa-adgroup-${index + 1}`,
-          adgroupName: ["Prospecting | Broad US", "Retargeting | 14-day visitors", "Creator audience | US", "Catalog | High intent", "App installs | iOS"][index],
-          adId: `qa-ad-${index + 1}`
-        }
-      }))
-    };
+    assert(new Set(trendSignatures).size === 3, "Demo metrics share the same trend series.");
     const consoleMessages = [];
     const pageErrors = [];
     const failedRequests = [];
@@ -438,7 +359,8 @@ async function main() {
     );
     assert((await widgetFrame.locator("tbody tr:first-child td:nth-child(3)").innerText()) === "qa-adgroup-1", "Ad group ID is missing from the breakdown.");
     const levelToolCall = await page.evaluate(() => window.__lastToolCall);
-    assert(levelToolCall?.arguments?.level === "adgroup", "Level selection did not call get_ads_report with adgroup level.");
+    assert(levelToolCall?.name === "get_ads_report_demo", "Level selection left the isolated demo tool.");
+    assert(levelToolCall?.arguments?.level === "adgroup", "Level selection did not request adgroup level.");
     await widgetFrame.locator('[data-filter="level"]').selectOption("ad");
     await widgetFrame.locator(".table-toolbar h2").filter({ hasText: "ad performance" }).waitFor({ timeout: 5000 });
     const adHeaders = await widgetFrame.locator(".breakdown-table thead th").allTextContents();
@@ -448,10 +370,11 @@ async function main() {
     );
     assert((await widgetFrame.locator("tbody tr:nth-child(3) td:nth-child(3)").innerText()) === "Spark Ad", "Ad source is missing from the breakdown.");
     const adLevelToolCall = await page.evaluate(() => window.__lastToolCall);
-    assert(adLevelToolCall?.arguments?.level === "ad", "Level selection did not call get_ads_report with ad level.");
+    assert(adLevelToolCall?.name === "get_ads_report_demo", "Ad selection left the isolated demo tool.");
+    assert(adLevelToolCall?.arguments?.level === "ad", "Level selection did not request ad level.");
     const accountFilter = widgetFrame.locator('[data-filter="advertiserId"]');
     assert((await widgetFrame.locator('[data-filter="mode"]').count()) === 0, "The report still exposes a data-source selector.");
-    assert((await accountFilter.inputValue()).includes("Authorized Advertiser"), "Authorized account is not shown in the account input.");
+    assert((await accountFilter.inputValue()).includes("Demo Advertiser"), "Demo account is not shown in the account input.");
     assert(!(await accountFilter.isDisabled()), "Advertiser Account must stay editable so users can search or type an ID.");
     await accountFilter.focus();
     assert((await accountFilter.inputValue()).includes("7390012345"), "Focusing the account input lost the selected advertiser ID.");

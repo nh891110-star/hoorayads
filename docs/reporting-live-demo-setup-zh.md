@@ -4,9 +4,9 @@
 
 这不是两套不同的报表产品，而是一套共享实现：
 
-- 一个工具：`get_ads_report`
+- 两个明确隔离的入口：`get_ads_report` 只取真实数据，`get_ads_report_demo` 只用于无 OAuth 的 UI 测试
 - 一个数据协议：`ReportState`
-- 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v9.html`，并保留旧版本资源别名用于宿主缓存兼容
+- 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v10.html`，并保留旧版本资源别名用于宿主缓存兼容
 - ChatGPT 入口：`/mcp/chatgpt`
 - Claude 入口：`/mcp/claude`
 - Progressive MCP：保留现有建广告流程
@@ -37,7 +37,7 @@ ChatGPT custom MCP apps 当前适用于 Business、Enterprise 和 Edu 的 ChatGP
 5. Description 填 `Generate interactive TikTok Ads performance reports from the TikTok Ads Flat MCP.`
 6. MCP server URL 填 `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`。
 7. App authentication 选择无认证；TikTok advertiser 授权由 `get_ads_report` 的 live flow 单独发起。
-8. 点击 `Scan Tools`，确认工具列表包含 `get_ads_report`，然后点击 `Create`。
+8. 点击 `Scan Tools`，确认工具列表包含 `get_ads_report` 和 `get_ads_report_demo`，然后点击 `Create`。
 9. 新 app 会出现在 `Settings > Apps > Enabled Apps`，并带有 `Dev` 标签；在新 chat 的 tools menu 中选择它进行测试。
 
 官方说明：<https://help.openai.com/en/articles/12584461>
@@ -79,7 +79,13 @@ Show ad group performance from 2026-07-01 to 2026-07-07.
 Show the ad-level report and sort by spend.
 ```
 
-默认值是最近 7 个完整自然日、Campaign level、对比上一周期。生产 MCP 不提供 Demo mode：没有授权时卡片只显示 Connect；有多个 advertiser account 时卡片显示账户选择；没有数据时显示 Empty state。
+OAuth 暂不可用时，可明确要求测试数据：
+
+```text
+Use get_ads_report_demo to show a TikTok Ads demo report from 2026-07-06 to 2026-07-12 at campaign level.
+```
+
+默认值是最近 7 个完整自然日、Campaign level、对比上一周期。`get_ads_report` 本身不提供 Demo mode：没有授权时卡片只显示 Connect；有多个 advertiser account 时卡片显示账户选择；没有数据时显示 Empty state。只有用户明确要求 demo/sample/preview/UI test 时才使用独立的 `get_ads_report_demo`。
 
 ## 6. TikTok Reporting API 映射
 
@@ -160,4 +166,4 @@ pnpm run qa:reporting-api-contract
 pnpm run qa:report-export
 ```
 
-验证项包括 ChatGPT/Claude 两个 endpoint、tools/list、resource read、三个 report level 的真实 API 参数映射、live authorization state 和 UI resource metadata。浏览器 UI fixture 只存在于 QA 脚本中；生产 `get_ads_report` 没有 Demo input、环境开关或示例数据回退。
+验证项包括 ChatGPT/Claude 两个 endpoint、tools/list、resource read、三个 report level 的真实 API 参数映射、live authorization state、独立 demo 工具、页面内层级切换和 UI resource metadata。生产 `get_ads_report` 没有 Demo input、环境开关或示例数据回退；`get_ads_report_demo` 不调用 TikTok API，也不会被当作 live fallback。

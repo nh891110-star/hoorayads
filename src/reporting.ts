@@ -98,6 +98,7 @@ export type ReportState = {
   exportUrl?: string;
   message?: string;
   technicalDetail?: string;
+  requestTool?: "get_ads_report" | "get_ads_report_demo";
 };
 
 export type GetAdsReportInput = {

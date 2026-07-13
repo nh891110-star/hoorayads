@@ -1,5 +1,5 @@
 const root = document.getElementById("report-root") || document.getElementById("app-root");
-const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.6.0" };
+const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.7.0" };
 const PROTOCOL_VERSION = "2026-01-26";
 
 let reportState = null;
@@ -482,10 +482,11 @@ async function callReportTool(args) {
   render();
   try {
     let result;
+    const toolName = reportState?.requestTool === "get_ads_report_demo" ? "get_ads_report_demo" : "get_ads_report";
     if (initialized && hostContext?.capabilities?.serverTools !== false) {
-      result = await rpc("tools/call", { name: "get_ads_report", arguments: args });
+      result = await rpc("tools/call", { name: toolName, arguments: args });
     } else if (window.openai?.callTool) {
-      result = await window.openai.callTool("get_ads_report", args);
+      result = await window.openai.callTool(toolName, args);
     } else if (window.parent === window) {
       reportState = createPreviewState();
       reportState.filters = {

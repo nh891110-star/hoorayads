@@ -43,10 +43,12 @@ Already validated in the current environment:
 - Business Center discovery is available
 - Advertiser, identity, Smart+, ad, and reporting APIs are exposed
 - `get_ads_report` returns the reporting MCP App directly
+- `get_ads_report_demo` returns the same app with isolated deterministic data for OAuth-free host testing
 - ChatGPT and Claude endpoint aliases expose the same portable UI and data contract
 - Campaign, ad group, and ad level request mappings pass contract tests
 - `tool_diagnosis_get` supplies the report's Issues & recommendations module; the app does not generate performance diagnosis rules
 - The unauthenticated state returns the TikTok Ads connection step instead of sample report data
+- Live reporting never falls back to demo data; the two tools are intentionally separate
 
 Still needed for production:
 
