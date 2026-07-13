@@ -96,6 +96,10 @@ const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget
 const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
 const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v3.html";
+const LEGACY_REPORT_WIDGET_URIS = [
+  "ui://widget/tiktok-ads-report-v2.html",
+  "ui://widget/tiktok-ads-report-v1.html"
+];
 const LEGACY_WIDGET_URIS = [
   "ui://widget/tiktok-ads-workspace-v9.html",
   "ui://widget/tiktok-ads-workspace-v8.html",
@@ -881,31 +885,38 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     registerWidgetResource(`tiktok-ads-workspace-legacy-${index + 1}`, uri);
   });
 
-  registerAppResource(
-    server,
-    "tiktok-ads-report-v3",
-    REPORT_WIDGET_URI,
-    {
-      title: "TikTok Ads performance report",
-      description: REPORT_WIDGET_DESCRIPTION,
-      mimeType: RESOURCE_MIME_TYPE,
-      _meta: reportResourceMeta
-    },
-    async () => ({
-      contents: [
-        {
-          uri: REPORT_WIDGET_URI,
-          mimeType: RESOURCE_MIME_TYPE,
-          text: `
+  const registerReportWidgetResource = (name: string, uri: string) => {
+    registerAppResource(
+      server,
+      name,
+      uri,
+      {
+        title: "TikTok Ads performance report",
+        description: REPORT_WIDGET_DESCRIPTION,
+        mimeType: RESOURCE_MIME_TYPE,
+        _meta: reportResourceMeta
+      },
+      async () => ({
+        contents: [
+          {
+            uri,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: `
 <div id="report-root"></div>
 <style>${reportingWidgetCss}</style>
 <script type="module">${reportingWidgetJs}</script>
           `.trim(),
-          _meta: reportResourceMeta
-        }
-      ]
-    })
-  );
+            _meta: reportResourceMeta
+          }
+        ]
+      })
+    );
+  };
+
+  registerReportWidgetResource("tiktok-ads-report-v3", REPORT_WIDGET_URI);
+  LEGACY_REPORT_WIDGET_URIS.forEach((uri, index) => {
+    registerReportWidgetResource(`tiktok-ads-report-legacy-${index + 1}`, uri);
+  });
 
   registerAppTool(
     server,

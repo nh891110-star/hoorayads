@@ -11,6 +11,10 @@ import {
 import { chromium } from "playwright";
 
 const REPORT_URI = "ui://widget/tiktok-ads-report-v3.html";
+const LEGACY_REPORT_URIS = [
+  "ui://widget/tiktok-ads-report-v2.html",
+  "ui://widget/tiktok-ads-report-v1.html"
+];
 const endpoint =
   process.env.MCP_ENDPOINT ||
   `${(process.env.MCP_BASE_URL || "https://tiktok-ads-agent-poc.onrender.com").replace(/\/$/, "")}/mcp/chatgpt`;
@@ -142,7 +146,16 @@ async function main() {
     assert(resourceHtml.length > 0, "Widget resource HTML is empty.");
     assert(resourceHtml.includes('id="report-root"'), "Widget resource is missing #report-root.");
     assert(resourceHtml.includes("ui/notifications/tool-result"), "Widget resource is missing the tool-result bridge.");
-    assert(!JSON.stringify({ reportTool, resource }).includes("tiktok-ads-report-v2"), "A stale v2 widget URI remains.");
+    for (const legacyUri of LEGACY_REPORT_URIS) {
+      const legacyResource = await client.request(
+        { method: "resources/read", params: { uri: legacyUri } },
+        ReadResourceResultSchema
+      );
+      const legacyContent = legacyResource.contents[0];
+      assert(legacyContent?.uri === legacyUri, `Legacy resource returned a mismatched URI for ${legacyUri}.`);
+      assert(legacyContent?.mimeType === "text/html;profile=mcp-app", `Legacy resource has the wrong MIME type for ${legacyUri}.`);
+      assert(legacyContent?.text === resourceHtml, `Legacy resource does not serve the current widget HTML for ${legacyUri}.`);
+    }
 
     const toolResult = await client.callTool(
       {
