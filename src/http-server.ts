@@ -9,6 +9,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import { createTikTokAdsPocServer } from "./server.js";
+import type { HostSurface } from "./server.js";
 import { getTikTokConfigSummary } from "./config.js";
 import { getTikTokMcpAuthSummary, saveTikTokMcpAuthorizationCode } from "./tiktok-mcp.js";
 
@@ -42,7 +43,13 @@ app.use(
 type SessionTransport = StreamableHTTPServerTransport;
 const transports: Record<string, SessionTransport> = {};
 
-async function createTransport() {
+function hostSurfaceForPath(path: string): HostSurface {
+  if (path.endsWith("/claude")) return "claude";
+  if (path.endsWith("/chatgpt")) return "chatgpt";
+  return "generic";
+}
+
+async function createTransport(hostSurface: HostSurface) {
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (sessionId: string) => {
@@ -57,7 +64,7 @@ async function createTransport() {
     }
   };
 
-  const server = createTikTokAdsPocServer();
+  const server = createTikTokAdsPocServer(hostSurface);
   await server.connect(transport);
   return transport;
 }
@@ -69,7 +76,7 @@ async function handlePost(req: Request, res: Response) {
     let transport = sessionId ? transports[sessionId] : undefined;
 
     if (!transport && !sessionId && isInitializeRequest(req.body)) {
-      transport = await createTransport();
+      transport = await createTransport(hostSurfaceForPath(req.path));
       await transport.handleRequest(req, res, req.body);
       return;
     }

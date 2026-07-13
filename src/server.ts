@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -112,6 +112,12 @@ const WIDGET_DESCRIPTION =
   "Display-only TikTok Ads workspace for product intake, creative review, campaign drafting, publish, and reporting. The user controls each step through chat.";
 const REPORT_WIDGET_DESCRIPTION =
   "Interactive TikTok Ads performance report with a compact cross-host summary and fullscreen filters, trend, insights, breakdown table, refresh, and CSV export.";
+export type HostSurface = "chatgpt" | "claude" | "generic";
+
+function computeClaudeAppDomain(mcpServerUrl: string) {
+  const hash = createHash("sha256").update(mcpServerUrl).digest("hex").slice(0, 32);
+  return `${hash}.claudemcpcontent.com`;
+}
 const TOOL_DATA_META = {
   ui: {
     visibility: ["model", "app"]
@@ -469,9 +475,36 @@ function deriveCreativeBrief(productDescription: string, feedback?: string): Par
   };
 }
 
-export function createTikTokAdsPocServer() {
+export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
   const tikTokConfig = getTikTokAppConfig();
   const state = sharedLaunchState;
+  const endpointPath = hostSurface === "claude" ? "/mcp/claude" : hostSurface === "chatgpt" ? "/mcp/chatgpt" : "/mcp";
+  const uiDomain =
+    hostSurface === "claude" ? computeClaudeAppDomain(`${PUBLIC_BASE_URL}${endpointPath}`) : PUBLIC_BASE_URL;
+  const resourceMeta = (description: string) => ({
+    ui: {
+      prefersBorder: true,
+      domain: uiDomain,
+      csp: {
+        connectDomains: [PUBLIC_BASE_URL],
+        resourceDomains: [PUBLIC_BASE_URL]
+      }
+    },
+    ...(hostSurface === "claude"
+      ? {}
+      : {
+          "openai/widgetDescription": description,
+          "openai/widgetPrefersBorder": true,
+          "openai/widgetDomain": PUBLIC_BASE_URL,
+          "openai/widgetCSP": {
+            connect_domains: [PUBLIC_BASE_URL],
+            resource_domains: [PUBLIC_BASE_URL],
+            redirect_domains: ["https://ads.tiktok.com", "https://business-api.tiktok.com"]
+          }
+        })
+  });
+  const workspaceResourceMeta = resourceMeta(WIDGET_DESCRIPTION);
+  const reportResourceMeta = resourceMeta(REPORT_WIDGET_DESCRIPTION);
 
   const getCurrentProduct = (): SessionProductState => ({ ...state.currentProduct });
   const updateCurrentProduct = (updates: Partial<SessionProductState>): SessionProductState => {
@@ -779,24 +812,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 </script>
 <script type="module">${widgetJs}</script>
           `.trim(),
-          _meta: {
-            ui: {
-              prefersBorder: true,
-              domain: WIDGET_DOMAIN,
-              csp: {
-                connectDomains: [WIDGET_DOMAIN],
-                resourceDomains: [WIDGET_DOMAIN]
-              }
-            },
-            "openai/widgetDescription": WIDGET_DESCRIPTION,
-            "openai/widgetPrefersBorder": true,
-            "openai/widgetDomain": WIDGET_DOMAIN,
-            "openai/widgetCSP": {
-              connect_domains: [WIDGET_DOMAIN],
-              resource_domains: [WIDGET_DOMAIN],
-              redirect_domains: ["https://ads.tiktok.com", "https://business-api.tiktok.com"]
-            }
-          }
+          _meta: workspaceResourceMeta
         }
       ]
     })
@@ -816,24 +832,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       title: "TikTok Ads performance report",
       description: REPORT_WIDGET_DESCRIPTION,
       mimeType: RESOURCE_MIME_TYPE,
-      _meta: {
-        ui: {
-          prefersBorder: true,
-          domain: PUBLIC_BASE_URL,
-          csp: {
-            connectDomains: [PUBLIC_BASE_URL],
-            resourceDomains: [PUBLIC_BASE_URL]
-          }
-        },
-        "openai/widgetDescription": REPORT_WIDGET_DESCRIPTION,
-        "openai/widgetPrefersBorder": true,
-        "openai/widgetDomain": PUBLIC_BASE_URL,
-        "openai/widgetCSP": {
-          connect_domains: [PUBLIC_BASE_URL],
-          resource_domains: [PUBLIC_BASE_URL],
-          redirect_domains: ["https://ads.tiktok.com", "https://business-api.tiktok.com"]
-        }
-      }
+      _meta: reportResourceMeta
     },
     async () => ({
       contents: [
@@ -845,24 +844,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 <style>${reportingWidgetCss}</style>
 <script type="module">${reportingWidgetJs}</script>
           `.trim(),
-          _meta: {
-            ui: {
-              prefersBorder: true,
-              domain: PUBLIC_BASE_URL,
-              csp: {
-                connectDomains: [PUBLIC_BASE_URL],
-                resourceDomains: [PUBLIC_BASE_URL]
-              }
-            },
-            "openai/widgetDescription": REPORT_WIDGET_DESCRIPTION,
-            "openai/widgetPrefersBorder": true,
-            "openai/widgetDomain": PUBLIC_BASE_URL,
-            "openai/widgetCSP": {
-              connect_domains: [PUBLIC_BASE_URL],
-              resource_domains: [PUBLIC_BASE_URL],
-              redirect_domains: ["https://ads.tiktok.com", "https://business-api.tiktok.com"]
-            }
-          }
+          _meta: reportResourceMeta
         }
       ]
     })
