@@ -28,24 +28,40 @@ UI 优先使用 MCP Apps 标准 `_meta.ui.resourceUri`、`ui/initialize`、`ui/n
 
 ## 3. ChatGPT 添加方式
 
-1. ChatGPT 打开 `Settings > Security and login`，启用 Developer mode。
-2. 打开 `Settings > Plugins`，点击加号创建 developer-mode app。
-3. Name 填 `Hooray TikTok Ads Reporting`。
-4. Description 填 `Generate interactive TikTok Ads performance reports from live Flat MCP data or demo data.`
-5. MCP server URL 填 `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`。
-6. 创建后确认 tools 列表包含 `get_ads_report`。
+ChatGPT custom MCP apps 当前适用于 Business、Enterprise 和 Edu 的 ChatGPT Web。需要 workspace admin/owner 或被授权的 developer 权限。
+
+1. Business admin/owner 打开 `Settings > Apps > Advanced settings`，为自己启用 Developer mode；也可以从 `Workspace settings > Apps > Create` 开始。
+2. Enterprise/Edu admin 先在 `Workspace settings > Permissions & Roles > Connected Data` 授权 Developer mode；被授权用户再到 `Settings > Apps > Advanced settings` 打开开关。
+3. 从 `Settings > Apps > Create` 创建 app；admin/owner 也可以从 `Workspace settings > Apps > Create` 创建。
+4. Name 填 `Hooray TikTok Ads Reporting`。
+5. Description 填 `Generate interactive TikTok Ads performance reports from live Flat MCP data or demo data.`
+6. MCP server URL 填 `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`。
+7. App authentication 选择无认证；TikTok advertiser 授权由 `get_ads_report` 的 live flow 单独发起。
+8. 点击 `Scan Tools`，确认工具列表包含 `get_ads_report`，然后点击 `Create`。
+9. 新 app 会出现在 `Settings > Apps > Enabled Apps`，并带有 `Dev` 标签；在新 chat 的 tools menu 中选择它进行测试。
+
+官方说明：<https://help.openai.com/en/articles/12584461>
 
 ## 4. Claude 添加方式
 
-Free / Pro / Max：
+个人 Free / Pro / Max：
 
-1. Claude 打开 `Settings > Connectors`。
-2. 点击 `Add custom connector`。
-3. URL 填 `https://tiktok-ads-agent-poc.onrender.com/mcp/claude`。
-4. 点击 Add。
-5. 在 chat 的 `+ > Connectors` 中启用该 connector。
+1. Claude 打开 `Customize > Connectors`。
+2. 点击 Connectors 旁边的 `+`，选择 `Add custom connector`。
+3. Name 填 `Hooray TikTok Ads Reporting`。
+4. URL 填 `https://tiktok-ads-agent-poc.onrender.com/mcp/claude`。
+5. Advanced settings 的 OAuth Client ID 和 Secret 留空，然后点击 `Add`。
+6. 在 chat 的 `+ > Connectors` 中启用该 connector。
 
-Team / Enterprise 需要 owner 先在 `Admin settings > Connectors` 添加 custom connector，成员再到 `Settings > Connectors` 连接。
+Team / Enterprise：
+
+1. Owner 打开 `Organization settings > Connectors`。
+2. 点击 `Add`，选择 `Custom > Web`。
+3. 填入 `https://tiktok-ads-agent-poc.onrender.com/mcp/claude` 并添加。
+4. 成员到 `Customize > Connectors` 找到带有 `Custom` 标签的 connector，点击 `Connect`。
+5. 在具体 chat 的 `+ > Connectors` 中启用。
+
+官方说明：<https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp>
 
 ## 5. 演示 Prompt
 
