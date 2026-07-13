@@ -826,7 +826,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   registerAppResource(
     server,
-    "tiktok-ads-report",
+    "tiktok-ads-report-v2",
     REPORT_WIDGET_URI,
     {
       title: "TikTok Ads performance report",
@@ -862,8 +862,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       _meta: TOOL_REPORT_META,
       annotations: {
         readOnlyHint: true,
-        openWorldHint: true,
-        destructiveHint: false
+        openWorldHint: false,
+        destructiveHint: false,
+        idempotentHint: true
       }
     },
     async (input: GetAdsReportInput) => {
