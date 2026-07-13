@@ -69,14 +69,40 @@ async function createTransport(hostSurface: HostSurface) {
   return transport;
 }
 
+async function handleStatelessPost(req: Request, res: Response, hostSurface: HostSurface) {
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined
+  });
+  const server = createTikTokAdsPocServer(hostSurface);
+  let closed = false;
+
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    void Promise.allSettled([transport.close(), server.close()]);
+  };
+
+  res.once("finish", close);
+  res.once("close", close);
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+}
+
 async function handlePost(req: Request, res: Response) {
+  const hostSurface = hostSurfaceForPath(req.path);
+
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
   try {
+    if (hostSurface === "claude") {
+      await handleStatelessPost(req, res, hostSurface);
+      return;
+    }
+
     let transport = sessionId ? transports[sessionId] : undefined;
 
     if (!transport && !sessionId && isInitializeRequest(req.body)) {
-      transport = await createTransport(hostSurfaceForPath(req.path));
+      transport = await createTransport(hostSurface);
       await transport.handleRequest(req, res, req.body);
       return;
     }
@@ -113,6 +139,16 @@ async function handlePost(req: Request, res: Response) {
 }
 
 async function handleGet(req: Request, res: Response) {
+  if (hostSurfaceForPath(req.path) === "claude") {
+    res.setHeader("Allow", "POST");
+    res.status(405).json({
+      jsonrpc: "2.0",
+      error: { code: -32000, message: "Method not allowed" },
+      id: null
+    });
+    return;
+  }
+
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
   if (!sessionId) {
@@ -130,6 +166,16 @@ async function handleGet(req: Request, res: Response) {
 }
 
 async function handleDelete(req: Request, res: Response) {
+  if (hostSurfaceForPath(req.path) === "claude") {
+    res.setHeader("Allow", "POST");
+    res.status(405).json({
+      jsonrpc: "2.0",
+      error: { code: -32000, message: "Method not allowed" },
+      id: null
+    });
+    return;
+  }
+
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
   if (!sessionId) {
@@ -183,6 +229,7 @@ app.get("/health", (_req: Request, res: Response) => {
     mcpEndpointV2: "/mcp-v2",
     chatGptMcpEndpoint: "/mcp/chatgpt",
     claudeMcpEndpoint: "/mcp/claude",
+    claudeTransportMode: "stateless",
     reportPreview: "/report-preview",
     sessions: Object.keys(transports).length,
     tikTokConfig: getTikTokConfigSummary(),

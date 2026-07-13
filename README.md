@@ -30,6 +30,8 @@ This is not Shopify-only. It is meant for any novice SMB advertiser who has a pr
   Flat MCP reporting client, normalization, previous-period comparison, metadata enrichment, insights, and deterministic demo state.
 - `docs/capability-map.md`
   The concrete mapping between PRD flow steps and current TikTok Ads MCP coverage.
+- `docs/mcp-app-compatibility-playbook.md`
+  Persistent debugging guidance for cached widget templates and cross-host MCP transport failures.
 
 ## Current scope
 
@@ -93,6 +95,8 @@ For the reporting demo, use these host-specific aliases after deployment:
 - Claude: `https://<your-render-domain>/mcp/claude`
 
 Both aliases serve the same MCP server, `ReportState` contract, and MCP App UI. They are separate only to make host setup and production logs clearer.
+
+The Claude alias uses stateless Streamable HTTP requests so delayed widget resource reads do not depend on an in-memory session. The ChatGPT alias remains stateful for the multi-step campaign workflow. This transport difference does not create separate UIs or report contracts.
 
 Note:
 
