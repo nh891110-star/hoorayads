@@ -217,6 +217,13 @@ async function main() {
       await mkdir(dirname(process.env.REPORT_WIDGET_DEBUG_OUTPUT), { recursive: true });
       await writeFile(process.env.REPORT_WIDGET_DEBUG_OUTPUT, JSON.stringify(debug, null, 2));
     }
+    if (process.env.REPORT_WIDGET_RAW_OUTPUT) {
+      await mkdir(dirname(process.env.REPORT_WIDGET_RAW_OUTPUT), { recursive: true });
+      await writeFile(
+        process.env.REPORT_WIDGET_RAW_OUTPUT,
+        JSON.stringify({ reportTool, resource, toolResult }, null, 2)
+      );
+    }
     console.log(JSON.stringify(debug, null, 2));
   } finally {
     await browser?.close();
