@@ -1,5 +1,5 @@
 const root = document.getElementById("report-root") || document.getElementById("app-root");
-const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.7.0" };
+const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.8.0" };
 const PROTOCOL_VERSION = "2026-01-26";
 
 let reportState = null;
@@ -12,6 +12,7 @@ let localExpanded = false;
 let searchQuery = "";
 let trendMetric = "spend";
 let reportRequestVersion = 0;
+let latestInteractiveFilters = null;
 const pendingRequests = new Map();
 
 function escapeHtml(value) {
@@ -476,8 +477,43 @@ function reportArguments(overrides = {}) {
   };
 }
 
+function requestedFilters(args) {
+  return {
+    startDate: args.startDate || reportState?.filters?.startDate,
+    endDate: args.endDate || reportState?.filters?.endDate,
+    level: args.level || reportState?.filters?.level || "campaign",
+    comparePreviousPeriod: args.comparePreviousPeriod !== false
+  };
+}
+
+function matchesRequestedFilters(state, expected = latestInteractiveFilters) {
+  if (!expected) return true;
+  const filters = state?.filters;
+  return Boolean(
+    filters &&
+    filters.startDate === expected.startDate &&
+    filters.endDate === expected.endDate &&
+    filters.level === expected.level &&
+    (filters.comparePreviousPeriod !== false) === expected.comparePreviousPeriod
+  );
+}
+
+function applyHostReportState(next) {
+  if (!next || !matchesRequestedFilters(next)) return false;
+  reportState = next;
+  return true;
+}
+
 async function callReportTool(args) {
   const requestVersion = ++reportRequestVersion;
+  const expectedFilters = requestedFilters(args);
+  latestInteractiveFilters = expectedFilters;
+  if (reportState) {
+    reportState = {
+      ...reportState,
+      filters: { ...reportState.filters, ...expectedFilters }
+    };
+  }
   loading = true;
   render();
   try {
@@ -501,6 +537,9 @@ async function callReportTool(args) {
     }
     const next = extractReportState(result);
     if (!next) throw new Error("The report tool returned no report state.");
+    if (!matchesRequestedFilters(next, expectedFilters)) {
+      throw new Error(`The report tool returned ${next.filters?.level || "an unknown"} level instead of ${expectedFilters.level}.`);
+    }
     if (requestVersion === reportRequestVersion) reportState = next;
   } catch (error) {
     if (requestVersion === reportRequestVersion) {
@@ -750,10 +789,7 @@ window.addEventListener("message", (event) => {
 
   if (message.method === "ui/notifications/tool-result") {
     const next = extractReportState(message.params);
-    if (next) {
-      reportState = next;
-      render();
-    }
+    if (applyHostReportState(next)) render();
     return;
   }
 
@@ -770,8 +806,7 @@ window.addEventListener("message", (event) => {
 
 window.addEventListener("openai:set_globals", () => {
   const next = readChatGptState();
-  if (next) {
-    reportState = next;
+  if (applyHostReportState(next)) {
     const mode = window.openai?.displayMode;
     if (mode) hostContext = { ...hostContext, displayMode: mode };
     render();

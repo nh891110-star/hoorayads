@@ -6,7 +6,7 @@
 
 - 两个明确隔离的入口：`get_ads_report` 只取真实数据，`get_ads_report_demo` 只用于无 OAuth 的 UI 测试
 - 一个数据协议：`ReportState`
-- 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v10.html`，并保留旧版本资源别名用于宿主缓存兼容
+- 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v11.html`，并保留旧版本资源别名用于宿主缓存兼容
 - ChatGPT 入口：`/mcp/chatgpt`
 - Claude 入口：`/mcp/claude`
 - Progressive MCP：保留现有建广告流程

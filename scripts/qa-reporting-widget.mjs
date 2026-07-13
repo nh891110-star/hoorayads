@@ -10,8 +10,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { chromium } from "playwright";
 
-const REPORT_URI = "ui://widget/tiktok-ads-report-v10.html";
+const REPORT_URI = "ui://widget/tiktok-ads-report-v11.html";
 const LEGACY_REPORT_URIS = [
+  "ui://widget/tiktok-ads-report-v10.html",
   "ui://widget/tiktok-ads-report-v9.html",
   "ui://widget/tiktok-ads-report-v8.html",
   "ui://widget/tiktok-ads-report-v7.html",
@@ -65,6 +66,7 @@ function createHostHarness(resourceHtml, toolResult, toolResultsByLevel = {}) {
       window.__lastOpenLink = null;
 
       const send = (message) => frame.contentWindow.postMessage({ jsonrpc: "2.0", ...message }, "*");
+      window.__sendToolResult = (result) => send({ method: "ui/notifications/tool-result", params: result });
       const updateMountedState = () => {
         const root = frame.contentDocument?.getElementById("report-root");
         const shell = root?.querySelector(".report-shell");
@@ -358,6 +360,16 @@ async function main() {
       "Ad group breakdown columns do not match TikTok Ads Manager."
     );
     assert((await widgetFrame.locator("tbody tr:first-child td:nth-child(3)").innerText()) === "qa-adgroup-1", "Ad group ID is missing from the breakdown.");
+    await page.evaluate((staleResult) => window.__sendToolResult(staleResult), toolResult);
+    await page.waitForTimeout(50);
+    assert(
+      (await widgetFrame.locator(".table-toolbar h2").innerText()).toLowerCase() === "ad group performance",
+      "A delayed campaign notification replaced the selected ad group title."
+    );
+    assert(
+      (await widgetFrame.locator("tbody tr:first-child td:first-child strong").innerText()) === "Prospecting | Broad US",
+      "A delayed campaign notification replaced the selected ad group rows."
+    );
     const levelToolCall = await page.evaluate(() => window.__lastToolCall);
     assert(levelToolCall?.name === "get_ads_report_demo", "Level selection left the isolated demo tool.");
     assert(levelToolCall?.arguments?.level === "adgroup", "Level selection did not request adgroup level.");
