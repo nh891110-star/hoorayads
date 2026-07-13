@@ -1,6 +1,6 @@
 const root = document.getElementById("report-root") || document.getElementById("app-root");
-const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.0.0" };
-const PROTOCOL_VERSION = "2025-11-21";
+const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.1.0" };
+const PROTOCOL_VERSION = "2026-01-26";
 
 let reportState = null;
 let hostContext = {};
@@ -157,7 +157,7 @@ function sendInitialize() {
     method: "ui/initialize",
     params: {
       appInfo: APP_INFO,
-      appCapabilities: {},
+      appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
       protocolVersion: PROTOCOL_VERSION
     }
   });

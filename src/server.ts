@@ -4,6 +4,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  registerAppResource,
+  registerAppTool,
+  RESOURCE_MIME_TYPE,
+  RESOURCE_URI_META_KEY
+} from "@modelcontextprotocol/ext-apps/server";
 
 import {
   approveAdInputsInput,
@@ -88,10 +94,8 @@ const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
 const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget.js"), "utf8");
 const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
-const RESOURCE_URI_META_KEY = "ui/resourceUri";
-const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
-const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v1.html";
+const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v2.html";
 const LEGACY_WIDGET_URIS = [
   "ui://widget/tiktok-ads-workspace-v9.html",
   "ui://widget/tiktok-ads-workspace-v8.html",
@@ -173,18 +177,6 @@ function withRenderToolMeta<T extends object>(definition: T): T & { _meta: Recor
     ...definition,
     _meta: {
       ...TOOL_RENDER_META,
-      ...("_meta" in definition && definition._meta && typeof definition._meta === "object"
-        ? (definition._meta as Record<string, unknown>)
-        : {})
-    }
-  };
-}
-
-function withReportingToolMeta<T extends object>(definition: T): T & { _meta: Record<string, unknown> } {
-  return {
-    ...definition,
-    _meta: {
-      ...TOOL_REPORT_META,
       ...("_meta" in definition && definition._meta && typeof definition._meta === "object"
         ? (definition._meta as Record<string, unknown>)
         : {})
@@ -816,12 +808,32 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     registerWidgetResource(`tiktok-ads-workspace-legacy-${index + 1}`, uri);
   });
 
-  server.registerResource(
+  registerAppResource(
+    server,
     "tiktok-ads-report",
     REPORT_WIDGET_URI,
     {
       title: "TikTok Ads performance report",
-      mimeType: RESOURCE_MIME_TYPE
+      description: REPORT_WIDGET_DESCRIPTION,
+      mimeType: RESOURCE_MIME_TYPE,
+      _meta: {
+        ui: {
+          prefersBorder: true,
+          domain: PUBLIC_BASE_URL,
+          csp: {
+            connectDomains: [PUBLIC_BASE_URL],
+            resourceDomains: [PUBLIC_BASE_URL]
+          }
+        },
+        "openai/widgetDescription": REPORT_WIDGET_DESCRIPTION,
+        "openai/widgetPrefersBorder": true,
+        "openai/widgetDomain": PUBLIC_BASE_URL,
+        "openai/widgetCSP": {
+          connect_domains: [PUBLIC_BASE_URL],
+          resource_domains: [PUBLIC_BASE_URL],
+          redirect_domains: ["https://ads.tiktok.com", "https://business-api.tiktok.com"]
+        }
+      }
     },
     async () => ({
       contents: [
@@ -856,20 +868,22 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     })
   );
 
-  server.registerTool(
+  registerAppTool(
+    server,
     "get_ads_report",
-    withReportingToolMeta({
+    {
       title: "Get TikTok Ads report",
       description:
         "Generate an interactive TikTok Ads performance report. Uses the Flat MCP reporting API in live mode and a clearly labeled deterministic sample in demo mode. advertiserId is required by TikTok for a BASIC report, but this app can auto-select it when the authorized user has exactly one account. If multiple accounts are available, the result asks the user to choose one. Defaults to the last 7 complete days, campaign level, and previous-period comparison.",
       inputSchema: getAdsReportInput,
       outputSchema: getAdsReportOutput,
+      _meta: TOOL_REPORT_META,
       annotations: {
         readOnlyHint: true,
         openWorldHint: true,
         destructiveHint: false
       }
-    }),
+    },
     async (input: GetAdsReportInput) => {
       const reportState = await getTikTokAdsReport(input);
       const textByStatus = {
