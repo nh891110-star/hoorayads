@@ -87,7 +87,7 @@ import {
 } from "./tiktok-mcp.js";
 import type { TikTokAdvertiserAccount, TikTokIdentity } from "./tiktok-mcp.js";
 import { getTikTokAdsReport } from "./reporting.js";
-import type { GetAdsReportInput } from "./reporting.js";
+import type { GetAdsReportInput, ReportState } from "./reporting.js";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
@@ -95,7 +95,7 @@ const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget.js"), "utf8");
 const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
-const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v2.html";
+const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v3.html";
 const LEGACY_WIDGET_URIS = [
   "ui://widget/tiktok-ads-workspace-v9.html",
   "ui://widget/tiktok-ads-workspace-v8.html",
@@ -475,19 +475,77 @@ function deriveCreativeBrief(productDescription: string, feedback?: string): Par
   };
 }
 
+function formatReportNumber(value: number, maximumFractionDigits = 2) {
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits }).format(value);
+}
+
+function escapeMarkdownCell(value: string) {
+  return value.replaceAll("|", "\\|").replaceAll("\n", " ");
+}
+
+function claudeReportFallback(reportState: ReportState) {
+  if (reportState.status !== "ready") {
+    return [
+      "### TikTok Ads performance report",
+      "",
+      reportState.message || `Report status: ${reportState.status.replaceAll("_", " ")}.`
+    ].join("\n");
+  }
+
+  const currency = reportState.advertiser?.currency || "";
+  const metricRows = reportState.kpis.map((kpi) => {
+    const suffix =
+      kpi.key === "ctr"
+        ? "%"
+        : kpi.key === "spend" || kpi.key === "cpc" || kpi.key === "cpm"
+          ? ` ${currency}`
+          : "";
+    const delta =
+      kpi.deltaPercent === null
+        ? "-"
+        : `${kpi.deltaPercent >= 0 ? "+" : ""}${formatReportNumber(kpi.deltaPercent, 1)}%`;
+    return `| ${escapeMarkdownCell(kpi.label)} | ${formatReportNumber(kpi.value)}${suffix} | ${delta} |`;
+  });
+  const entityRows = reportState.rows.slice(0, 10).map(
+    (row) =>
+      `| ${escapeMarkdownCell(row.name)} | ${formatReportNumber(row.spend)} ${currency} | ${formatReportNumber(row.impressions, 0)} | ${formatReportNumber(row.clicks, 0)} | ${formatReportNumber(row.ctr)}% | ${formatReportNumber(row.cpc)} ${currency} |`
+  );
+  const entityLabel =
+    reportState.filters.level === "campaign" ? "Campaign" : reportState.filters.level === "adgroup" ? "Ad group" : "Ad";
+
+  return [
+    "### TikTok Ads performance report",
+    "",
+    `**Account:** ${reportState.advertiser?.name || "TikTok Ads account"}`,
+    `**Period:** ${reportState.filters.startDate} to ${reportState.filters.endDate}`,
+    `**Level:** ${reportState.filters.level} | **Source:** ${reportState.source}`,
+    "",
+    "| Metric | Value | Change vs previous period |",
+    "|---|---:|---:|",
+    ...metricRows,
+    "",
+    `#### Top ${reportState.filters.level} results`,
+    "",
+    `| ${entityLabel} | Spend | Impressions | Clicks | CTR | CPC |`,
+    "|---|---:|---:|---:|---:|---:|",
+    ...entityRows,
+    "",
+    ...(reportState.insights.length > 0 ? ["#### Quick insights", "", ...reportState.insights.map((insight) => `- ${insight}`)] : [])
+  ].join("\n");
+}
+
 export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
   const tikTokConfig = getTikTokAppConfig();
   const state = sharedLaunchState;
   const endpointPath = hostSurface === "claude" ? "/mcp/claude" : hostSurface === "chatgpt" ? "/mcp/chatgpt" : "/mcp";
-  const uiDomain =
-    hostSurface === "claude" ? computeClaudeAppDomain(`${PUBLIC_BASE_URL}${endpointPath}`) : PUBLIC_BASE_URL;
+  const uiDomain = computeClaudeAppDomain(`${PUBLIC_BASE_URL}${endpointPath}`);
   const resourceMeta = (description: string) => ({
     ui: {
       prefersBorder: true,
-      domain: uiDomain,
+      ...(hostSurface === "claude" ? { domain: uiDomain } : {}),
       csp: {
-        connectDomains: [PUBLIC_BASE_URL],
-        resourceDomains: [PUBLIC_BASE_URL]
+        connectDomains: [],
+        resourceDomains: []
       }
     },
     ...(hostSurface === "claude"
@@ -495,10 +553,9 @@ export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
       : {
           "openai/widgetDescription": description,
           "openai/widgetPrefersBorder": true,
-          "openai/widgetDomain": PUBLIC_BASE_URL,
           "openai/widgetCSP": {
-            connect_domains: [PUBLIC_BASE_URL],
-            resource_domains: [PUBLIC_BASE_URL],
+            connect_domains: [],
+            resource_domains: [],
             redirect_domains: ["https://ads.tiktok.com", "https://business-api.tiktok.com"]
           }
         })
@@ -826,7 +883,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
 
   registerAppResource(
     server,
-    "tiktok-ads-report-v2",
+    "tiktok-ads-report-v3",
     REPORT_WIDGET_URI,
     {
       title: "TikTok Ads performance report",
@@ -884,7 +941,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         content: [
           {
             type: "text",
-            text: textByStatus[reportState.status]
+            text: hostSurface === "claude" ? claudeReportFallback(reportState) : textByStatus[reportState.status]
           }
         ],
         _meta: {

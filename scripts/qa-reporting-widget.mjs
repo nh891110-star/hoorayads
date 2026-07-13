@@ -10,7 +10,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { chromium } from "playwright";
 
-const REPORT_URI = "ui://widget/tiktok-ads-report-v2.html";
+const REPORT_URI = "ui://widget/tiktok-ads-report-v3.html";
 const endpoint =
   process.env.MCP_ENDPOINT ||
   `${(process.env.MCP_BASE_URL || "https://tiktok-ads-agent-poc.onrender.com").replace(/\/$/, "")}/mcp/chatgpt`;
@@ -142,7 +142,7 @@ async function main() {
     assert(resourceHtml.length > 0, "Widget resource HTML is empty.");
     assert(resourceHtml.includes('id="report-root"'), "Widget resource is missing #report-root.");
     assert(resourceHtml.includes("ui/notifications/tool-result"), "Widget resource is missing the tool-result bridge.");
-    assert(!JSON.stringify({ reportTool, resource }).includes("tiktok-ads-report-v1"), "A stale v1 widget URI remains.");
+    assert(!JSON.stringify({ reportTool, resource }).includes("tiktok-ads-report-v2"), "A stale v2 widget URI remains.");
 
     const toolResult = await client.callTool(
       {
@@ -156,6 +156,11 @@ async function main() {
     assert(Array.isArray(reportState.kpis) && reportState.kpis.length === 4, "Demo report KPIs are invalid.");
     assert(Array.isArray(reportState.rows) && reportState.rows.length > 0, "Demo report rows are invalid.");
     assert(Array.isArray(reportState.trend) && reportState.trend.length === 7, "Demo report trend is invalid.");
+    if (endpoint.endsWith("/mcp/claude")) {
+      const fallbackText = toolResult.content?.find((item) => item.type === "text")?.text || "";
+      assert(fallbackText.includes("### TikTok Ads performance report"), "Claude fallback heading is missing.");
+      assert(fallbackText.includes("| Metric | Value |"), "Claude fallback metric table is missing.");
+    }
 
     const consoleMessages = [];
     const pageErrors = [];
