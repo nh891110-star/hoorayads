@@ -95,8 +95,9 @@ const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget.js"), "utf8");
 const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
-const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v4.html";
+const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v5.html";
 const LEGACY_REPORT_WIDGET_URIS = [
+  "ui://widget/tiktok-ads-report-v4.html",
   "ui://widget/tiktok-ads-report-v3.html",
   "ui://widget/tiktok-ads-report-v2.html",
   "ui://widget/tiktok-ads-report-v1.html"
@@ -918,7 +919,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     );
   };
 
-  registerReportWidgetResource("tiktok-ads-report-v4", REPORT_WIDGET_URI);
+  registerReportWidgetResource("tiktok-ads-report-v5", REPORT_WIDGET_URI);
   LEGACY_REPORT_WIDGET_URIS.forEach((uri, index) => {
     registerReportWidgetResource(`tiktok-ads-report-legacy-${index + 1}`, uri);
   });

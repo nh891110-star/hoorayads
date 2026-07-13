@@ -1,5 +1,5 @@
 const root = document.getElementById("report-root") || document.getElementById("app-root");
-const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.1.0" };
+const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.2.0" };
 const PROTOCOL_VERSION = "2026-01-26";
 
 let reportState = null;
@@ -325,9 +325,7 @@ function renderMobileInsight() {
   return insight ? `<div class="mobile-insight"><span>INSIGHT</span><p>${escapeHtml(insight)}</p></div>` : "";
 }
 
-function renderFilters() {
-  const filters = reportState?.filters || {};
-  const source = reportState?.source || "live";
+function reportAccountOptions() {
   const selectedAdvertiserId = reportState?.advertiser?.id || "";
   const accountMap = new Map();
   for (const account of reportState?.accountOptions || []) {
@@ -343,25 +341,74 @@ function renderFilters() {
       timezone: reportState.advertiser.timezone
     });
   }
-  const liveOptions = [...accountMap.values()]
+  return [...accountMap.values()];
+}
+
+function accountDisplayValue(account) {
+  return [account?.advertiserName, account?.advertiserId, account?.currency].filter(Boolean).join(" · ");
+}
+
+function accountHelpText(source, hasOptions) {
+  if (source === "demo") {
+    return "Demo uses sample data. Click or type here to switch to Live and find an authorized advertiser account.";
+  }
+  return hasOptions
+    ? "Search by account name or advertiser ID, then choose a result. You can also enter an exact advertiser ID."
+    : "Type an exact advertiser ID, or leave this empty and Apply to load your authorized accounts.";
+}
+
+function resolveAdvertiserId(input) {
+  const typed = String(input?.value || "").trim();
+  if (!typed) return { advertiserId: undefined };
+  const options = reportAccountOptions();
+  const selectedId = input?.dataset?.selectedAdvertiserId || "";
+  const selected = options.find((account) => account.advertiserId === selectedId);
+  if (selected && (typed === selected.advertiserId || typed === accountDisplayValue(selected))) {
+    return { advertiserId: selected.advertiserId };
+  }
+  const normalized = typed.toLowerCase();
+  const exact = options.find((account) =>
+    [account.advertiserId, account.advertiserName, accountDisplayValue(account)]
+      .some((value) => String(value || "").toLowerCase() === normalized)
+  );
+  if (exact) return { advertiserId: exact.advertiserId };
+  const matches = options.filter((account) => accountDisplayValue(account).toLowerCase().includes(normalized));
+  if (matches.length === 1) return { advertiserId: matches[0].advertiserId };
+  if (/^(?:\d{5,}|adv[-_][a-z0-9_-]+)$/i.test(typed)) return { advertiserId: typed };
+  return { error: "Choose a matching account, or enter the exact advertiser ID." };
+}
+
+function renderFilters() {
+  const filters = reportState?.filters || {};
+  const source = reportState?.source || "live";
+  const selectedAdvertiserId = reportState?.advertiser?.id || "";
+  const accounts = reportAccountOptions();
+  const selectedAccount = accounts.find((account) => account.advertiserId === selectedAdvertiserId);
+  const accountValue = source === "demo"
+    ? "Sample Advertiser Account · Demo"
+    : selectedAccount
+      ? accountDisplayValue(selectedAccount)
+      : selectedAdvertiserId;
+  const liveOptions = accounts
     .map((account) => {
-      const detail = [account.advertiserId, account.currency].filter(Boolean).join(" · ");
-      return `<option value="${escapeHtml(account.advertiserId)}" ${source === "live" && selectedAdvertiserId === account.advertiserId ? "selected" : ""}>${escapeHtml(`${account.advertiserName} · ${detail}`)}</option>`;
+      const searchText = accountDisplayValue(account).toLowerCase();
+      return `<button type="button" class="account-option" role="option" data-advertiser-option="${escapeHtml(account.advertiserId)}" data-account-label="${escapeHtml(accountDisplayValue(account))}" data-account-search="${escapeHtml(searchText)}"><strong>${escapeHtml(account.advertiserName)}</strong><span>${escapeHtml([account.advertiserId, account.currency].filter(Boolean).join(" · "))}</span></button>`;
     })
     .join("");
-  const accountHelp = source === "demo"
-    ? "Sample data only. Switch Data source to Live to use an authorized TikTok advertiser account."
-    : "Required by the TikTok Reporting API. One account is auto-selected; multiple accounts require a choice.";
+  const accountHelp = accountHelpText(source, accounts.length > 0);
   return `
     <section class="filter-bar">
-      <label class="account-field">Advertiser Account
-        <select data-filter="advertiserId" ${source === "demo" ? "disabled" : ""}>
-          <option value="" ${source === "live" && !selectedAdvertiserId ? "selected" : ""}>${liveOptions ? "Select advertiser account" : "Auto-detect authorized account"}</option>
-          <option value="demo-advertiser-001" hidden ${source === "demo" ? "selected" : ""}>Sample Advertiser Account · Demo</option>
-          ${liveOptions}
-        </select>
+      <div class="account-field">
+        <span class="field-label">Advertiser Account</span>
+        <div class="account-combobox" data-account-combobox>
+          <input type="search" data-filter="advertiserId" role="combobox" aria-autocomplete="list" aria-controls="advertiser-account-list" aria-expanded="false" autocomplete="off" placeholder="Search account name or advertiser ID" value="${escapeHtml(accountValue)}" data-selected-advertiser-id="${escapeHtml(source === "live" ? selectedAdvertiserId : "demo-advertiser-001")}">
+          <span class="account-chevron" aria-hidden="true">⌄</span>
+          <div class="account-menu" id="advertiser-account-list" role="listbox" hidden>
+            ${liveOptions || `<div class="account-empty">No loaded accounts yet. Enter an exact ID or Apply to connect TikTok Ads.</div>`}
+          </div>
+        </div>
         <small data-account-help>${escapeHtml(accountHelp)}</small>
-      </label>
+      </div>
       <label>Level<select data-filter="level"><option value="campaign" ${filters.level === "campaign" ? "selected" : ""}>Campaign</option><option value="adgroup" ${filters.level === "adgroup" ? "selected" : ""}>Ad group</option><option value="ad" ${filters.level === "ad" ? "selected" : ""}>Ad</option></select></label>
       <label>Start<input type="date" data-filter="startDate" value="${escapeHtml(filters.startDate || "")}"></label>
       <label>End<input type="date" data-filter="endDate" value="${escapeHtml(filters.endDate || "")}"></label>
@@ -581,14 +628,24 @@ function bindInteractions() {
       if (action === "authorize") await openAuthorization();
       if (action === "demo") await callReportTool(reportArguments({ mode: "demo", advertiserId: undefined }));
       if (action === "apply") {
-        const advertiserId = root.querySelector('[data-filter="advertiserId"]')?.value;
+        const accountInput = root.querySelector('[data-filter="advertiserId"]');
         const startDate = root.querySelector('[data-filter="startDate"]')?.value;
         const endDate = root.querySelector('[data-filter="endDate"]')?.value;
         const level = root.querySelector('[data-filter="level"]')?.value;
         const mode = root.querySelector('[data-filter="mode"]')?.value;
         const comparePreviousPeriod = Boolean(root.querySelector('[data-filter="compare"]')?.checked);
+        const resolvedAccount = mode === "live" ? resolveAdvertiserId(accountInput) : { advertiserId: undefined };
+        if (resolvedAccount.error) {
+          const help = root.querySelector("[data-account-help]");
+          if (help) {
+            help.textContent = resolvedAccount.error;
+            help.classList.add("error");
+          }
+          accountInput?.focus();
+          return;
+        }
         await callReportTool(reportArguments({
-          advertiserId: mode === "live" && advertiserId ? advertiserId : undefined,
+          advertiserId: resolvedAccount.advertiserId,
           startDate,
           endDate,
           level,
@@ -600,16 +657,71 @@ function bindInteractions() {
   });
   const modeFilter = root.querySelector('[data-filter="mode"]');
   const accountFilter = root.querySelector('[data-filter="advertiserId"]');
+  const accountMenu = root.querySelector("[data-account-combobox] .account-menu");
+  const accountHelp = root.querySelector("[data-account-help]");
+  const setLiveAccountMode = () => {
+    if (modeFilter?.value !== "demo") return;
+    modeFilter.value = "live";
+    accountFilter.value = "";
+    accountFilter.dataset.selectedAdvertiserId = "";
+    if (accountHelp) accountHelp.textContent = accountHelpText("live", reportAccountOptions().length > 0);
+  };
+  const showAccountMenu = (query = "") => {
+    if (!accountMenu) return;
+    const normalized = query.trim().toLowerCase();
+    accountMenu.querySelectorAll("[data-account-search]").forEach((option) => {
+      option.hidden = Boolean(normalized) && !option.dataset.accountSearch.includes(normalized);
+    });
+    accountMenu.hidden = false;
+    accountFilter?.setAttribute("aria-expanded", "true");
+  };
+  const hideAccountMenu = () => {
+    if (accountMenu) accountMenu.hidden = true;
+    accountFilter?.setAttribute("aria-expanded", "false");
+  };
   modeFilter?.addEventListener("change", () => {
     const isDemo = modeFilter.value === "demo";
-    accountFilter.disabled = isDemo;
-    accountFilter.value = isDemo ? "demo-advertiser-001" : reportState?.source === "live" ? reportState?.advertiser?.id || "" : "";
-    const help = root.querySelector("[data-account-help]");
-    if (help) {
-      help.textContent = isDemo
-        ? "Sample data only. Switch Data source to Live to use an authorized TikTok advertiser account."
-        : "Required by the TikTok Reporting API. One account is auto-selected; multiple accounts require a choice.";
+    const selected = reportAccountOptions().find((account) => account.advertiserId === reportState?.advertiser?.id);
+    accountFilter.value = isDemo ? "Sample Advertiser Account · Demo" : selected ? accountDisplayValue(selected) : "";
+    accountFilter.dataset.selectedAdvertiserId = isDemo ? "demo-advertiser-001" : selected?.advertiserId || "";
+    if (accountHelp) {
+      accountHelp.textContent = accountHelpText(isDemo ? "demo" : "live", reportAccountOptions().length > 0);
+      accountHelp.classList.remove("error");
     }
+    hideAccountMenu();
+  });
+  accountFilter?.addEventListener("focus", () => {
+    setLiveAccountMode();
+    showAccountMenu(accountFilter.value);
+  });
+  accountFilter?.addEventListener("input", () => {
+    setLiveAccountMode();
+    accountFilter.dataset.selectedAdvertiserId = "";
+    if (accountHelp) {
+      accountHelp.textContent = accountHelpText("live", reportAccountOptions().length > 0);
+      accountHelp.classList.remove("error");
+    }
+    showAccountMenu(accountFilter.value);
+  });
+  accountFilter?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") hideAccountMenu();
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      accountMenu?.querySelector("[data-advertiser-option]:not([hidden])")?.focus();
+    }
+  });
+  accountFilter?.addEventListener("blur", () => window.setTimeout(hideAccountMenu, 120));
+  root.querySelectorAll("[data-advertiser-option]").forEach((option) => {
+    option.addEventListener("click", () => {
+      accountFilter.value = option.dataset.accountLabel || option.dataset.advertiserOption || "";
+      accountFilter.dataset.selectedAdvertiserId = option.dataset.advertiserOption || "";
+      if (accountHelp) {
+        accountHelp.textContent = accountHelpText("live", true);
+        accountHelp.classList.remove("error");
+      }
+      accountFilter.focus();
+      hideAccountMenu();
+    });
   });
   root.querySelectorAll("[data-trend]").forEach((button) => {
     button.addEventListener("click", () => {

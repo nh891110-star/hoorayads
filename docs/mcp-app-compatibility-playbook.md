@@ -21,7 +21,7 @@ ChatGPT can cache an older tool descriptor after a widget URI is versioned. If t
 - Serve the current HTML and `text/html;profile=mcp-app` MIME type from every alias.
 - Do not write QA that requires old URIs to disappear. QA should require them to remain readable and byte-equivalent to the current template.
 
-The reporting widget currently uses `v4` and preserves `v3`, `v2`, and `v1` aliases.
+The reporting widget currently uses `v5` and preserves `v4`, `v3`, `v2`, and `v1` aliases.
 
 ## Stale widget HTML after a release
 
@@ -40,7 +40,7 @@ Both hosts can preserve a previously loaded widget template independently from t
 - ChatGPT: start a new conversation, re-select the app from `Add files > More`, and then call the reporting tool again.
 - Claude: open `Settings > Connectors`, disconnect and reconnect the connector, start a new conversation, and approve the tool if prompted.
 - Preserve legacy resource aliases because a refreshed host may still request a previously published URI.
-- Expand the rendered card and assert that a newly shipped control exists in the expected order. For reporting `v4`, `Advertiser Account` must appear before `Level`.
+- Expand the rendered card and assert that a newly shipped control exists in the expected order. For reporting `v5`, `Advertiser Account` must be a searchable combobox before `Level`.
 - Do not treat updated text data, a changed title, or a successful tool response as proof that the widget HTML refreshed.
 
 ## Claude `mcp_session_terminated`

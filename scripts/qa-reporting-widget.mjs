@@ -10,8 +10,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { chromium } from "playwright";
 
-const REPORT_URI = "ui://widget/tiktok-ads-report-v4.html";
+const REPORT_URI = "ui://widget/tiktok-ads-report-v5.html";
 const LEGACY_REPORT_URIS = [
+  "ui://widget/tiktok-ads-report-v4.html",
   "ui://widget/tiktok-ads-report-v3.html",
   "ui://widget/tiktok-ads-report-v2.html",
   "ui://widget/tiktok-ads-report-v1.html"
@@ -155,6 +156,7 @@ async function main() {
     assert(resourceHtml.includes('id="report-root"'), "Widget resource is missing #report-root.");
     assert(resourceHtml.includes("ui/notifications/tool-result"), "Widget resource is missing the tool-result bridge.");
     assert(resourceHtml.includes('data-filter="advertiserId"'), "Widget resource is missing the advertiser account filter.");
+    assert(resourceHtml.includes('role="combobox"'), "Advertiser Account is not rendered as a searchable combobox.");
     assert(
       resourceHtml.indexOf('data-filter="advertiserId"') < resourceHtml.indexOf('data-filter="level"'),
       "Advertiser Account must appear before Level in the shared widget."
@@ -212,17 +214,18 @@ async function main() {
 
     await widgetFrame.locator('[data-action="expand"]').click();
     await widgetFrame.locator(".filter-bar").waitFor({ timeout: 5000 });
-    const filterLabels = await widgetFrame.locator(".filter-bar > label").allTextContents();
+    const filterLabels = await widgetFrame.locator(".filter-bar > .account-field, .filter-bar > label").allTextContents();
     assert(filterLabels[0]?.trim().startsWith("Advertiser Account"), "Advertiser Account is not the first report control.");
     const accountFilter = widgetFrame.locator('[data-filter="advertiserId"]');
     const modeFilter = widgetFrame.locator('[data-filter="mode"]');
-    assert((await accountFilter.inputValue()) === "demo-advertiser-001", "Demo account is not selected in the account control.");
-    assert(await accountFilter.isDisabled(), "Demo account control should be locked to prevent fake live selection.");
-    await modeFilter.selectOption("live");
-    assert(!(await accountFilter.isDisabled()), "Advertiser Account should become selectable in Live mode.");
-    assert((await accountFilter.inputValue()) === "", "Live mode should start with authorized-account discovery.");
+    assert((await accountFilter.inputValue()) === "Sample Advertiser Account · Demo", "Demo account is not clearly labeled in the account input.");
+    assert(!(await accountFilter.isDisabled()), "Advertiser Account must stay editable so users can search or type an ID.");
+    await accountFilter.focus();
+    assert((await modeFilter.inputValue()) === "live", "Editing Advertiser Account should switch the report to Live mode.");
+    assert((await accountFilter.inputValue()) === "", "Live account search should not keep the sample account value.");
     await modeFilter.selectOption("demo");
-    assert(await accountFilter.isDisabled(), "Switching back to Demo should lock the sample account again.");
+    assert((await accountFilter.inputValue()) === "Sample Advertiser Account · Demo", "Switching back to Demo should restore the sample label.");
+    assert(!(await accountFilter.isDisabled()), "Demo should not turn Advertiser Account into a dead control.");
 
     const needsAccountResult = {
       ...toolResult,
@@ -249,16 +252,36 @@ async function main() {
     await setupPage.locator('#harness-state[data-mounted="true"]').waitFor({ timeout: 10000 });
     const setupFrame = setupPage.frames().find((frame) => frame !== setupPage.mainFrame());
     assert(setupFrame, "The advertiser setup iframe did not mount.");
-    const setupLabels = await setupFrame.locator(".filter-bar > label").allTextContents();
+    const setupLabels = await setupFrame.locator(".filter-bar > .account-field, .filter-bar > label").allTextContents();
     assert(setupLabels[0]?.trim().startsWith("Advertiser Account"), "Account selection is not first in the setup state.");
     const setupAccountFilter = setupFrame.locator('[data-filter="advertiserId"]');
     assert(!(await setupAccountFilter.isDisabled()), "Live advertiser account selection should be enabled.");
-    await setupAccountFilter.selectOption("adv-002");
+    await setupAccountFilter.fill("Europe");
+    const europeOption = setupFrame.locator('[data-advertiser-option="adv-002"]');
+    await europeOption.waitFor({ state: "visible", timeout: 5000 });
+    assert(!(await setupFrame.locator('[data-advertiser-option="adv-001"]').isVisible()), "Account search did not filter non-matching accounts.");
+    const accountScreenshotPath = process.env.REPORT_WIDGET_ACCOUNT_SCREENSHOT;
+    if (accountScreenshotPath) {
+      await mkdir(dirname(accountScreenshotPath), { recursive: true });
+      await setupPage.screenshot({ path: accountScreenshotPath, fullPage: true });
+    }
+    await europeOption.click();
+    assert((await setupAccountFilter.inputValue()).includes("Europe Shop"), "Selected account label was not written back to the input.");
     await setupFrame.locator('[data-action="apply"]').click();
     await setupPage.waitForFunction(() => Boolean(window.__lastToolCall), null, { timeout: 5000 });
     const setupToolCall = await setupPage.evaluate(() => window.__lastToolCall);
     assert(setupToolCall?.arguments?.advertiserId === "adv-002", "Apply did not send the selected advertiserId.");
     assert(setupToolCall?.arguments?.level === "campaign", "Apply did not preserve the selected report level.");
+    const rawIdInput = setupFrame.locator('[data-filter="advertiserId"]');
+    await rawIdInput.fill("7380012345");
+    await setupFrame.locator('[data-action="apply"]').click();
+    await setupPage.waitForFunction(
+      () => window.__lastToolCall?.arguments?.advertiserId === "7380012345",
+      null,
+      { timeout: 5000 }
+    );
+    const rawIdToolCall = await setupPage.evaluate(() => window.__lastToolCall);
+    assert(rawIdToolCall?.arguments?.advertiserId === "7380012345", "An exact typed advertiser ID was not sent unchanged.");
     await setupPage.close();
 
     const screenshotPath = process.env.REPORT_WIDGET_SCREENSHOT;
@@ -291,8 +314,10 @@ async function main() {
         rootBytes: Buffer.byteLength(rootHtml),
         kpiCards: 4,
         firstFilter: filterLabels[0]?.trim() || null,
-        demoAccountLocked: await accountFilter.isDisabled(),
+        demoAccountEditable: !(await accountFilter.isDisabled()),
         selectedAdvertiserIdSent: setupToolCall.arguments.advertiserId,
+        typedAdvertiserIdSent: rawIdToolCall.arguments.advertiserId,
+        accountSearchScreenshotPath: accountScreenshotPath || null,
         consoleMessages,
         pageErrors,
         failedRequests,
