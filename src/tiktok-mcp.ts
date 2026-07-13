@@ -10,7 +10,10 @@ import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 import { getTikTokAppConfig } from "./config.js";
 
-const TIKTOK_MCP_URL = "https://ads.tiktok.com/mcp";
+const DEFAULT_TIKTOK_MCP_URL = "https://ads.tiktok.com/mcp";
+const DEFAULT_TIKTOK_FLAT_MCP_URL = "https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat";
+
+export type TikTokMcpSurface = "progressive" | "flat";
 
 type StoredClientInformation = {
   client_id: string;
@@ -85,7 +88,7 @@ type TikTokToolPayload = {
   request_id?: string;
 };
 
-type TikTokToolResponse<T> =
+export type TikTokToolResponse<T> =
   | {
       data: T;
       status: "connected";
@@ -170,7 +173,18 @@ type SmartPlusAdCreateResponse = {
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const authStateDir = join(currentDir, "../.local");
-const authStateFile = join(authStateDir, "tiktok-mcp-auth.json");
+
+function getTikTokMcpUrl(surface: TikTokMcpSurface) {
+  if (surface === "flat") {
+    return process.env.TIKTOK_FLAT_MCP_URL?.trim() || DEFAULT_TIKTOK_FLAT_MCP_URL;
+  }
+
+  return process.env.TIKTOK_MCP_URL?.trim() || DEFAULT_TIKTOK_MCP_URL;
+}
+
+function getAuthStateFile(surface: TikTokMcpSurface) {
+  return join(authStateDir, surface === "flat" ? "tiktok-flat-mcp-auth.json" : "tiktok-mcp-auth.json");
+}
 
 function ensureAuthStateDir() {
   if (!existsSync(authStateDir)) {
@@ -178,7 +192,8 @@ function ensureAuthStateDir() {
   }
 }
 
-function loadAuthState(): StoredAuthState {
+function loadAuthState(surface: TikTokMcpSurface): StoredAuthState {
+  const authStateFile = getAuthStateFile(surface);
   if (!existsSync(authStateFile)) {
     return {};
   }
@@ -190,12 +205,12 @@ function loadAuthState(): StoredAuthState {
   }
 }
 
-function saveAuthState(state: StoredAuthState) {
+function saveAuthState(surface: TikTokMcpSurface, state: StoredAuthState) {
   ensureAuthStateDir();
-  writeFileSync(authStateFile, JSON.stringify(state, null, 2));
+  writeFileSync(getAuthStateFile(surface), JSON.stringify(state, null, 2));
 }
 
-function createAuthProvider(): OAuthClientProvider {
+function createAuthProvider(surface: TikTokMcpSurface): OAuthClientProvider {
   const config = getTikTokAppConfig();
 
   return {
@@ -214,13 +229,13 @@ function createAuthProvider(): OAuthClientProvider {
     },
     state() {
       const nextState = randomUUID();
-      const authState = loadAuthState();
+      const authState = loadAuthState(surface);
       authState.expectedState = nextState;
-      saveAuthState(authState);
+      saveAuthState(surface, authState);
       return nextState;
     },
     clientInformation() {
-      const authState = loadAuthState();
+      const authState = loadAuthState(surface);
       return (
         authState.clientInformation || {
           client_id: config.appId,
@@ -230,7 +245,7 @@ function createAuthProvider(): OAuthClientProvider {
       );
     },
     saveClientInformation(clientInformation) {
-      const authState = loadAuthState();
+      const authState = loadAuthState(surface);
       const authMethod =
         "token_endpoint_auth_method" in clientInformation &&
         clientInformation.token_endpoint_auth_method &&
@@ -244,13 +259,13 @@ function createAuthProvider(): OAuthClientProvider {
         client_secret: "client_secret" in clientInformation ? clientInformation.client_secret : config.appSecret,
         token_endpoint_auth_method: authMethod
       };
-      saveAuthState(authState);
+      saveAuthState(surface, authState);
     },
     tokens() {
-      return loadAuthState().tokens;
+      return loadAuthState(surface).tokens;
     },
     saveTokens(tokens) {
-      const authState = loadAuthState();
+      const authState = loadAuthState(surface);
       authState.tokens = {
         access_token: tokens.access_token,
         expires_in: tokens.expires_in,
@@ -261,20 +276,20 @@ function createAuthProvider(): OAuthClientProvider {
       authState.pendingAuthorizationCode = undefined;
       authState.authorizationUrl = undefined;
       authState.expectedState = undefined;
-      saveAuthState(authState);
+      saveAuthState(surface, authState);
     },
     redirectToAuthorization(authorizationUrl) {
-      const authState = loadAuthState();
+      const authState = loadAuthState(surface);
       authState.authorizationUrl = authorizationUrl.toString();
-      saveAuthState(authState);
+      saveAuthState(surface, authState);
     },
     saveCodeVerifier(codeVerifier) {
-      const authState = loadAuthState();
+      const authState = loadAuthState(surface);
       authState.codeVerifier = codeVerifier;
-      saveAuthState(authState);
+      saveAuthState(surface, authState);
     },
     codeVerifier() {
-      const authState = loadAuthState();
+      const authState = loadAuthState(surface);
       if (!authState.codeVerifier) {
         throw new Error("TikTok MCP OAuth code verifier is missing.");
       }
@@ -282,15 +297,15 @@ function createAuthProvider(): OAuthClientProvider {
       return authState.codeVerifier;
     },
     saveDiscoveryState(discoveryState) {
-      const authState = loadAuthState();
+      const authState = loadAuthState(surface);
       authState.discoveryState = discoveryState;
-      saveAuthState(authState);
+      saveAuthState(surface, authState);
     },
     discoveryState() {
-      return loadAuthState().discoveryState;
+      return loadAuthState(surface).discoveryState;
     },
     invalidateCredentials(scope) {
-      const authState = loadAuthState();
+      const authState = loadAuthState(surface);
 
       if (scope === "all" || scope === "client") {
         authState.clientInformation = undefined;
@@ -310,12 +325,12 @@ function createAuthProvider(): OAuthClientProvider {
         authState.discoveryState = undefined;
       }
 
-      saveAuthState(authState);
+      saveAuthState(surface, authState);
     }
   };
 }
 
-async function connectTikTokClient(): Promise<TikTokClientState> {
+async function connectTikTokClient(surface: TikTokMcpSurface): Promise<TikTokClientState> {
   const config = getTikTokAppConfig();
   if (!config.appId || !config.appSecret || !config.redirectUri) {
     return {
@@ -324,30 +339,30 @@ async function connectTikTokClient(): Promise<TikTokClientState> {
     };
   }
 
-  const provider = createAuthProvider();
-  const transport = new StreamableHTTPClientTransport(new URL(TIKTOK_MCP_URL), {
+  const provider = createAuthProvider(surface);
+  const transport = new StreamableHTTPClientTransport(new URL(getTikTokMcpUrl(surface)), {
     authProvider: provider
   });
   const client = new Client(
     {
-      name: "hooray-tiktok-ads-bridge",
+      name: `hooray-tiktok-ads-${surface}-bridge`,
       version: "0.3.0"
     },
     { capabilities: {} }
   );
 
-  const authState = loadAuthState();
+  const authState = loadAuthState(surface);
   if (authState.pendingAuthorizationCode) {
     try {
       await transport.finishAuth(authState.pendingAuthorizationCode);
-      const nextState = loadAuthState();
+      const nextState = loadAuthState(surface);
       nextState.pendingAuthorizationCode = undefined;
-      saveAuthState(nextState);
+      saveAuthState(surface, nextState);
     } catch {
-      const nextState = loadAuthState();
+      const nextState = loadAuthState(surface);
       nextState.pendingAuthorizationCode = undefined;
       nextState.tokens = undefined;
-      saveAuthState(nextState);
+      saveAuthState(surface, nextState);
     }
   }
 
@@ -364,7 +379,7 @@ async function connectTikTokClient(): Promise<TikTokClientState> {
     await transport.close().catch(() => undefined);
 
     if (error instanceof UnauthorizedError) {
-      const nextState = loadAuthState();
+      const nextState = loadAuthState(surface);
       return {
         authorizationUrl: nextState.authorizationUrl || config.advertiserAuthUrl,
         redirectUri: config.redirectUri,
@@ -392,17 +407,23 @@ async function callTikTokTool<T>(
     CallToolResultSchema
   );
 
+  const structuredContent = (result as { structuredContent?: unknown }).structuredContent;
   const textPayload = result.content.find((item) => item.type === "text")?.text;
-  if (!textPayload) {
-    throw new Error(`TikTok MCP tool ${name} returned no text payload.`);
+  let payload: TikTokToolPayload;
+
+  if (structuredContent && typeof structuredContent === "object") {
+    payload = structuredContent as TikTokToolPayload;
+  } else if (textPayload) {
+    payload = JSON.parse(textPayload) as TikTokToolPayload;
+  } else {
+    throw new Error(`TikTok MCP tool ${name} returned no JSON payload.`);
   }
 
-  const payload = JSON.parse(textPayload) as TikTokToolPayload;
   if (payload.code && payload.code !== 0) {
     throw new Error(payload.message || `TikTok MCP tool ${name} failed.`);
   }
 
-  return (payload.data ?? {}) as T;
+  return (payload.data ?? payload) as T;
 }
 
 function dedupeIdentities(identityList: RawIdentity[]) {
@@ -459,8 +480,11 @@ function readStringValue(payload: Record<string, unknown>, keys: string[]) {
   return "";
 }
 
-async function withTikTokClient<T>(run: (client: Client) => Promise<T>): Promise<TikTokToolResponse<T>> {
-  const state = await connectTikTokClient();
+async function withTikTokClient<T>(
+  run: (client: Client) => Promise<T>,
+  surface: TikTokMcpSurface = "progressive"
+): Promise<TikTokToolResponse<T>> {
+  const state = await connectTikTokClient(surface);
   if (state.status !== "connected") {
     return state;
   }
@@ -476,7 +500,17 @@ async function withTikTokClient<T>(run: (client: Client) => Promise<T>): Promise
   }
 }
 
-export async function listTikTokAdvertiserAccounts(): Promise<
+export async function callTikTokMcpTool<T>(
+  surface: TikTokMcpSurface,
+  name: string,
+  args: Record<string, unknown> = {}
+): Promise<TikTokToolResponse<T>> {
+  return withTikTokClient((client) => callTikTokTool<T>(client, name, args), surface);
+}
+
+export async function listTikTokAdvertiserAccounts(
+  surface: TikTokMcpSurface = "progressive"
+): Promise<
   TikTokToolResponse<{
     accounts: TikTokAdvertiserAccount[];
     userDisplayName: string;
@@ -572,7 +606,7 @@ export async function listTikTokAdvertiserAccounts(): Promise<
       accounts,
       userDisplayName: userInfo.display_name || "TikTok Ads user"
     };
-  });
+  }, surface);
 }
 
 export async function verifyTikTokAdvertiserIdentity(
@@ -784,22 +818,35 @@ export async function createSmartPlusCampaignDraft(
 }
 
 export function saveTikTokMcpAuthorizationCode(code: string, state?: string) {
-  const authState = loadAuthState();
+  const surfaces: TikTokMcpSurface[] = ["progressive", "flat"];
+  const matchingSurface = state
+    ? surfaces.find((surface) => loadAuthState(surface).expectedState === state)
+    : surfaces.find((surface) => Boolean(loadAuthState(surface).expectedState));
 
-  if (authState.expectedState && state && authState.expectedState !== state) {
-    throw new Error("TikTok MCP OAuth state did not match.");
+  if (state && !matchingSurface) {
+    throw new Error("TikTok MCP OAuth state did not match either configured MCP surface.");
   }
 
+  const surface = matchingSurface || "progressive";
+  const authState = loadAuthState(surface);
   authState.pendingAuthorizationCode = code;
-  saveAuthState(authState);
+  saveAuthState(surface, authState);
+  return surface;
 }
 
 export function getTikTokMcpAuthSummary() {
-  const authState = loadAuthState();
+  const summarize = (surface: TikTokMcpSurface) => {
+    const authState = loadAuthState(surface);
+    return {
+      authorizationPending: Boolean(authState.authorizationUrl),
+      callbackPending: Boolean(authState.pendingAuthorizationCode),
+      hasTokens: Boolean(authState.tokens?.access_token),
+      mcpUrl: getTikTokMcpUrl(surface)
+    };
+  };
 
   return {
-    authorizationPending: Boolean(authState.authorizationUrl),
-    callbackPending: Boolean(authState.pendingAuthorizationCode),
-    hasTokens: Boolean(authState.tokens?.access_token)
+    progressive: summarize("progressive"),
+    flat: summarize("flat")
   };
 }

@@ -317,6 +317,19 @@ export const setupReportingDigestOutput = {
   widgetState: z.record(z.any())
 };
 
+export const getAdsReportInput = {
+  advertiserId: z.string().optional(),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  level: z.enum(["campaign", "adgroup", "ad"]).default("campaign"),
+  mode: z.enum(["live", "demo"]).default("live"),
+  comparePreviousPeriod: z.boolean().default(true)
+};
+
+export const getAdsReportOutput = {
+  reportState: z.record(z.any())
+};
+
 export type CapabilityMapping = {
   productTool: string;
   purpose: string;

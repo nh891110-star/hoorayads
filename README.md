@@ -12,6 +12,7 @@ The base journey is now:
 6. verify ad account, identity, and payment readiness
 7. create a Smart+ draft
 8. publish after explicit approval
+9. generate a live or demo TikTok Ads performance report
 
 This is not Shopify-only. It is meant for any novice SMB advertiser who has a promotable product URL, with TikTok MCP handling the account and campaign side wherever possible.
 
@@ -24,24 +25,29 @@ This is not Shopify-only. It is meant for any novice SMB advertiser who has a pr
 - `src/tool-contract.ts`
   Tool schemas plus a capability map from productized app tools to observed TikTok Ads MCP capabilities.
 - `web/`
-  A self-contained widget preview for scrape review, storyboard review, render status, account setup, draft review, and publish success.
+  Self-contained MCP App UIs for the campaign workflow and cross-host reporting.
+- `src/reporting.ts`
+  Flat MCP reporting client, normalization, previous-period comparison, metadata enrichment, insights, and deterministic demo state.
 - `docs/capability-map.md`
   The concrete mapping between PRD flow steps and current TikTok Ads MCP coverage.
 
 ## Current scope
 
-This is a private POC scaffold, not a production-ready published app.
+This is a private POC scaffold with a working reporting demo, not a production-ready public app.
 
 Already validated in the current environment:
 
 - TikTok Ads MCP auth works for `user_info_get` and `bc_get`
 - Business Center discovery is available
 - Advertiser, identity, Smart+, ad, and reporting APIs are exposed
+- `get_ads_report` returns the reporting MCP App directly
+- ChatGPT and Claude endpoint aliases expose the same portable UI and data contract
+- Demo mode and the unauthenticated live state pass end-to-end MCP tests
 
 Still needed for production:
 
-- public HTTPS MCP endpoint
-- ChatGPT connector creation in developer mode
+- deploy the current reporting build to the existing public HTTPS service
+- create the ChatGPT and Claude custom connectors
 - OpenAI app submission assets and review
 - a real scrape pipeline for arbitrary product URLs
 - a real storyboard-to-video render pipeline
@@ -81,12 +87,32 @@ Recommended first deploy steps:
 6. Put `https://<your-render-domain>/mcp` into the ChatGPT app builder.
 7. Put `https://<your-render-domain>/callback` into the TikTok developer app.
 
+For the reporting demo, use these host-specific aliases after deployment:
+
+- ChatGPT: `https://<your-render-domain>/mcp/chatgpt`
+- Claude: `https://<your-render-domain>/mcp/claude`
+
+Both aliases serve the same MCP server, `ReportState` contract, and MCP App UI. They are separate only to make host setup and production logs clearer.
+
 Note:
 
 - Render gives you a stable HTTPS default domain immediately, which is much more reliable than a temporary tunnel.
 - The local `.local/` auth state directory is sufficient for first-pass testing, but production should move OAuth state/tokens into a persistent store.
 
-## Preview
+## Reporting preview
+
+Start the MCP service and open `http://localhost:3010/report-preview`. This read-only page uses the exact reporting CSS and JavaScript embedded in the MCP resource.
+
+Example prompts:
+
+- `Show my TikTok Ads report for the last 7 complete days.`
+- `Show a demo TikTok Ads report.`
+- `Compare campaign performance with the previous period.`
+- `Show the ad-level report from 2026-07-01 to 2026-07-07.`
+
+See `docs/reporting-live-demo-setup-zh.md` for the complete ChatGPT, Claude, TikTok OAuth, and API input checklist.
+
+## Legacy widget preview
 
 You can preview the widget shell by serving `web/` locally:
 

@@ -17,6 +17,14 @@ services:
       - key: TIKTOK_APP_SECRET
         sync: false
       - key: TIKTOK_REDIRECT_URI
-        sync: false
+        value: https://tiktok-ads-agent-poc.onrender.com/callback
       - key: TIKTOK_ADVERTISER_AUTH_URL
         sync: false
+      - key: TIKTOK_MCP_URL
+        value: https://ads.tiktok.com/mcp
+      - key: TIKTOK_FLAT_MCP_URL
+        value: https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat
+      - key: REPORTING_DEFAULT_ADVERTISER_ID
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: https://tiktok-ads-agent-poc.onrender.com

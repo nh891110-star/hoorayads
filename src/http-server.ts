@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,8 +18,19 @@ const port = process.env.PORT
     ? Number.parseInt(process.env.MCP_PORT, 10)
     : 3010;
 const currentDir = dirname(fileURLToPath(import.meta.url));
+const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget.js"), "utf8");
+const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
 const app = express();
 app.use(express.json({ limit: "5mb" }));
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
 
 app.use(
   cors({
@@ -127,10 +139,27 @@ async function handleDelete(req: Request, res: Response) {
   await transport.handleRequest(req, res);
 }
 
-const mcpEndpoints = ["/mcp", "/mcp-v2"];
+const mcpEndpoints = ["/mcp", "/mcp-v2", "/mcp/chatgpt", "/mcp/claude"];
 app.post(mcpEndpoints, handlePost);
 app.get(mcpEndpoints, handleGet);
 app.delete(mcpEndpoints, handleDelete);
+app.get("/report-preview", (_req: Request, res: Response) => {
+  res.type("html").send(`
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Hooray TikTok Ads Reporting</title>
+        <style>body { padding: 20px; background: #eef4f1; } ${reportingWidgetCss}</style>
+      </head>
+      <body>
+        <div id="report-root"></div>
+        <script type="module">${reportingWidgetJs}</script>
+      </body>
+    </html>
+  `);
+});
 app.use(
   "/assets",
   express.static(join(currentDir, "../web/assets"), {
@@ -145,6 +174,9 @@ app.get("/health", (_req: Request, res: Response) => {
     name: "tiktok-ads-agent-poc",
     mcpEndpoint: "/mcp",
     mcpEndpointV2: "/mcp-v2",
+    chatGptMcpEndpoint: "/mcp/chatgpt",
+    claudeMcpEndpoint: "/mcp/claude",
+    reportPreview: "/report-preview",
     sessions: Object.keys(transports).length,
     tikTokConfig: getTikTokConfigSummary(),
     tikTokMcpAuth: getTikTokMcpAuthSummary()
@@ -163,7 +195,6 @@ app.get("/callback", (req: Request, res: Response) => {
           <body style="font-family: sans-serif; padding: 24px;">
             <h1>TikTok authorization failed</h1>
             <p>The TikTok MCP callback returned an error. Go back to ChatGPT and retry the authorization step.</p>
-            <pre>${JSON.stringify(req.query, null, 2)}</pre>
           </body>
         </html>
       `);
@@ -176,21 +207,20 @@ app.get("/callback", (req: Request, res: Response) => {
           <body style="font-family: sans-serif; padding: 24px;">
             <h1>Missing authorization code</h1>
             <p>The callback did not include a TikTok authorization code. Go back to ChatGPT and retry the authorization step.</p>
-            <pre>${JSON.stringify(req.query, null, 2)}</pre>
           </body>
         </html>
       `);
       return;
     }
 
-    saveTikTokMcpAuthorizationCode(code, state);
+    const surface = saveTikTokMcpAuthorizationCode(code, state);
 
     res.status(200).send(`
       <html>
         <body style="font-family: sans-serif; padding: 24px;">
           <h1>TikTok authorization received</h1>
-          <p>You can return to ChatGPT and continue the Hooray TikTok Ads flow.</p>
-          <pre>${JSON.stringify(req.query, null, 2)}</pre>
+          <p>You can return to ChatGPT or Claude and continue the Hooray TikTok Ads flow.</p>
+          <p>Authorization target: ${surface === "flat" ? "TikTok Ads Flat MCP reporting" : "TikTok Ads Progressive MCP"}.</p>
         </body>
       </html>
     `);
@@ -200,8 +230,7 @@ app.get("/callback", (req: Request, res: Response) => {
       <html>
         <body style="font-family: sans-serif; padding: 24px;">
           <h1>TikTok authorization could not be saved</h1>
-          <p>${message}</p>
-          <pre>${JSON.stringify(req.query, null, 2)}</pre>
+          <p>${escapeHtml(message)}</p>
         </body>
       </html>
     `);

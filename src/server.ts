@@ -19,6 +19,8 @@ import {
   generateStoryboardOutput,
   generateVideoInput,
   generateVideoOutput,
+  getAdsReportInput,
+  getAdsReportOutput,
   getAdAccountsInput,
   getAdAccountsOutput,
   getVideoStatusInput,
@@ -78,13 +80,18 @@ import {
   verifyTikTokAdvertiserIdentity
 } from "./tiktok-mcp.js";
 import type { TikTokAdvertiserAccount, TikTokIdentity } from "./tiktok-mcp.js";
+import { getTikTokAdsReport } from "./reporting.js";
+import type { GetAdsReportInput } from "./reporting.js";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
 const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
+const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget.js"), "utf8");
+const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
 const RESOURCE_URI_META_KEY = "ui/resourceUri";
 const RESOURCE_MIME_TYPE = "text/html;profile=mcp-app";
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
+const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v1.html";
 const LEGACY_WIDGET_URIS = [
   "ui://widget/tiktok-ads-workspace-v9.html",
   "ui://widget/tiktok-ads-workspace-v8.html",
@@ -92,13 +99,15 @@ const LEGACY_WIDGET_URIS = [
   "ui://widget/tiktok-ads-workspace-v6.html",
   "ui://widget/tiktok-ads-workspace-v5.html"
 ];
-const WIDGET_DOMAIN = "https://mcp.hoorayads.org";
+const WIDGET_DOMAIN = "https://tiktok-ads-agent-poc.onrender.com";
 const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.HOORAY_PUBLIC_BASE_URL || WIDGET_DOMAIN).replace(
   /\/$/,
   ""
 );
 const WIDGET_DESCRIPTION =
   "Display-only TikTok Ads workspace for product intake, creative review, campaign drafting, publish, and reporting. The user controls each step through chat.";
+const REPORT_WIDGET_DESCRIPTION =
+  "Interactive TikTok Ads performance report with a compact cross-host summary and fullscreen filters, trend, insights, breakdown table, refresh, and CSV export.";
 const TOOL_DATA_META = {
   ui: {
     visibility: ["model", "app"]
@@ -129,6 +138,23 @@ const RESULT_RENDER_META = {
   },
   "openai/outputTemplate": WIDGET_URI
 } as const;
+const TOOL_REPORT_META = {
+  ui: {
+    resourceUri: REPORT_WIDGET_URI,
+    visibility: ["model", "app"]
+  },
+  "openai/outputTemplate": REPORT_WIDGET_URI,
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Generating TikTok Ads report...",
+  "openai/toolInvocation/invoked": "TikTok Ads report ready."
+} as const;
+const RESULT_REPORT_META = {
+  [RESOURCE_URI_META_KEY]: REPORT_WIDGET_URI,
+  ui: {
+    resourceUri: REPORT_WIDGET_URI
+  },
+  "openai/outputTemplate": REPORT_WIDGET_URI
+} as const;
 
 function withWidgetToolMeta<T extends object>(definition: T): T & { _meta: Record<string, unknown> } {
   return {
@@ -147,6 +173,18 @@ function withRenderToolMeta<T extends object>(definition: T): T & { _meta: Recor
     ...definition,
     _meta: {
       ...TOOL_RENDER_META,
+      ...("_meta" in definition && definition._meta && typeof definition._meta === "object"
+        ? (definition._meta as Record<string, unknown>)
+        : {})
+    }
+  };
+}
+
+function withReportingToolMeta<T extends object>(definition: T): T & { _meta: Record<string, unknown> } {
+  return {
+    ...definition,
+    _meta: {
+      ...TOOL_REPORT_META,
       ...("_meta" in definition && definition._meta && typeof definition._meta === "object"
         ? (definition._meta as Record<string, unknown>)
         : {})
@@ -724,7 +762,7 @@ export function createTikTokAdsPocServer() {
     { name: "tiktok-ads-agent-poc", version: "0.3.0" },
     {
       instructions:
-        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review as a chat-driven workflow. The rendered Hooray TikTok Ads workspace is display-only: do not ask the user to click buttons or edit fields inside the card. If the user provides a product URL, call open_tiktok_ads_workspace with productUrl so the first visible card is Confirm this product; do not show a Start card. If the user provides a store URL, call open_tiktok_ads_workspace with storeUrl so the first visible card is Pick a product; treat Pick product as a substep inside Product, not a separate main launch step. When showing a card, write exactly one short sentence before the card that explains what the card shows and what the user can reply in chat to do next, such as 'reply continue', 'use option A', 'pick product 2', 'change the title to...', or 'approve preview'. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. Wait for explicit chat confirmation for the exact current step before moving forward. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. When the user confirms in chat, call the next MCP tool with userAction:'chat_confirmed'. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview."
+        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review as a chat-driven workflow. The rendered Hooray TikTok Ads workspace is display-only: do not ask the user to click buttons or edit fields inside the card. If the user provides a product URL, call open_tiktok_ads_workspace with productUrl so the first visible card is Confirm this product; do not show a Start card. If the user provides a store URL, call open_tiktok_ads_workspace with storeUrl so the first visible card is Pick a product; treat Pick product as a substep inside Product, not a separate main launch step. When showing a card, write exactly one short sentence before the card that explains what the card shows and what the user can reply in chat to do next, such as 'reply continue', 'use option A', 'pick product 2', 'change the title to...', or 'approve preview'. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. Wait for explicit chat confirmation for the exact current step before moving forward. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. When the user confirms in chat, call the next MCP tool with userAction:'chat_confirmed'. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview. When the user asks to show, generate, refresh, compare, or export a TikTok Ads performance report, call get_ads_report directly. Default to live data, the last 7 complete days, campaign level, and previous-period comparison unless the user specifies otherwise. Do not call render_tiktok_ads_workspace after get_ads_report because the reporting tool renders its own MCP App resource."
     }
   );
 
@@ -777,6 +815,90 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
   LEGACY_WIDGET_URIS.forEach((uri, index) => {
     registerWidgetResource(`tiktok-ads-workspace-legacy-${index + 1}`, uri);
   });
+
+  server.registerResource(
+    "tiktok-ads-report",
+    REPORT_WIDGET_URI,
+    {
+      title: "TikTok Ads performance report",
+      mimeType: RESOURCE_MIME_TYPE
+    },
+    async () => ({
+      contents: [
+        {
+          uri: REPORT_WIDGET_URI,
+          mimeType: RESOURCE_MIME_TYPE,
+          text: `
+<div id="report-root"></div>
+<style>${reportingWidgetCss}</style>
+<script type="module">${reportingWidgetJs}</script>
+          `.trim(),
+          _meta: {
+            ui: {
+              prefersBorder: true,
+              domain: PUBLIC_BASE_URL,
+              csp: {
+                connectDomains: [PUBLIC_BASE_URL],
+                resourceDomains: [PUBLIC_BASE_URL]
+              }
+            },
+            "openai/widgetDescription": REPORT_WIDGET_DESCRIPTION,
+            "openai/widgetPrefersBorder": true,
+            "openai/widgetDomain": PUBLIC_BASE_URL,
+            "openai/widgetCSP": {
+              connect_domains: [PUBLIC_BASE_URL],
+              resource_domains: [PUBLIC_BASE_URL],
+              redirect_domains: ["https://ads.tiktok.com", "https://business-api.tiktok.com"]
+            }
+          }
+        }
+      ]
+    })
+  );
+
+  server.registerTool(
+    "get_ads_report",
+    withReportingToolMeta({
+      title: "Get TikTok Ads report",
+      description:
+        "Generate an interactive TikTok Ads performance report. Uses the Flat MCP reporting API in live mode and a clearly labeled deterministic sample in demo mode. advertiserId is required by TikTok for a BASIC report, but this app can auto-select it when the authorized user has exactly one account. If multiple accounts are available, the result asks the user to choose one. Defaults to the last 7 complete days, campaign level, and previous-period comparison.",
+      inputSchema: getAdsReportInput,
+      outputSchema: getAdsReportOutput,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: true,
+        destructiveHint: false
+      }
+    }),
+    async (input: GetAdsReportInput) => {
+      const reportState = await getTikTokAdsReport(input);
+      const textByStatus = {
+        ready: "Show the interactive TikTok Ads performance report.",
+        needs_authorization: "Show the TikTok Ads connection step inside the report card.",
+        needs_account: "Show the advertiser account choices inside the report card.",
+        empty: "Show the empty report state and selected date range.",
+        error: "Show the report error state with retry and demo options."
+      } as const;
+
+      return {
+        structuredContent: {
+          reportState
+        },
+        content: [
+          {
+            type: "text",
+            text: textByStatus[reportState.status]
+          }
+        ],
+        _meta: {
+          ...RESULT_REPORT_META,
+          source: reportState.source,
+          reportApi: "report_integrated_get",
+          reportMcpSurface: "flat"
+        }
+      };
+    }
+  );
 
   const currentWorkspaceState = (): Record<string, unknown> => {
     if (state.currentVideoJob.status === "complete" && state.currentVideoJob.preview) {
