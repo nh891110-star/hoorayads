@@ -23,6 +23,26 @@ ChatGPT can cache an older tool descriptor after a widget URI is versioned. If t
 
 The reporting widget currently uses `v4` and preserves `v3`, `v2`, and `v1` aliases.
 
+## Stale widget HTML after a release
+
+### Signal
+
+- A new tool call returns current data, but the expanded card still shows the previous controls or labels.
+- Changing a report title or starting a new conversation alone does not reliably refresh the widget.
+- Direct resource and iframe checks already return the current HTML.
+
+### Root cause
+
+Both hosts can preserve a previously loaded widget template independently from the tool result. Existing conversation cards are static snapshots and must not be used to validate a new release.
+
+### Recovery and verification
+
+- ChatGPT: start a new conversation, re-select the app from `Add files > More`, and then call the reporting tool again.
+- Claude: open `Settings > Connectors`, disconnect and reconnect the connector, start a new conversation, and approve the tool if prompted.
+- Preserve legacy resource aliases because a refreshed host may still request a previously published URI.
+- Expand the rendered card and assert that a newly shipped control exists in the expected order. For reporting `v4`, `Advertiser Account` must appear before `Level`.
+- Do not treat updated text data, a changed title, or a successful tool response as proof that the widget HTML refreshed.
+
 ## Claude `mcp_session_terminated`
 
 ### Signal
@@ -54,9 +74,10 @@ Before deploying a widget or transport change:
 3. Read the current and every legacy resource URI.
 4. Call `get_ads_report` and validate KPIs, trend points, rows, and fallback text.
 5. Mount the returned resource in a real iframe and assert there are no page errors or failed requests.
-6. Test a new ChatGPT conversation in the signed-in product UI.
-7. Test a new Claude conversation with the connector explicitly enabled.
+6. Test a new ChatGPT conversation in the signed-in product UI after re-selecting the app.
+7. Test a new Claude conversation after reconnecting the connector and explicitly enabling it.
 8. Treat host notifications and browser errors as separate evidence from the model-visible tool result.
+9. Expand each real-host card and verify the expected control names and order, not only the returned data.
 
 Run the automated report checks with:
 
