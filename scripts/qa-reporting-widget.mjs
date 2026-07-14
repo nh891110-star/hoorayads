@@ -10,8 +10,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { chromium } from "playwright";
 
-const REPORT_URI = "ui://widget/tiktok-ads-report-v11.html";
+const REPORT_URI = "ui://widget/tiktok-ads-report-v12.html";
 const LEGACY_REPORT_URIS = [
+  "ui://widget/tiktok-ads-report-v11.html",
   "ui://widget/tiktok-ads-report-v10.html",
   "ui://widget/tiktok-ads-report-v9.html",
   "ui://widget/tiktok-ads-report-v8.html",
@@ -64,6 +65,7 @@ function createHostHarness(resourceHtml, toolResult, toolResultsByLevel = {}) {
       const state = document.getElementById("harness-state");
       window.__lastToolCall = null;
       window.__lastOpenLink = null;
+      window.__toolCallCount = 0;
 
       const send = (message) => frame.contentWindow.postMessage({ jsonrpc: "2.0", ...message }, "*");
       window.__sendToolResult = (result) => send({ method: "ui/notifications/tool-result", params: result });
@@ -113,7 +115,14 @@ function createHostHarness(resourceHtml, toolResult, toolResultsByLevel = {}) {
         if (message.method === "tools/call" && message.id !== undefined) {
           window.__lastToolCall = message.params;
           const level = message.params?.arguments?.level;
-          send({ id: message.id, result: toolResultsByLevel[level] || toolResult });
+          const result = structuredClone(toolResultsByLevel[level] || toolResult);
+          const state = result.structuredContent?.reportState;
+          if (state) {
+            state.filters = { ...state.filters, ...message.params.arguments };
+            window.__toolCallCount += 1;
+            state.exportUrl = "https://downloads.example.test/fresh-report-" + window.__toolCallCount + ".csv";
+          }
+          send({ id: message.id, result });
           return;
         }
 
@@ -321,12 +330,11 @@ async function main() {
     assert(widgetText.includes(reportState.advertiser.name), "The mounted widget did not receive the tool result.");
     assert((await widgetFrame.locator(".kpi-card").count()) === 4, "The mounted widget did not render four KPI cards.");
     assert((await widgetFrame.locator(".source-badge").count()) === 0, "The report still exposes a data-source badge.");
-    assert(widgetText.includes("TIKTOK DIAGNOSIS"), "The mounted widget did not render TikTok Diagnosis.");
-    assert(widgetText.includes("Issues & recommendations"), "The Diagnosis heading is incorrect.");
+    assert(!widgetText.includes("TIKTOK DIAGNOSIS"), "Compact view must not render TikTok Diagnosis.");
+    assert((await widgetFrame.locator(".filter-bar").count()) === 0, "Compact view must not render report filters.");
+    assert((await widgetFrame.locator(".table-panel").count()) === 0, "Compact view must not render the breakdown table.");
     assert(!widgetText.includes("WHAT CHANGED"), "The mounted widget still shows What changed.");
     assert(!widgetText.includes("Quick read"), "The mounted widget still shows Quick read.");
-    assert((await widgetFrame.locator(".diagnosis-panel > .diagnosis-list > .diagnosis-item").count()) === 2, "Diagnosis must show the first two official recommendations by default.");
-    assert((await widgetFrame.locator("details.all-diagnoses").count()) === 1, "Additional diagnosis recommendations must be collapsed.");
     assert((await widgetFrame.locator(".date-chip").innerText()) === "Jul 6 – Jul 12", "The date chip shifted the selected range by one day.");
     const spendPoints = await widgetFrame.locator(".chart-line").getAttribute("points");
     await widgetFrame.locator('[data-trend="clicks"]').click();
@@ -339,18 +347,56 @@ async function main() {
 
     await widgetFrame.locator('[data-action="expand"]').click();
     await widgetFrame.locator(".filter-bar").waitFor({ timeout: 5000 });
+    assert((await widgetFrame.locator('[data-action="expand"]').innerText()) === "Collapse report", "Expanded view has an ambiguous collapse label.");
+    const expandedText = await widgetFrame.locator("#report-root").innerText();
+    assert(expandedText.includes("TIKTOK DIAGNOSIS"), "Expanded view did not render TikTok Diagnosis.");
+    assert(expandedText.includes("Issues & recommendations"), "The Diagnosis heading is incorrect.");
+    assert((await widgetFrame.locator(".diagnosis-panel > .diagnosis-list > .diagnosis-item").count()) === 2, "Diagnosis must show the first two official recommendations by default.");
+    assert((await widgetFrame.locator("details.all-diagnoses").count()) === 1, "Additional diagnosis recommendations must be collapsed.");
+    await widgetFrame.locator(".diagnosis-item details summary").first().click();
+    assert(await widgetFrame.locator(".diagnosis-item details").first().evaluate((element) => element.open), "Diagnosis details did not expand.");
+    await widgetFrame.locator("details.all-diagnoses summary").click();
+    assert(await widgetFrame.locator("details.all-diagnoses").evaluate((element) => element.open), "View all recommendations did not expand.");
     const campaignHeaders = await widgetFrame.locator(".breakdown-table thead th").allTextContents();
     assert(
       JSON.stringify(campaignHeaders) === JSON.stringify(["Name", "Status", "Campaign budget", "Spend", "CPC (destination)", "CPM", "Impressions"]),
       "Campaign breakdown columns do not match TikTok Ads Manager."
     );
     assert((await widgetFrame.locator('[data-columns]').count()) === 0, "The obsolete generic column preset is still shown.");
+    const tableSearch = widgetFrame.locator("[data-search]");
+    await tableSearch.fill("Summer Sale");
+    assert((await widgetFrame.locator(".breakdown-table tbody tr").count()) === 1, "Breakdown search did not filter the rows.");
+    assert((await widgetFrame.locator("tbody tr:first-child td:first-child strong").innerText()) === "Summer Sale | Prospecting", "Breakdown search returned the wrong row.");
+    await tableSearch.fill("");
+    assert((await widgetFrame.locator(".breakdown-table tbody tr").count()) === 5, "Clearing breakdown search did not restore the rows.");
     await widgetFrame.locator('[data-action="export"]').click();
     await page.waitForFunction(() => Boolean(window.__lastOpenLink), null, { timeout: 5000 });
     const openedExportUrl = await page.evaluate(() => window.__lastOpenLink);
-    assert(openedExportUrl === reportState.exportUrl, "Export CSV did not open the server-backed export URL.");
+    assert(openedExportUrl.includes("fresh-report-1.csv"), "Export CSV did not request a fresh server-backed export URL.");
+    assert(openedExportUrl !== reportState.exportUrl, "Export CSV reused the stale URL embedded in the original card.");
+    const exportToolCall = await page.evaluate(() => window.__lastToolCall);
+    assert(exportToolCall?.name === "get_ads_report_demo", "Export CSV did not refresh through the current report tool.");
     const filterLabels = await widgetFrame.locator(".filter-bar > .account-field, .filter-bar > label").allTextContents();
     assert(filterLabels[0]?.trim().startsWith("Advertiser Account"), "Advertiser Account is not the first report control.");
+    await widgetFrame.locator('[data-filter="startDate"]').fill("2026-07-07");
+    await widgetFrame.locator('[data-filter="endDate"]').fill("2026-07-13");
+    await widgetFrame.locator('[data-filter="compare"]').uncheck();
+    await widgetFrame.locator('[data-action="apply"]').click();
+    await page.waitForFunction(() => window.__lastToolCall?.arguments?.startDate === "2026-07-07", null, { timeout: 5000 });
+    const changedDateToolCall = await page.evaluate(() => window.__lastToolCall);
+    assert(changedDateToolCall.arguments.endDate === "2026-07-13", "Apply did not send the selected end date.");
+    assert(changedDateToolCall.arguments.comparePreviousPeriod === false, "Apply did not send the comparison toggle.");
+    assert((await widgetFrame.locator(".date-chip").innerText()) === "Jul 7 – Jul 13", "Apply did not update the visible date range.");
+    await widgetFrame.locator('[data-filter="startDate"]').fill("2026-07-06");
+    await widgetFrame.locator('[data-filter="endDate"]').fill("2026-07-12");
+    await widgetFrame.locator('[data-filter="compare"]').check();
+    await widgetFrame.locator('[data-action="apply"]').click();
+    await page.waitForFunction(() => window.__lastToolCall?.arguments?.startDate === "2026-07-06", null, { timeout: 5000 });
+    await widgetFrame.locator('[data-action="refresh"]').click();
+    await page.waitForFunction(() => window.__toolCallCount >= 4, null, { timeout: 5000 });
+    const refreshToolCall = await page.evaluate(() => window.__lastToolCall);
+    assert(refreshToolCall?.name === "get_ads_report_demo", "Refresh left the isolated demo tool.");
+    assert(refreshToolCall?.arguments?.level === "campaign", "Refresh did not preserve the current level.");
     await widgetFrame.locator('[data-filter="level"]').selectOption("adgroup");
     await widgetFrame.locator(".table-toolbar h2").filter({ hasText: "ad group performance" }).waitFor({ timeout: 5000 });
     assert((await widgetFrame.locator("tbody tr:first-child td:first-child strong").innerText()) === "Prospecting | Broad US", "Ad group selection did not replace campaign rows.");
@@ -387,9 +433,16 @@ async function main() {
     const accountFilter = widgetFrame.locator('[data-filter="advertiserId"]');
     assert((await widgetFrame.locator('[data-filter="mode"]').count()) === 0, "The report still exposes a data-source selector.");
     assert((await accountFilter.inputValue()).includes("Demo Advertiser"), "Demo account is not shown in the account input.");
-    assert(!(await accountFilter.isDisabled()), "Advertiser Account must stay editable so users can search or type an ID.");
+    const accountEditable = !(await accountFilter.isDisabled());
+    assert(accountEditable, "Advertiser Account must stay editable so users can search or type an ID.");
     await accountFilter.focus();
     assert((await accountFilter.inputValue()).includes("7390012345"), "Focusing the account input lost the selected advertiser ID.");
+
+    await widgetFrame.locator('[data-action="expand"]').click();
+    await widgetFrame.locator('[data-action="expand"]').filter({ hasText: "Expand report" }).waitFor({ timeout: 5000 });
+    assert((await widgetFrame.locator(".diagnosis-panel").count()) === 0, "Collapsed view retained Diagnosis markup.");
+    assert((await widgetFrame.locator(".filter-bar").count()) === 0, "Collapsed view retained report filters.");
+    assert((await widgetFrame.locator(".table-panel").count()) === 0, "Collapsed view retained the breakdown table.");
 
     const needsAccountResult = {
       ...toolResult,
@@ -480,7 +533,7 @@ async function main() {
         rootBytes: Buffer.byteLength(rootHtml),
         kpiCards: 4,
         firstFilter: filterLabels[0]?.trim() || null,
-        accountEditable: !(await accountFilter.isDisabled()),
+        accountEditable,
         levelSelectionSent: levelToolCall.arguments.level,
         selectedAdvertiserIdSent: setupToolCall.arguments.advertiserId,
         typedAdvertiserIdSent: rawIdToolCall.arguments.advertiserId,

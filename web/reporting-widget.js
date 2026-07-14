@@ -1,5 +1,5 @@
 const root = document.getElementById("report-root") || document.getElementById("app-root");
-const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.8.0" };
+const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.9.0" };
 const PROTOCOL_VERSION = "2026-01-26";
 
 let reportState = null;
@@ -203,7 +203,7 @@ function renderHeader() {
       <div class="header-meta">
         <span class="date-chip">${escapeHtml(humanDateRange(reportState?.filters))}</span>
         <button class="icon-button" data-action="refresh" aria-label="Refresh report" title="Refresh report">↻</button>
-        <button class="primary-button" data-action="expand">${isExpanded() ? "Compact view" : "Expand report"}</button>
+        <button class="primary-button" data-action="expand">${isExpanded() ? "Collapse report" : "Expand report"}</button>
       </div>
     </header>`;
 }
@@ -415,14 +415,15 @@ function renderTable() {
 }
 
 function renderReady() {
-  const diagnosis = renderDiagnosis();
+  const expanded = isExpanded();
+  const diagnosis = expanded ? renderDiagnosis() : "";
   return `
-    <main class="report-shell ${isExpanded() ? "expanded" : "compact"}">
+    <main class="report-shell ${expanded ? "expanded" : "compact"}">
       ${renderHeader()}
-      ${isExpanded() ? renderFilters() : ""}
+      ${expanded ? renderFilters() : ""}
       ${renderKpis()}
       <section class="overview-grid ${diagnosis ? "with-diagnosis" : "trend-only"}">${renderTrend()}${diagnosis}</section>
-      ${isExpanded() ? renderTable() : ""}
+      ${expanded ? renderTable() : ""}
       <footer><span>Generated ${escapeHtml(new Date(reportState.generatedAt || Date.now()).toLocaleString())}</span><span>Powered by TikTok Ads Flat MCP</span></footer>
       ${loading ? `<div class="loading-cover"><span></span><p>Refreshing TikTok Ads data…</p></div>` : ""}
     </main>`;
@@ -504,6 +505,27 @@ function applyHostReportState(next) {
   return true;
 }
 
+async function invokeReportTool(args) {
+  const toolName = reportState?.requestTool === "get_ads_report_demo" ? "get_ads_report_demo" : "get_ads_report";
+  if (initialized && hostContext?.capabilities?.serverTools !== false) {
+    return extractReportState(await rpc("tools/call", { name: toolName, arguments: args }));
+  }
+  if (window.openai?.callTool) {
+    return extractReportState(await window.openai.callTool(toolName, args));
+  }
+  if (window.parent === window) {
+    const previewState = createPreviewState();
+    previewState.filters = {
+      startDate: args.startDate || previewState.filters.startDate,
+      endDate: args.endDate || previewState.filters.endDate,
+      level: args.level || previewState.filters.level,
+      comparePreviousPeriod: args.comparePreviousPeriod !== false
+    };
+    return previewState;
+  }
+  throw new Error("This host did not expose MCP tool calls to the report app.");
+}
+
 async function callReportTool(args) {
   const requestVersion = ++reportRequestVersion;
   const expectedFilters = requestedFilters(args);
@@ -517,25 +539,7 @@ async function callReportTool(args) {
   loading = true;
   render();
   try {
-    let result;
-    const toolName = reportState?.requestTool === "get_ads_report_demo" ? "get_ads_report_demo" : "get_ads_report";
-    if (initialized && hostContext?.capabilities?.serverTools !== false) {
-      result = await rpc("tools/call", { name: toolName, arguments: args });
-    } else if (window.openai?.callTool) {
-      result = await window.openai.callTool(toolName, args);
-    } else if (window.parent === window) {
-      reportState = createPreviewState();
-      reportState.filters = {
-        startDate: args.startDate || reportState.filters.startDate,
-        endDate: args.endDate || reportState.filters.endDate,
-        level: args.level || reportState.filters.level,
-        comparePreviousPeriod: args.comparePreviousPeriod !== false
-      };
-      return;
-    } else {
-      throw new Error("This host did not expose MCP tool calls to the report app.");
-    }
-    const next = extractReportState(result);
+    const next = await invokeReportTool(args);
     if (!next) throw new Error("The report tool returned no report state.");
     if (!matchesRequestedFilters(next, expectedFilters)) {
       throw new Error(`The report tool returned ${next.filters?.level || "an unknown"} level instead of ${expectedFilters.level}.`);
@@ -563,9 +567,15 @@ async function requestExpand() {
     localExpanded = false;
     if (hostContext.displayMode === "fullscreen") {
       try {
-        await rpc("ui/request-display-mode", { mode: "inline" });
+        const result = initialized
+          ? await rpc("ui/request-display-mode", { mode: "inline" })
+          : await window.openai?.requestDisplayMode?.({ mode: "inline" });
+        hostContext = { ...hostContext, ...(result?.hostContext || {}), displayMode: result?.displayMode || "inline" };
       } catch {
-        try { await window.openai?.requestDisplayMode?.({ mode: "inline" }); } catch { /* Host may keep fullscreen. */ }
+        try {
+          const result = await window.openai?.requestDisplayMode?.({ mode: "inline" });
+          hostContext = { ...hostContext, ...(result?.hostContext || {}), displayMode: result?.displayMode || "inline" };
+        } catch { /* Host may keep fullscreen. */ }
       }
     }
     render();
@@ -635,11 +645,25 @@ async function openExternalUrl(url) {
 }
 
 async function exportCsv() {
-  if (reportState?.exportUrl) {
-    await openExternalUrl(reportState.exportUrl);
-    return;
+  const previousState = reportState;
+  loading = true;
+  render();
+  try {
+    const next = await invokeReportTool(reportArguments());
+    if (!next) throw new Error("The report tool returned no report state.");
+    if (next.status === "ready") reportState = next;
+    if (next.exportUrl) {
+      await openExternalUrl(next.exportUrl);
+    } else {
+      exportCsvFallback();
+    }
+  } catch {
+    reportState = previousState;
+    exportCsvFallback();
+  } finally {
+    loading = false;
+    render();
   }
-  exportCsvFallback();
 }
 
 async function openAuthorization() {
