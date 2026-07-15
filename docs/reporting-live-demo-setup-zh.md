@@ -6,7 +6,8 @@
 
 - 两个明确隔离的入口：`get_ads_report` 只取真实数据，`get_ads_report_demo` 只用于无 OAuth 的 UI 测试
 - 一个数据协议：`ReportState`
-- 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v12.html`，并保留旧版本资源别名用于宿主缓存兼容
+- 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v13.html`，并保留 `v12` 至 `v1` 旧版本资源别名用于宿主缓存兼容
+- 三个只读决策卡片 Demo：Creative Performance、Campaign Launch Review、Campaign Update Review；均使用明确标注的固定示例数据，不执行 TikTok 写操作
 - ChatGPT 入口：`/mcp/chatgpt`
 - Claude 入口：`/mcp/claude`
 - Progressive MCP：保留现有建广告流程
@@ -37,7 +38,7 @@ ChatGPT custom MCP apps 当前适用于 Business、Enterprise 和 Edu 的 ChatGP
 5. Description 填 `Generate interactive TikTok Ads performance reports from the TikTok Ads Flat MCP.`
 6. MCP server URL 填 `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`。
 7. App authentication 选择无认证；TikTok advertiser 授权由 `get_ads_report` 的 live flow 单独发起。
-8. 点击 `Scan Tools`，确认工具列表包含 `get_ads_report` 和 `get_ads_report_demo`，然后点击 `Create`。
+8. 点击 `Scan Tools`，确认工具列表包含 `get_ads_report`、`get_ads_report_demo`、`get_creative_performance_demo`、`review_campaign_launch_demo` 和 `review_campaign_update_demo`，然后点击 `Create`。
 9. 新 app 会出现在 `Settings > Apps > Enabled Apps`，并带有 `Dev` 标签；在新 chat 的 tools menu 中选择它进行测试。
 
 官方说明：<https://help.openai.com/en/articles/12584461>

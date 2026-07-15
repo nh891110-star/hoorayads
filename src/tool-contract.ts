@@ -329,6 +329,166 @@ export const getAdsReportOutput = {
   reportState: z.record(z.any())
 };
 
+export const getCreativePerformanceDemoInput = {
+  campaignName: z.string().min(1).optional()
+};
+
+export const reviewCampaignLaunchDemoInput = {
+  campaignName: z.string().min(1).optional(),
+  dailyBudget: z.number().positive().optional()
+};
+
+export const reviewCampaignUpdateDemoInput = {
+  campaignName: z.string().min(1).optional(),
+  currentBudget: z.number().positive().optional(),
+  proposedBudget: z.number().positive().optional()
+};
+
+const decisionDemoProvenance = z
+  .object({
+    sourceKind: z.literal("demo_fixture"),
+    mutationOccurred: z.literal(false),
+    capabilityReferenceTools: z.array(z.string())
+  })
+  .passthrough();
+
+const decisionDemoAccount = z.object({
+  name: z.string(),
+  id: z.string(),
+  currency: z.string(),
+  timezone: z.string()
+});
+
+const decisionDemoBase = {
+  schemaVersion: z.literal("decision-card-v1"),
+  cardInstanceId: z.string().min(1),
+  mode: z.literal("demo"),
+  generatedAt: z.string(),
+  provenance: decisionDemoProvenance,
+  account: decisionDemoAccount
+};
+
+const creativePerformanceDemoState = z.object({
+  ...decisionDemoBase,
+  kind: z.literal("creative_performance"),
+  campaign: z.object({ name: z.string(), id: z.string(), objective: z.string() }),
+  period: z.object({ startDate: z.string(), endDate: z.string(), label: z.string() }),
+  dataThrough: z.string(),
+  latencyNote: z.string(),
+  comparisonNote: z.string(),
+  creatives: z.array(
+    z.object({
+      key: z.string(),
+      sourceKind: z.literal("demo_fixture"),
+      name: z.string(),
+      materialId: z.string(),
+      videoId: z.string(),
+      adId: z.string(),
+      source: z.string(),
+      spend: z.number(),
+      impressions: z.number(),
+      conversions: z.number(),
+      costPerConversion: z.number(),
+      clicks: z.number(),
+      ctr: z.number(),
+      cvr: z.number(),
+      durationSeconds: z.number(),
+      retention: z.array(z.number()),
+      retentionSourceKind: z.literal("sampled_demo_curve"),
+      fatigue: z.object({
+        sourceKind: z.literal("demo_normalization"),
+        status: z.enum(["no_signal_returned", "detected", "unavailable"]),
+        label: z.string(),
+        title: z.string(),
+        detail: z.string()
+      }),
+      previewUrl: z.string().url().nullable()
+    })
+  )
+});
+
+const campaignLaunchReviewDemoState = z.object({
+  ...decisionDemoBase,
+  kind: z.literal("campaign_launch_review"),
+  campaign: z.object({
+    name: z.string(),
+    draftId: z.string(),
+    objective: z.string(),
+    optimizationEvent: z.string(),
+    dailyBudget: z.number(),
+    budgetMode: z.string(),
+    schedule: z.string(),
+    startTime: z.string()
+  }),
+  objectCounts: z.object({ campaigns: z.number(), adgroups: z.number(), ads: z.number() }),
+  exposure: z.object({ amount: z.number(), days: z.number(), endDate: z.string(), note: z.string() }),
+  sections: z.array(
+    z.object({
+      title: z.string(),
+      summary: z.string(),
+      items: z.array(z.tuple([z.string(), z.string()]))
+    })
+  ),
+  preflight: z.array(z.object({ title: z.string(), detail: z.string(), source: z.string() })),
+  executionNote: z.string(),
+  demoReceipt: z.object({
+    receiptMode: z.literal("simulation"),
+    mutationOccurred: z.literal(false),
+    platformRequestId: z.null(),
+    campaignId: z.string(),
+    adgroupCount: z.number(),
+    adCount: z.number()
+  })
+});
+
+const campaignUpdateReviewDemoState = z.object({
+  ...decisionDemoBase,
+  kind: z.literal("campaign_update_review"),
+  campaign: z.object({
+    name: z.string(),
+    id: z.string(),
+    status: z.string(),
+    endDate: z.string().nullable()
+  }),
+  change: z.object({
+    field: z.string(),
+    currentValue: z.number(),
+    proposedValue: z.number(),
+    difference: z.number(),
+    differencePercent: z.number()
+  }),
+  checks: z.object({
+    currentSpend: z.number(),
+    currentSpendSource: z.literal("demo_fixture"),
+    minimumBudget: z.number(),
+    minimumBudgetSource: z.literal("tiktok_tool_contract_calculation"),
+    minimumBudgetFormula: z.string(),
+    proposedBudget: z.number(),
+    passesMinimum: z.boolean(),
+    checkResultSource: z.literal("local_calculation"),
+    submittedFields: z.array(z.string())
+  }),
+  executionNote: z.string(),
+  demoReceipt: z.object({
+    receiptMode: z.literal("simulation"),
+    mutationOccurred: z.literal(false),
+    platformRequestId: z.null(),
+    verificationSource: z.literal("demo_fixture"),
+    verifiedBudget: z.number(),
+    verifiedAt: z.string()
+  })
+});
+
+const decisionCardDemoState = z.discriminatedUnion("kind", [
+  creativePerformanceDemoState,
+  campaignLaunchReviewDemoState,
+  campaignUpdateReviewDemoState
+]);
+
+export const decisionCardDemoOutput = {
+  decisionState: decisionCardDemoState
+};
+
 export type CapabilityMapping = {
   productTool: string;
   purpose: string;

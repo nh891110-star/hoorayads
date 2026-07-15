@@ -27,6 +27,7 @@ import {
   generateVideoOutput,
   getAdsReportInput,
   getAdsReportOutput,
+  getCreativePerformanceDemoInput,
   getAdAccountsInput,
   getAdAccountsOutput,
   getVideoStatusInput,
@@ -41,6 +42,8 @@ import {
   publishCampaignOutput,
   renderTikTokAdsWorkspaceInput,
   renderTikTokAdsWorkspaceOutput,
+  reviewCampaignLaunchDemoInput,
+  reviewCampaignUpdateDemoInput,
   overrideProductDetailsInput,
   overrideProductDetailsOutput,
   scrapeProductInput,
@@ -54,7 +57,8 @@ import {
   verifyOrConnectTikTokIdentityInput,
   verifyOrConnectTikTokIdentityOutput,
   verifyPaymentMethodInput,
-  verifyPaymentMethodOutput
+  verifyPaymentMethodOutput,
+  decisionCardDemoOutput
 } from "./tool-contract.js";
 import {
   accountAuthorizationResult,
@@ -90,6 +94,11 @@ import { getTikTokAdsReport } from "./reporting.js";
 import type { GetAdsReportInput, ReportState } from "./reporting.js";
 import { createDemoTikTokAdsReport } from "./reporting-demo.js";
 import { createReportExport } from "./report-export.js";
+import {
+  createCampaignLaunchReviewDemo,
+  createCampaignUpdateReviewDemo,
+  createCreativePerformanceDemo
+} from "./decision-demo.js";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
@@ -97,8 +106,9 @@ const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget.js"), "utf8");
 const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
-const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v12.html";
+const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v13.html";
 const LEGACY_REPORT_WIDGET_URIS = [
+  "ui://widget/tiktok-ads-report-v12.html",
   "ui://widget/tiktok-ads-report-v11.html",
   "ui://widget/tiktok-ads-report-v10.html",
   "ui://widget/tiktok-ads-report-v9.html",
@@ -126,7 +136,7 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || process.env.HOORAY_PUBLI
 const WIDGET_DESCRIPTION =
   "Display-only TikTok Ads workspace for product intake, creative review, campaign drafting, publish, and reporting. The user controls each step through chat.";
 const REPORT_WIDGET_DESCRIPTION =
-  "Interactive TikTok Ads performance report with a compact cross-host summary and fullscreen filters, metric-specific trends, TikTok diagnosis, breakdown table, refresh, and CSV export.";
+  "Interactive TikTok Ads performance reporting and decision cards for verified performance, creative evidence, launch review, and campaign update review.";
 export type HostSurface = "chatgpt" | "claude" | "generic";
 
 function computeClaudeAppDomain(mcpServerUrl: string) {
@@ -913,10 +923,10 @@ export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
   };
 
   const server = new McpServer(
-    { name: "tiktok-ads-agent-poc", version: "0.3.0" },
+    { name: "tiktok-ads-agent-poc", version: "0.4.0" },
     {
       instructions:
-        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review as a chat-driven workflow. The rendered Hooray TikTok Ads workspace is display-only: do not ask the user to click buttons or edit fields inside the card. If the user provides a product URL, call open_tiktok_ads_workspace with productUrl so the first visible card is Confirm this product; do not show a Start card. If the user provides a store URL, call open_tiktok_ads_workspace with storeUrl so the first visible card is Pick a product; treat Pick product as a substep inside Product, not a separate main launch step. When showing a card, write exactly one short sentence before the card that explains what the card shows and what the user can reply in chat to do next, such as 'reply continue', 'use option A', 'pick product 2', 'change the title to...', or 'approve preview'. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. Wait for explicit chat confirmation for the exact current step before moving forward. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. When the user confirms in chat, call the next MCP tool with userAction:'chat_confirmed'. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview. When the user asks to show, generate, refresh, compare, or export a TikTok Ads performance report, call get_ads_report directly. Default to live data, the last 7 complete days, campaign level, and previous-period comparison unless the user specifies otherwise. Call get_ads_report_demo only when the user explicitly asks for demo, sample, preview, or UI test data, and never present demo output as live TikTok data. Do not call render_tiktok_ads_workspace after either report tool because the reporting tools render their own MCP App resource."
+        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review as a chat-driven workflow. The rendered Hooray TikTok Ads workspace is display-only: do not ask the user to click buttons or edit fields inside the card. If the user provides a product URL, call open_tiktok_ads_workspace with productUrl so the first visible card is Confirm this product; do not show a Start card. If the user provides a store URL, call open_tiktok_ads_workspace with storeUrl so the first visible card is Pick a product; treat Pick product as a substep inside Product, not a separate main launch step. When showing a card, write exactly one short sentence before the card that explains what the card shows and what the user can reply in chat to do next, such as 'reply continue', 'use option A', 'pick product 2', 'change the title to...', or 'approve preview'. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. Wait for explicit chat confirmation for the exact current step before moving forward. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. When the user confirms in chat, call the next MCP tool with userAction:'chat_confirmed'. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview. When the user asks to show, generate, refresh, compare, or export a TikTok Ads performance report, call get_ads_report directly. Default to live data, the last 7 complete days, campaign level, and previous-period comparison unless the user specifies otherwise. Call get_ads_report_demo only when the user explicitly asks for demo, sample, preview, or UI test data, and never present demo output as live TikTok data. When OAuth is unavailable and the user explicitly asks to preview creative performance, call get_creative_performance_demo. For a demo pre-launch approval card, call review_campaign_launch_demo. For a demo campaign budget-change card, call review_campaign_update_demo. These three tools return deterministic demo evidence and never mutate TikTok Ads. Do not call render_tiktok_ads_workspace after any report or decision-card tool because each renders its own MCP App resource."
     }
   );
 
@@ -981,7 +991,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     );
   };
 
-  registerReportWidgetResource("tiktok-ads-report-v12", REPORT_WIDGET_URI);
+  registerReportWidgetResource("tiktok-ads-report-v13", REPORT_WIDGET_URI);
   LEGACY_REPORT_WIDGET_URIS.forEach((uri, index) => {
     registerReportWidgetResource(`tiktok-ads-report-legacy-${index + 1}`, uri);
   });
@@ -1074,6 +1084,117 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
           ...RESULT_REPORT_META,
           dataMode: "demo",
           reportMcpSurface: "local-demo"
+        }
+      };
+    }
+  );
+
+  registerAppTool(
+    server,
+    "get_creative_performance_demo",
+    {
+      title: "Preview creative performance",
+      description:
+        "Render a deterministic TikTok creative-performance evidence card when the user explicitly asks for a demo, sample, preview, or UI test and TikTok OAuth is unavailable. The card compares video-level spend, impressions, conversions, cost per conversion, clicks, CTR, CVR, a sampled retention curve, asset metadata, and three product-normalized fatigue display states: detected, no signal returned, or unavailable. These states are a demo normalization, not an official TikTok enum. The card contains no AI analysis or recommendation, does not call TikTok APIs, and must never be presented as live account data.",
+      inputSchema: getCreativePerformanceDemoInput,
+      outputSchema: decisionCardDemoOutput,
+      _meta: TOOL_REPORT_META,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false,
+        idempotentHint: true
+      }
+    },
+    async (input) => {
+      const decisionState = createCreativePerformanceDemo(input);
+      return {
+        structuredContent: { decisionState },
+        content: [
+          {
+            type: "text",
+            text: "Show the interactive TikTok creative performance demo card. This is deterministic demo data, not live TikTok Ads data."
+          }
+        ],
+        _meta: {
+          ...RESULT_REPORT_META,
+          dataMode: "demo",
+          experienceType: "creative_performance",
+          capabilityReferenceTools: ["creative_report_get", "report_video_performance_get", "creative_fatigue_get", "file_video_ad_info_get"]
+        }
+      };
+    }
+  );
+
+  registerAppTool(
+    server,
+    "review_campaign_launch_demo",
+    {
+      title: "Preview campaign launch review",
+      description:
+        "Render a deterministic pre-launch campaign review card when the user explicitly asks for a demo, sample, preview, or UI test and TikTok OAuth is unavailable. It shows the exact campaign, delivery, audience, measurement, creative, budget-exposure, and local preflight values that a user should review before campaign creation. The confirmation interaction produces a clearly labeled demo receipt only; it does not call TikTok APIs or create any campaign.",
+      inputSchema: reviewCampaignLaunchDemoInput,
+      outputSchema: decisionCardDemoOutput,
+      _meta: TOOL_REPORT_META,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false,
+        idempotentHint: true
+      }
+    },
+    async (input) => {
+      const decisionState = createCampaignLaunchReviewDemo(input);
+      return {
+        structuredContent: { decisionState },
+        content: [
+          {
+            type: "text",
+            text: "Show the interactive campaign launch review demo card. Confirmation is simulated and does not create TikTok Ads objects."
+          }
+        ],
+        _meta: {
+          ...RESULT_REPORT_META,
+          dataMode: "demo",
+          experienceType: "campaign_launch_review",
+          plannedLiveTools: ["campaign_create", "adgroup_create", "ad_create"]
+        }
+      };
+    }
+  );
+
+  registerAppTool(
+    server,
+    "review_campaign_update_demo",
+    {
+      title: "Preview campaign update review",
+      description:
+        "Render a deterministic campaign budget-update review card when the user explicitly asks for a demo, sample, preview, or UI test and TikTok OAuth is unavailable. It shows the current and proposed budget, exact delta, demo current spend, the documented campaign_update 105%-of-current-spend rule as a local calculation, submitted-field scope, and a simulated read-back receipt pattern. The confirmation interaction produces a clearly labeled demo receipt only; it does not call campaign_update or change account data.",
+      inputSchema: reviewCampaignUpdateDemoInput,
+      outputSchema: decisionCardDemoOutput,
+      _meta: TOOL_REPORT_META,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false,
+        idempotentHint: true
+      }
+    },
+    async (input) => {
+      const decisionState = createCampaignUpdateReviewDemo(input);
+      return {
+        structuredContent: { decisionState },
+        content: [
+          {
+            type: "text",
+            text: "Show the interactive campaign budget update review demo card. Confirmation is simulated and does not change TikTok Ads data."
+          }
+        ],
+        _meta: {
+          ...RESULT_REPORT_META,
+          dataMode: "demo",
+          experienceType: "campaign_update_review",
+          plannedLiveTools: ["campaign_get", "report_integrated_get", "campaign_update", "campaign_get"]
         }
       };
     }

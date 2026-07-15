@@ -11,6 +11,7 @@
     "preview": "python3 -m http.server 4173 -d web",
     "qa:reporting-api-contract": "node --import tsx scripts/qa-reporting-api-contract.mjs",
     "qa:report-export": "node --import tsx scripts/qa-report-export.mjs",
+    "qa:decision-cards": "node scripts/qa-decision-cards.mjs",
     "qa:reporting-widget": "node scripts/qa-reporting-widget.mjs",
     "start": "node --import tsx src/http-server.ts"
   },

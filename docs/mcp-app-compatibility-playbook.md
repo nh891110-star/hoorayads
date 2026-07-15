@@ -21,7 +21,7 @@ ChatGPT can cache an older tool descriptor after a widget URI is versioned. If t
 - Serve the current HTML and `text/html;profile=mcp-app` MIME type from every alias.
 - Do not write QA that requires old URIs to disappear. QA should require them to remain readable and byte-equivalent to the current template.
 
-The reporting widget currently uses `v12` and preserves `v11` through `v1` as legacy aliases.
+The reporting widget currently uses `v13` and preserves `v12` through `v1` as legacy aliases.
 
 ## Stale widget HTML after a release
 
@@ -40,7 +40,7 @@ Both hosts can preserve a previously loaded widget template independently from t
 - ChatGPT: start a new conversation, re-select the app from `Add files > More`, and then call the reporting tool again.
 - Claude: open `Settings > Connectors`, disconnect and reconnect the connector, start a new conversation, and approve the tool if prompted.
 - Preserve legacy resource aliases because a refreshed host may still request a previously published URI.
-- Expand the rendered card and assert that a newly shipped control exists in the expected order. For reporting `v12`, `Advertiser Account` must be a searchable combobox before `Level`, `TIKTOK DIAGNOSIS` must replace `WHAT CHANGED`, and the breakdown columns must change with Campaign, Ad group, and Ad.
+- Expand the rendered card and assert that a newly shipped control exists in the expected order. For reporting `v13`, `Advertiser Account` must be a searchable combobox before `Level`, `TIKTOK DIAGNOSIS` must replace `WHAT CHANGED`, and the breakdown columns must change with Campaign, Ad group, and Ad.
 - Do not treat updated text data, a changed title, or a successful tool response as proof that the widget HTML refreshed.
 
 ## Claude `mcp_session_terminated`
@@ -74,16 +74,18 @@ Before deploying a widget or transport change:
 3. Read the current and every legacy resource URI.
 4. Call `get_ads_report` and validate KPIs, trend points, rows, and fallback text.
 5. Call `get_ads_report_demo` without OAuth and validate all three report levels and its explicit demo disclosure.
-6. Mount the returned resource in a real iframe and assert there are no page errors or failed requests.
-7. Test a new ChatGPT conversation in the signed-in product UI after re-selecting the app.
-8. Test a new Claude conversation after reconnecting the connector and explicitly enabling it.
-9. Treat host notifications and browser errors as separate evidence from the model-visible tool result.
-10. Expand each real-host card and verify the expected control names and order, not only the returned data.
+6. Call each decision-card demo tool, validate its discriminated output contract, and confirm that no state claims a live mutation.
+7. Mount the returned resource in a real iframe and assert there are no page errors or failed requests.
+8. Test a new ChatGPT conversation in the signed-in product UI after re-selecting the app.
+9. Test a new Claude conversation after reconnecting the connector and explicitly enabling it.
+10. Treat host notifications and browser errors as separate evidence from the model-visible tool result.
+11. Expand each real-host card and verify the expected control names and order, not only the returned data.
 
 Run the automated report checks with:
 
 ```bash
 pnpm run check
 MCP_ENDPOINT=https://<host>/mcp/chatgpt pnpm run qa:reporting-widget
+MCP_ENDPOINT=https://<host>/mcp/chatgpt pnpm run qa:decision-cards
 MCP_ENDPOINT=https://<host>/mcp/claude pnpm run qa:reporting-widget
 ```

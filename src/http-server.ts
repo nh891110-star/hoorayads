@@ -13,6 +13,11 @@ import type { HostSurface } from "./server.js";
 import { getTikTokConfigSummary } from "./config.js";
 import { getTikTokMcpAuthSummary, saveTikTokMcpAuthorizationCode } from "./tiktok-mcp.js";
 import { getReportExport } from "./report-export.js";
+import {
+  createCampaignLaunchReviewDemo,
+  createCampaignUpdateReviewDemo,
+  createCreativePerformanceDemo
+} from "./decision-demo.js";
 
 const port = process.env.PORT
   ? Number.parseInt(process.env.PORT, 10)
@@ -197,7 +202,16 @@ const mcpEndpoints = ["/mcp", "/mcp-v2", "/mcp/chatgpt", "/mcp/claude"];
 app.post(mcpEndpoints, handlePost);
 app.get(mcpEndpoints, handleGet);
 app.delete(mcpEndpoints, handleDelete);
-app.get("/report-preview", (_req: Request, res: Response) => {
+app.get("/report-preview", (req: Request, res: Response) => {
+  const preview = typeof req.query.card === "string" ? req.query.card : "";
+  const decisionState = preview === "creative"
+    ? createCreativePerformanceDemo()
+    : preview === "launch"
+      ? createCampaignLaunchReviewDemo()
+      : preview === "update"
+        ? createCampaignUpdateReviewDemo()
+        : null;
+  const serializedDecisionState = JSON.stringify(decisionState).replaceAll("<", "\\u003c");
   res.type("html").send(`
     <!doctype html>
     <html lang="en">
@@ -209,6 +223,7 @@ app.get("/report-preview", (_req: Request, res: Response) => {
       </head>
       <body>
         <div id="report-root"></div>
+        <script>window.__DECISION_PREVIEW_STATE__ = ${serializedDecisionState};</script>
         <script type="module">${reportingWidgetJs}</script>
       </body>
     </html>

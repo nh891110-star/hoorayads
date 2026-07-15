@@ -10,8 +10,9 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { chromium } from "playwright";
 
-const REPORT_URI = "ui://widget/tiktok-ads-report-v12.html";
+const REPORT_URI = "ui://widget/tiktok-ads-report-v13.html";
 const LEGACY_REPORT_URIS = [
+  "ui://widget/tiktok-ads-report-v12.html",
   "ui://widget/tiktok-ads-report-v11.html",
   "ui://widget/tiktok-ads-report-v10.html",
   "ui://widget/tiktok-ads-report-v9.html",

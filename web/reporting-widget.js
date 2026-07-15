@@ -1,8 +1,9 @@
 const root = document.getElementById("report-root") || document.getElementById("app-root");
-const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "1.9.0" };
+const APP_INFO = { name: "Hooray TikTok Ads Reporting", version: "2.0.0" };
 const PROTOCOL_VERSION = "2026-01-26";
 
 let reportState = null;
+let decisionState = null;
 let hostContext = {};
 let initialized = false;
 let initializeRequestId = null;
@@ -13,6 +14,9 @@ let searchQuery = "";
 let trendMetric = "spend";
 let reportRequestVersion = 0;
 let latestInteractiveFilters = null;
+let selectedCreativeKey = null;
+let creativeDetailOpen = false;
+let decisionReceipt = null;
 const pendingRequests = new Map();
 
 function escapeHtml(value) {
@@ -62,14 +66,47 @@ function extractReportState(value) {
   );
 }
 
-function readChatGptState() {
-  const host = window.openai || {};
+function extractDecisionState(value) {
   return (
-    extractReportState(host.toolOutput) ||
-    extractReportState(host.toolResponseMetadata) ||
-    extractReportState(host.widgetState) ||
+    value?.structuredContent?.decisionState ||
+    value?.result?.structuredContent?.decisionState ||
+    value?.mcp_tool_result?.structuredContent?.decisionState ||
+    value?.toolResult?.structuredContent?.decisionState ||
+    value?.decisionState ||
     null
   );
+}
+
+function readChatGptPayload() {
+  const host = window.openai || {};
+  for (const source of [host.toolOutput, host.toolResponseMetadata, host.widgetState]) {
+    const decision = extractDecisionState(source);
+    const report = extractReportState(source);
+    if (decision || report) return { decision, report };
+  }
+  return { decision: null, report: null };
+}
+
+function readDecisionUiState() {
+  return window.openai?.widgetState?.decisionUiState || null;
+}
+
+function persistDecisionUiState() {
+  if (!decisionState?.cardInstanceId) return;
+  const nextWidgetState = {
+    decisionUiState: {
+      cardInstanceId: decisionState.cardInstanceId,
+      selectedCreativeKey,
+      creativeDetailOpen,
+      decisionReceipt
+    }
+  };
+  try {
+    const pending = window.openai?.setWidgetState?.(nextWidgetState);
+    if (pending?.catch) pending.catch(() => {});
+  } catch {
+    // Widget-state persistence is optional in hosts that only implement MCP Apps.
+  }
 }
 
 function postToHost(message) {
@@ -152,6 +189,164 @@ function humanDateRange(filters) {
   const end = new Date(`${filters.endDate}T00:00:00Z`);
   const formatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
   return `${formatter.format(start)} – ${formatter.format(end)}`;
+}
+
+function decisionCurrency(value, maximumFractionDigits = 0) {
+  const currency = decisionState?.account?.currency || "USD";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      maximumFractionDigits
+    }).format(Number(value || 0));
+  } catch {
+    return `${currency} ${Number(value || 0).toFixed(maximumFractionDigits)}`;
+  }
+}
+
+function decisionNumber(value) {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(Number(value || 0));
+}
+
+function renderDecisionHeader(title, subtitle, status) {
+  return `
+    <header class="decision-header">
+      <div class="decision-title"><span class="decision-mark" aria-hidden="true">T</span><div><p class="eyebrow">TIKTOK ADS · DEMO</p><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle)}</p></div></div>
+      <span class="decision-badge">${escapeHtml(status)}</span>
+    </header>`;
+}
+
+function renderDecisionContext(items) {
+  return `<div class="decision-context">${items.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>`;
+}
+
+function fatigueClass(status) {
+  if (status === "detected") return "detected";
+  if (status === "unavailable") return "unavailable";
+  return "clear";
+}
+
+function retentionChart(creative) {
+  const values = creative?.retention || [];
+  if (!values.length) return `<div class="decision-empty">Retention unavailable</div>`;
+  const width = 390;
+  const left = 8;
+  const right = 380;
+  const top = 16;
+  const bottom = 94;
+  const points = values.map((value, index) => {
+    const x = left + (index / Math.max(1, values.length - 1)) * (right - left);
+    const y = top + (1 - Number(value || 0) / 100) * (bottom - top);
+    return { x, y };
+  });
+  const path = points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
+  const end = points.at(-1);
+  const endValue = values.at(-1);
+  return `
+    <svg class="creative-retention" viewBox="0 0 ${width} 118" role="img" aria-label="Video retention from 100 percent to ${escapeHtml(endValue)} percent">
+      <line x1="8" y1="48" x2="380" y2="48"></line><line x1="8" y1="88" x2="380" y2="88"></line>
+      <path d="${path}"></path><circle cx="${end.x.toFixed(1)}" cy="${end.y.toFixed(1)}" r="3.5"></circle>
+      <text x="8" y="110">0 sec · 100%</text><text x="292" y="110">${escapeHtml(creative.durationSeconds)} sec · ${escapeHtml(endValue)}%</text>
+    </svg>`;
+}
+
+function renderCreativePerformanceDecision() {
+  const state = decisionState;
+  const creatives = state?.creatives || [];
+  const selected = creatives.find((creative) => creative.key === selectedCreativeKey) || creatives[0];
+  if (selected && !selectedCreativeKey) selectedCreativeKey = selected.key;
+  return `
+    <main class="decision-shell creative-decision">
+      ${renderDecisionHeader("Creative performance", "Demo layout for TikTok Ads video-level evidence", `Demo · Data through ${state.dataThrough}`)}
+      ${renderDecisionContext([
+        `${state.account.name} · ${state.account.id}`,
+        `${state.campaign.name} · Campaign ${state.campaign.id}`,
+        state.period.label,
+        state.campaign.objective
+      ])}
+      <div class="decision-notice"><strong>Demo data</strong><span>${escapeHtml(state.comparisonNote)}</span></div>
+      <section class="creative-comparison">
+        <div class="decision-section-head"><div><h2>Videos by cost per conversion</h2><p>Select a row to inspect the normalized demo evidence.</p></div><small>${escapeHtml(state.latencyNote)}</small></div>
+        <div class="decision-table-wrap">
+          <table class="decision-table creative-table">
+            <thead><tr><th scope="col">Video</th><th scope="col">Spend</th><th scope="col">Impressions</th><th scope="col">Conversions</th><th scope="col">Cost / conversion</th><th scope="col">Fatigue display state</th></tr></thead>
+            <tbody>${creatives.map((creative) => `
+              <tr class="${creative.key === selected?.key ? "selected" : ""}">
+                <td><button class="creative-select" type="button" data-creative-key="${escapeHtml(creative.key)}" aria-pressed="${creative.key === selected?.key}"><span class="creative-thumb" aria-hidden="true">▶</span><span><strong>${escapeHtml(creative.name)}</strong><small>Material ${escapeHtml(creative.materialId)}</small></span></button></td>
+                <td data-label="Spend">${escapeHtml(decisionCurrency(creative.spend))}</td>
+                <td data-label="Impressions">${escapeHtml(decisionNumber(creative.impressions))}</td>
+                <td data-label="Conversions">${escapeHtml(decisionNumber(creative.conversions))}</td>
+                <td data-label="Cost / conversion">${escapeHtml(decisionCurrency(creative.costPerConversion, 2))}</td>
+                <td data-label="Fatigue display state"><span class="fatigue-pill ${fatigueClass(creative.fatigue?.status)}">${escapeHtml(creative.fatigue?.label)}</span></td>
+              </tr>`).join("")}</tbody>
+          </table>
+        </div>
+      </section>
+      ${selected ? `<details class="creative-detail-wrap" ${creativeDetailOpen ? "open" : ""}><summary>Selected video evidence · ${escapeHtml(selected.name)}</summary><section class="creative-detail" aria-live="polite">
+        <div class="creative-asset">
+          ${selected.previewUrl ? `<img class="creative-preview" src="${escapeHtml(selected.previewUrl)}" alt="${escapeHtml(selected.name)} preview">` : `<div class="creative-preview-unavailable"><span aria-hidden="true">▧</span><strong>Preview unavailable</strong><small>Performance data is still available.</small></div>`}
+          <dl class="decision-meta"><div><dt>Video</dt><dd>${escapeHtml(selected.videoId)}</dd></div><div><dt>Ad</dt><dd>${escapeHtml(selected.adId)}</dd></div><div><dt>Source</dt><dd>${escapeHtml(selected.source)}</dd></div></dl>
+        </div>
+        <div class="creative-evidence">
+          <div class="decision-metric-strip"><div><span>Clicks</span><strong>${escapeHtml(decisionNumber(selected.clicks))}</strong></div><div><span>CTR</span><strong>${escapeHtml(Number(selected.ctr).toFixed(2))}%</strong></div><div><span>CVR</span><strong>${escapeHtml(Number(selected.cvr).toFixed(2))}%</strong></div><div><span>Video length</span><strong>${escapeHtml(selected.durationSeconds)} sec</strong></div></div>
+          <div class="creative-evidence-block"><div class="decision-section-head compact"><div><h2>Video retention</h2><p>Sampled demo curve · 10 normalized points</p></div></div>${retentionChart(selected)}</div>
+          <div class="creative-evidence-block fatigue-detail"><div><h2>${escapeHtml(selected.fatigue?.title)}</h2><p>${escapeHtml(selected.fatigue?.detail)}</p></div><span class="fatigue-pill ${fatigueClass(selected.fatigue?.status)}">Demo normalization</span></div>
+        </div>
+      </section></details>` : ""}
+      <footer class="decision-footer"><span>Preview appears only when TikTok returns an active asset URL.</span><span>No model-generated analysis is included.</span></footer>
+    </main>`;
+}
+
+function renderLaunchReviewDecision() {
+  const state = decisionState;
+  const campaign = state.campaign;
+  const counts = state.objectCounts;
+  const receiptVisible = decisionReceipt === "launch";
+  return `
+    <main class="decision-shell launch-decision">
+      ${renderDecisionHeader("Review campaign launch", `${campaign.name} · Draft ${campaign.draftId}`, receiptVisible ? "Demo · Simulation complete" : "Demo · Not submitted")}
+      ${renderDecisionContext([
+        `${state.account.name} · ${state.account.id}`,
+        `${state.account.currency} · ${state.account.timezone}`,
+        "Demo snapshot · Jul 15, 8:42 PM PT"
+      ])}
+      <section class="launch-scope"><div><h2>This action creates ${counts.campaigns} campaign, ${counts.adgroups} ad groups, and ${counts.ads} ads</h2><p>Live execution would use sequential TikTok API calls. This card only simulates that confirmation.</p></div><div class="launch-exposure"><span>Maximum planned exposure</span><strong>${escapeHtml(decisionCurrency(state.exposure.amount))} through ${escapeHtml(state.exposure.endDate)}</strong><small>Based on ${escapeHtml(decisionCurrency(campaign.dailyBudget))}/day for ${escapeHtml(state.exposure.days)} days. ${escapeHtml(state.exposure.note)}</small></div></section>
+      <section class="launch-essentials"><div><span>Objective</span><strong>${escapeHtml(campaign.objective)}</strong></div><div><span>Optimization event</span><strong>${escapeHtml(campaign.optimizationEvent)}</strong></div><div><span>Campaign budget</span><strong>${escapeHtml(decisionCurrency(campaign.dailyBudget))}/day</strong></div><div><span>Schedule</span><strong>${escapeHtml(campaign.schedule)}</strong></div></section>
+      <section class="launch-details">${state.sections.map((section) => `<details><summary><span>${escapeHtml(section.title)}</span><small>${escapeHtml(section.summary)}</small></summary><div class="launch-setting-grid">${section.items.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("")}</div></details>`).join("")}</section>
+      <details class="launch-preflight"><summary><span>Illustrative preflight</span><small>${escapeHtml(state.preflight.length)} demo checks · not TikTok API results</small></summary><div class="preflight-grid">${state.preflight.map((check) => `<article><span class="check-mark" aria-hidden="true">✓</span><div><strong>${escapeHtml(check.title)}</strong><p>${escapeHtml(check.detail)}</p><small>${escapeHtml(check.source)}</small></div></article>`).join("")}</div></details>
+      <section class="decision-warning"><strong>No live campaign is created by this demo.</strong><p>${escapeHtml(state.executionNote)}</p></section>
+      ${receiptVisible ? `<section class="decision-receipt" id="launch-demo-receipt" tabindex="-1" aria-live="polite"><span class="receipt-mark" aria-hidden="true">✓</span><div><strong>Submission simulation complete</strong><p>No TikTok API mutation occurred.</p></div><small>Fixture ${escapeHtml(state.demoReceipt.campaignId)}<br>${escapeHtml(state.demoReceipt.adgroupCount)} Ad Groups · ${escapeHtml(state.demoReceipt.adCount)} Ads</small></section>` : `<section class="decision-confirm"><label><input id="launch-demo-ack" type="checkbox">I reviewed ${escapeHtml(counts.campaigns)} campaign, ${escapeHtml(counts.adgroups)} ad groups, ${escapeHtml(counts.ads)} ads, and the ${escapeHtml(decisionCurrency(state.exposure.amount))} maximum planned exposure.</label><div><span>To change a setting, reply in chat before confirming.</span><button class="decision-primary" id="launch-demo-confirm" type="button" disabled>Simulate submission at ${escapeHtml(decisionCurrency(campaign.dailyBudget))}/day</button></div></section>`}
+    </main>`;
+}
+
+function renderUpdateReviewDecision() {
+  const state = decisionState;
+  const change = state.change;
+  const checks = state.checks;
+  const receiptVisible = decisionReceipt === "update";
+  const differenceSign = Number(change.difference) >= 0 ? "+" : "−";
+  return `
+    <main class="decision-shell update-decision">
+      ${renderDecisionHeader("Review campaign changes", `${state.campaign.name} · Campaign ${state.campaign.id}`, receiptVisible ? "Demo · Simulation complete" : "Demo · Awaiting confirmation")}
+      ${renderDecisionContext([
+        `${state.account.name} · ${state.account.id}`,
+        state.campaign.status,
+        `${state.account.currency} · ${state.account.timezone}`,
+        "Demo settings snapshot · Jul 15, 8:44 PM PT"
+      ])}
+      <section class="update-pending"><span aria-hidden="true">◇</span><div><strong>No changes have been made yet</strong><p>This review is bound to the current campaign value shown below.</p></div></section>
+      <section class="update-diff"><div class="update-values"><span>${escapeHtml(change.field)}</span><div><div><small>Current</small><strong>${escapeHtml(decisionCurrency(change.currentValue))}/day</strong></div><b aria-hidden="true">→</b><div><small>Proposed</small><strong>${escapeHtml(decisionCurrency(change.proposedValue))}/day</strong></div></div></div><div class="update-delta"><span>Difference</span><strong>${differenceSign}${escapeHtml(decisionCurrency(Math.abs(change.difference)))} / day</strong><small>${differenceSign}${escapeHtml(Math.abs(Number(change.differencePercent)).toFixed(1))}%</small></div></section>
+      <section class="update-checks"><div class="decision-section-head compact"><div><h2>Budget update checks</h2><p>The calculation follows the documented campaign_update contract; only budget is in scope.</p></div></div><div class="check-strip"><div><span>Current campaign spend</span><strong>${escapeHtml(decisionCurrency(checks.currentSpend, 2))}</strong><small>Demo fixture</small></div><div><span>Required minimum</span><strong>${escapeHtml(decisionCurrency(checks.minimumBudget, 2))}</strong><small>${escapeHtml(checks.minimumBudgetFormula)} · TikTok tool contract calculation</small></div><div><span>Proposed budget</span><strong>${escapeHtml(decisionCurrency(checks.proposedBudget, 2))} · ${checks.passesMinimum ? "Demo check passes" : "Demo check blocked"}</strong><small>Calculated locally; write success not guaranteed</small></div></div><div class="scope-check"><span class="check-mark" aria-hidden="true">✓</span><div><strong>No other campaign fields will be sent</strong><p>Submitted fields: ${checks.submittedFields.map(escapeHtml).join(", ")}.</p></div></div></section>
+      <section class="decision-warning"><strong>${state.campaign.endDate ? `Campaign ends ${escapeHtml(state.campaign.endDate)}.` : "This campaign has no end date."}</strong><p>${escapeHtml(state.executionNote)}</p></section>
+      ${receiptVisible ? `<section class="decision-receipt" id="update-demo-receipt" tabindex="-1" aria-live="polite"><span class="receipt-mark" aria-hidden="true">✓</span><div><strong>Budget-update simulation complete</strong><p>No TikTok API mutation occurred.</p></div><small><strong>${escapeHtml(decisionCurrency(state.demoReceipt.verifiedBudget))}/day</strong><br>Fixture read-back ${escapeHtml(state.demoReceipt.verifiedAt)}</small></section>` : `<section class="decision-confirm update-confirm"><span>If the current budget changes before confirmation, this review expires.</span><button class="decision-primary" id="update-demo-confirm" type="button" ${checks.passesMinimum ? "" : "disabled"}>Simulate ${escapeHtml(decisionCurrency(change.currentValue))} → ${escapeHtml(decisionCurrency(change.proposedValue))}/day</button></section>`}
+    </main>`;
+}
+
+function renderDecisionCard() {
+  if (decisionState?.kind === "creative_performance") return renderCreativePerformanceDecision();
+  if (decisionState?.kind === "campaign_launch_review") return renderLaunchReviewDecision();
+  if (decisionState?.kind === "campaign_update_review") return renderUpdateReviewDecision();
+  return `<main class="decision-shell decision-unsupported"><h1>Decision card unavailable</h1><p>The returned card type is not supported by this renderer.</p></main>`;
 }
 
 function sparkline(points, key) {
@@ -462,8 +657,13 @@ function isExpanded() {
 
 function render() {
   if (!root) return;
-  root.innerHTML = reportState?.status === "ready" ? renderReady() : renderStatus();
-  bindInteractions();
+  if (decisionState) {
+    root.innerHTML = renderDecisionCard();
+    bindDecisionInteractions();
+  } else {
+    root.innerHTML = reportState?.status === "ready" ? renderReady() : renderStatus();
+    bindInteractions();
+  }
   requestAnimationFrame(notifySize);
 }
 
@@ -502,6 +702,24 @@ function matchesRequestedFilters(state, expected = latestInteractiveFilters) {
 function applyHostReportState(next) {
   if (!next || !matchesRequestedFilters(next)) return false;
   reportState = next;
+  decisionState = null;
+  return true;
+}
+
+function applyHostDecisionState(next) {
+  if (!next?.kind) return false;
+  const isSameDecision = decisionState?.cardInstanceId === next.cardInstanceId;
+  decisionState = next;
+  reportState = null;
+  if (!isSameDecision) {
+    const saved = readDecisionUiState();
+    const savedMatches = saved?.cardInstanceId === next.cardInstanceId;
+    const defaultCreativeKey = next.kind === "creative_performance" ? next.creatives?.[0]?.key || null : null;
+    const savedCreativeExists = next.creatives?.some((creative) => creative.key === saved?.selectedCreativeKey);
+    selectedCreativeKey = savedMatches && savedCreativeExists ? saved.selectedCreativeKey : defaultCreativeKey;
+    creativeDetailOpen = savedMatches ? Boolean(saved.creativeDetailOpen) : false;
+    decisionReceipt = savedMatches ? saved.decisionReceipt || null : null;
+  }
   return true;
 }
 
@@ -698,6 +916,38 @@ function showAccountError(message, accountInput) {
   accountInput?.focus();
 }
 
+function bindDecisionInteractions() {
+  root.querySelectorAll("[data-creative-key]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedCreativeKey = button.getAttribute("data-creative-key");
+      creativeDetailOpen = true;
+      persistDecisionUiState();
+      render();
+      root.querySelector(`[data-creative-key="${selectedCreativeKey || ""}"]`)?.focus();
+    });
+  });
+
+  const launchAcknowledgement = root.querySelector("#launch-demo-ack");
+  const launchConfirm = root.querySelector("#launch-demo-confirm");
+  launchAcknowledgement?.addEventListener("change", () => {
+    launchConfirm.disabled = !launchAcknowledgement.checked;
+  });
+  launchConfirm?.addEventListener("click", () => {
+    if (!launchAcknowledgement?.checked) return;
+    decisionReceipt = "launch";
+    persistDecisionUiState();
+    render();
+    root.querySelector("#launch-demo-receipt")?.focus();
+  });
+
+  root.querySelector("#update-demo-confirm")?.addEventListener("click", () => {
+    decisionReceipt = "update";
+    persistDecisionUiState();
+    render();
+    root.querySelector("#update-demo-receipt")?.focus();
+  });
+}
+
 function bindInteractions() {
   root.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -812,8 +1062,9 @@ window.addEventListener("message", (event) => {
   }
 
   if (message.method === "ui/notifications/tool-result") {
-    const next = extractReportState(message.params);
-    if (applyHostReportState(next)) render();
+    const nextDecision = extractDecisionState(message.params);
+    const nextReport = extractReportState(message.params);
+    if (nextDecision ? applyHostDecisionState(nextDecision) : applyHostReportState(nextReport)) render();
     return;
   }
 
@@ -829,14 +1080,20 @@ window.addEventListener("message", (event) => {
 });
 
 window.addEventListener("openai:set_globals", () => {
-  const next = readChatGptState();
-  if (applyHostReportState(next)) {
+  const payload = readChatGptPayload();
+  const applied = payload.decision
+    ? applyHostDecisionState(payload.decision)
+    : applyHostReportState(payload.report);
+  if (applied) {
     const mode = window.openai?.displayMode;
     if (mode) hostContext = { ...hostContext, displayMode: mode };
     render();
   }
 });
 
-reportState = readChatGptState() || window.__REPORT_PREVIEW_STATE__ || createPreviewState();
+const initialPayload = readChatGptPayload();
+const initialDecision = initialPayload.decision || window.__DECISION_PREVIEW_STATE__ || null;
+if (initialDecision) applyHostDecisionState(initialDecision);
+reportState = decisionState ? null : initialPayload.report || window.__REPORT_PREVIEW_STATE__ || createPreviewState();
 sendInitialize();
 render();
