@@ -69,6 +69,20 @@ h1 { margin: 0; font-size: 26px; line-height: 1.2; letter-spacing: -.02em; }
 .tag-success { color: var(--success); background: var(--success-soft); }
 .tag-error { color: var(--danger); background: var(--danger-soft); }
 
+.demo-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 32px 0;
+  border-radius: 8px;
+  padding: 11px 14px;
+  color: #55555a;
+  background: #f5f5f6;
+  font-size: 13px;
+}
+
+.demo-banner strong { color: #2f2f32; }
+
 .review-grid { display: grid; gap: 0; margin: 0; padding: 22px 32px; }
 
 .review-row {
@@ -210,6 +224,7 @@ input:disabled { color: #98989c; background: #f2f2f3; }
   .actions { width: 100%; }
   .button { flex: 1 1 0; }
   .notice, .receipt { margin-left: 20px; margin-right: 20px; }
+  .demo-banner { align-items: flex-start; flex-direction: column; margin-left: 20px; margin-right: 20px; }
   .edit-form { grid-template-columns: 1fr; padding-left: 20px; padding-right: 20px; }
   .field-wide { grid-column: auto; }
 }

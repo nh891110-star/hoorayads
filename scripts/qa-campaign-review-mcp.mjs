@@ -3,7 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CallToolResultSchema, ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const endpoint = process.env.MCP_ENDPOINT || "http://localhost:3010/mcp/reporting";
-const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v1.html";
+const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v2.html";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

@@ -5,6 +5,8 @@ import type {
   CampaignBudgetMode,
   CampaignCatalogType,
   CampaignObjective,
+  CampaignReviewDemoInput,
+  CampaignReviewDemoOutcome,
   CampaignReviewInput,
   CampaignSalesDestination,
   CampaignSourceField,
@@ -64,9 +66,21 @@ type CampaignProposalRecord = {
   account: AdvertiserAccount;
   versions: Map<number, CampaignProposalVersion>;
   execution: CampaignExecution;
+  simulationOutcome?: CampaignReviewDemoOutcome;
+  simulationReadyAt?: number;
+};
+
+export type CampaignReviewMode = "live" | "demo";
+
+export type CampaignReviewActionTools = {
+  revise: string;
+  status: string;
+  submit: string;
 };
 
 export type CampaignReviewState = {
+  mode: CampaignReviewMode;
+  actionTools: CampaignReviewActionTools;
   proposalId: string;
   version: number;
   status: "proposed" | "outdated" | "creating" | "checking" | "created" | "error" | "outcome_unknown";
@@ -77,6 +91,18 @@ export type CampaignReviewState = {
   createdAt: string;
   isCurrentVersion: boolean;
   execution?: Omit<CampaignExecution, "requestId">;
+};
+
+const LIVE_ACTION_TOOLS: CampaignReviewActionTools = {
+  revise: "revise_smartplus_campaign_review",
+  status: "get_smartplus_campaign_review_status",
+  submit: "create_smartplus_campaign_from_review"
+};
+
+const DEMO_ACTION_TOOLS: CampaignReviewActionTools = {
+  revise: "revise_smartplus_campaign_review_demo",
+  status: "get_smartplus_campaign_review_demo_status",
+  submit: "submit_smartplus_campaign_review_demo"
 };
 
 type AuthAdvertiserResponse = {
@@ -140,7 +166,7 @@ function unique<T>(values: T[]) {
   return [...new Set(values)];
 }
 
-function normalizeCampaignInput(input: CampaignReviewInput, advertiserId: string): NormalizedCampaignReview {
+export function normalizeCampaignInput(input: CampaignReviewInput, advertiserId: string): NormalizedCampaignReview {
   const budgetOptimizeOn = input.budgetOptimizeOn ?? true;
   const budgetMode =
     input.budgetMode ??
@@ -336,7 +362,11 @@ function assertWriteGuard(campaign: NormalizedCampaignReview) {
   }
 }
 
-function stateFor(record: CampaignProposalRecord, requestedVersion = record.currentVersion): CampaignReviewState {
+function stateFor(
+  record: CampaignProposalRecord,
+  requestedVersion = record.currentVersion,
+  mode: CampaignReviewMode = "live"
+): CampaignReviewState {
   const version = record.versions.get(requestedVersion) || record.versions.get(record.currentVersion);
   if (!version) throw new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found.");
   const isCurrentVersion = requestedVersion === record.currentVersion;
@@ -353,6 +383,8 @@ function stateFor(record: CampaignProposalRecord, requestedVersion = record.curr
 
   const { requestId: _requestId, ...safeExecution } = record.execution;
   return {
+    mode,
+    actionTools: mode === "demo" ? DEMO_ACTION_TOOLS : LIVE_ACTION_TOOLS,
     proposalId: record.proposalId,
     version: requestedVersion,
     status,
@@ -372,10 +404,12 @@ function stateFor(record: CampaignProposalRecord, requestedVersion = record.curr
   };
 }
 
-function createErrorState(error: unknown): CampaignReviewState {
+function createErrorState(error: unknown, mode: CampaignReviewMode = "live"): CampaignReviewState {
   const reviewError = error instanceof CampaignReviewError ? error : new CampaignReviewError("CAMPAIGN_REVIEW_ERROR", error instanceof Error ? error.message : "Campaign review failed.");
   const now = new Date().toISOString();
   return {
+    mode,
+    actionTools: mode === "demo" ? DEMO_ACTION_TOOLS : LIVE_ACTION_TOOLS,
     proposalId: "",
     version: 1,
     status: "error",
@@ -414,33 +448,46 @@ function createErrorState(error: unknown): CampaignReviewState {
   };
 }
 
-export function createCampaignReviewStore() {
+export function createCampaignReviewStore(options: { mode?: CampaignReviewMode } = {}) {
+  const mode = options.mode ?? "live";
   const proposals = new Map<string, CampaignProposalRecord>();
 
-  const prepare = async (input: CampaignReviewInput) => {
+  const demoAccount = (input: Pick<CampaignReviewInput, "advertiserId" | "advertiserName">): AdvertiserAccount => ({
+    advertiserId: input.advertiserId || "7481826080479870993",
+    advertiserName: input.advertiserName?.trim() || "Education Coaching0315",
+    country: "US",
+    currency: "USD",
+    status: "STATUS_ENABLE",
+    timezone: "America/Los_Angeles"
+  });
+
+  const prepare = async (input: CampaignReviewInput | CampaignReviewDemoInput) => {
     try {
-      const account = await resolveAdvertiserAccount(input);
+      const account = mode === "demo" ? demoAccount(input) : await resolveAdvertiserAccount(input);
       const campaign = normalizeCampaignInput(input, account.advertiserId);
       const record: CampaignProposalRecord = {
         proposalId: randomUUID(),
         currentVersion: 1,
         account,
         versions: new Map([[1, { campaign, createdAt: new Date().toISOString() }]]),
-        execution: { status: "idle", requestId: numericRequestId() }
+        execution: { status: "idle", requestId: numericRequestId() },
+        ...(mode === "demo"
+          ? { simulationOutcome: (input as CampaignReviewDemoInput).simulationOutcome ?? "SUCCESS" }
+          : {})
       };
       proposals.set(record.proposalId, record);
-      return stateFor(record);
+      return stateFor(record, record.currentVersion, mode);
     } catch (error) {
-      return createErrorState(error);
+      return createErrorState(error, mode);
     }
   };
 
   const revise = (proposalId: string, expectedVersion: number, input: Omit<CampaignReviewInput, "advertiserId" | "advertiserName">) => {
     const record = proposals.get(proposalId);
-    if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."));
-    if (expectedVersion !== record.currentVersion) return stateFor(record, expectedVersion);
+    if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."), mode);
+    if (expectedVersion !== record.currentVersion) return stateFor(record, expectedVersion, mode);
     if (record.execution.status === "creating" || record.execution.status === "checking" || record.execution.status === "created") {
-      return stateFor(record);
+      return stateFor(record, record.currentVersion, mode);
     }
 
     const campaign = normalizeCampaignInput(
@@ -454,12 +501,48 @@ export function createCampaignReviewStore() {
     record.currentVersion = nextVersion;
     record.versions.set(nextVersion, { campaign, createdAt: new Date().toISOString() });
     record.execution = { status: "idle", requestId: numericRequestId() };
-    return stateFor(record);
+    return stateFor(record, record.currentVersion, mode);
+  };
+
+  const completeDemoSubmission = (record: CampaignProposalRecord) => {
+    if (mode !== "demo" || !record.simulationReadyAt || Date.now() < record.simulationReadyAt) return;
+    record.simulationReadyAt = undefined;
+    if (record.simulationOutcome === "SUBMISSION_ERROR") {
+      record.execution = {
+        ...record.execution,
+        status: "failed",
+        errorCode: "DEMO_SUBMISSION_ERROR",
+        errorMessage: "The simulated submission failed. No TikTok Campaign was created."
+      };
+      return;
+    }
+    if (record.simulationOutcome === "OUTCOME_UNKNOWN") {
+      record.execution = {
+        ...record.execution,
+        status: "outcome_unknown",
+        errorCode: "DEMO_OUTCOME_UNKNOWN",
+        errorMessage: "The simulated result could not be confirmed. No TikTok write was attempted."
+      };
+      return;
+    }
+    record.execution = {
+      ...record.execution,
+      status: "created",
+      campaignId: `demo-${record.proposalId.slice(0, 8)}`,
+      createdAt: new Date().toISOString(),
+      verifiedAt: new Date().toISOString(),
+      operationStatus: "ENABLE",
+      secondaryStatus: "DEMO_ONLY",
+      errorCode: undefined,
+      errorMessage: undefined
+    };
   };
 
   const getStatus = async (proposalId: string, expectedVersion: number) => {
     const record = proposals.get(proposalId);
-    if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."));
+    if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."), mode);
+    completeDemoSubmission(record);
+    if (mode === "demo") return stateFor(record, expectedVersion, mode);
     if (expectedVersion === record.currentVersion && record.execution.status === "outcome_unknown") {
       try {
         const created = await reconcile(record, record.execution.campaignId);
@@ -480,7 +563,7 @@ export function createCampaignReviewStore() {
         // Keep outcome_unknown until TikTok can be reconciled without risking a duplicate write.
       }
     }
-    return stateFor(record, expectedVersion);
+    return stateFor(record, expectedVersion, mode);
   };
 
   const reconcile = async (record: CampaignProposalRecord, campaignId?: string) => {
@@ -514,14 +597,14 @@ export function createCampaignReviewStore() {
 
   const create = async (proposalId: string, expectedVersion: number) => {
     const record = proposals.get(proposalId);
-    if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."));
-    if (expectedVersion !== record.currentVersion) return stateFor(record, expectedVersion);
+    if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."), mode);
+    if (expectedVersion !== record.currentVersion) return stateFor(record, expectedVersion, mode);
     if (record.execution.status === "created" || record.execution.status === "creating" || record.execution.status === "checking") {
-      return stateFor(record);
+      return stateFor(record, record.currentVersion, mode);
     }
 
     const version = record.versions.get(record.currentVersion);
-    if (!version) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."));
+    if (!version) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."), mode);
     const errors = validateCampaignReview(version.campaign, record.account);
     if (errors.length > 0) {
       record.execution = {
@@ -530,7 +613,18 @@ export function createCampaignReviewStore() {
         errorCode: "CAMPAIGN_REVIEW_VALIDATION_FAILED",
         errorMessage: errors.join(" ")
       };
-      return stateFor(record);
+      return stateFor(record, record.currentVersion, mode);
+    }
+
+    if (mode === "demo") {
+      record.execution = {
+        ...record.execution,
+        status: "creating",
+        errorCode: undefined,
+        errorMessage: undefined
+      };
+      record.simulationReadyAt = Date.now() + 900;
+      return stateFor(record, record.currentVersion, mode);
     }
 
     try {
@@ -558,7 +652,7 @@ export function createCampaignReviewStore() {
           errorCode: "CAMPAIGN_RECONCILIATION_PENDING",
           errorMessage: "TikTok accepted the create request, but the campaign could not yet be verified. Check status before retrying."
         };
-        return stateFor(record);
+        return stateFor(record, record.currentVersion, mode);
       }
       if (created.operation_status !== "ENABLE") {
         record.execution = {
@@ -570,7 +664,7 @@ export function createCampaignReviewStore() {
           errorCode: "CAMPAIGN_STATUS_MISMATCH",
           errorMessage: "The campaign was created, but TikTok did not return Active status. Review it before taking another action."
         };
-        return stateFor(record);
+        return stateFor(record, record.currentVersion, mode);
       }
 
       record.execution = {
@@ -584,7 +678,7 @@ export function createCampaignReviewStore() {
         errorCode: undefined,
         errorMessage: undefined
       };
-      return stateFor(record);
+      return stateFor(record, record.currentVersion, mode);
     } catch (error) {
       const reviewError = error instanceof CampaignReviewError ? error : new CampaignReviewError("TIKTOK_CAMPAIGN_CREATE_STATUS_UNKNOWN", error instanceof Error ? error.message : "Campaign creation status is unknown.");
       record.execution = {
@@ -597,7 +691,7 @@ export function createCampaignReviewStore() {
             ? reviewError.message
             : "The create request may have reached TikTok, but its result was not returned. The app will check status before allowing another write."
       };
-      return stateFor(record);
+      return stateFor(record, record.currentVersion, mode);
     }
   };
 

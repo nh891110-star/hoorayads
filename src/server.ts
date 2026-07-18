@@ -65,12 +65,14 @@ import {
   createSmartPlusCampaignFromReviewOutput,
   getSmartPlusCampaignReviewStatusInput,
   getSmartPlusCampaignReviewStatusOutput,
+  reviewSmartPlusCampaignDemoInput,
+  reviewSmartPlusCampaignDemoOutput,
   reviewSmartPlusCampaignInput,
   reviewSmartPlusCampaignOutput,
   reviseSmartPlusCampaignReviewInput,
   reviseSmartPlusCampaignReviewOutput
 } from "./campaign-review-contract.js";
-import type { CampaignReviewInput } from "./campaign-review-contract.js";
+import type { CampaignReviewDemoInput, CampaignReviewInput } from "./campaign-review-contract.js";
 import { createCampaignReviewStore } from "./campaign-review.js";
 import type { CampaignReviewState } from "./campaign-review.js";
 import {
@@ -122,7 +124,8 @@ const campaignReviewWidgetJs = readFileSync(join(currentDir, "../web/campaign-re
 const campaignReviewWidgetCss = readFileSync(join(currentDir, "../web/campaign-review-widget.css"), "utf8");
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
 const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v13.html";
-const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v1.html";
+const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v2.html";
+const LEGACY_CAMPAIGN_REVIEW_WIDGET_URIS = ["ui://widget/tiktok-smartplus-campaign-review-v1.html"];
 const LEGACY_REPORT_WIDGET_URIS = [
   "ui://widget/tiktok-ads-report-v12.html",
   "ui://widget/tiktok-ads-report-v11.html",
@@ -154,9 +157,9 @@ const WIDGET_DESCRIPTION =
 const REPORT_WIDGET_DESCRIPTION =
   "Interactive TikTok Ads performance reporting and decision cards for verified performance, creative evidence, launch review, and campaign update review.";
 const CAMPAIGN_REVIEW_WIDGET_DESCRIPTION =
-  "Interactive review and approval card for one TikTok Upgraded Smart+ Campaign. It shows Campaign-level settings only, creates an Active Campaign after explicit confirmation, and never creates Ad Groups, Ads, creatives, or delivery.";
+  "Interactive review and approval card for one TikTok Upgraded Smart+ Campaign. It shows Campaign-level settings only and supports isolated live and interaction-demo modes. Live confirmation creates one Active Campaign; demo confirmation never writes to TikTok. Neither mode creates Ad Groups, Ads, creatives, or delivery.";
 const REPORTING_SERVER_INSTRUCTIONS =
-  "TikTok Ads Reporting provides verified reporting views and Campaign-level Smart+ review cards. Use get_ads_report for live performance questions and get_ads_report_demo only when the user explicitly requests demo data. Use review_smartplus_campaign only after the conversation contains enough Campaign-level information for WEB_CONVERSIONS, LEAD_GENERATION, or APP_PROMOTION. The review card is the human approval boundary: do not create a campaign before the user selects Create campaign in the card. The card creates exactly one Active Campaign and never creates an Ad Group, Ad, creative, delivery, or spend. Use the advertiser account selected by the user or the only authorized account; never invent an advertiser ID. Keep TikTok-returned data separate from model suggestions, label only genuinely model-suggested fields, and do not claim that an AI suggestion is a TikTok recommendation. Unsupported objectives such as Reach, Video Views, or Brand Awareness must be routed to a manual-campaign workflow rather than forced into Smart+.";
+  "TikTok Ads Reporting provides verified reporting views and Campaign-level Smart+ review cards. Use get_ads_report for live performance questions and get_ads_report_demo only when the user explicitly requests demo data. For Campaign Review, use review_smartplus_campaign only when TikTok OAuth is available and the user is preparing a real WEB_CONVERSIONS, LEAD_GENERATION, or APP_PROMOTION Campaign. When the user asks to test, preview, QA, simulate, or use a card without OAuth, use review_smartplus_campaign_demo instead; its Edit, Confirm, submitting, success, error, and stale-version interactions are real UI behavior but it never writes to TikTok. Never present a demo receipt as a TikTok Campaign ID. Use either review tool only after the conversation contains enough Campaign-level information. The card is the human approval boundary: do not create a real campaign before the user selects Confirm in the live card. A live card creates exactly one Active Campaign and never creates an Ad Group, Ad, creative, delivery, or spend. Use the advertiser account selected by the user or the only authorized account; never invent an advertiser ID for live mode. Keep TikTok-returned data separate from model suggestions, label only genuinely model-suggested fields, and do not claim that an AI suggestion is a TikTok recommendation. Unsupported objectives such as Reach, Video Views, Traffic, or Brand Awareness must be routed to a manual-campaign workflow rather than forced into Smart+.";
 export type HostSurface = "chatgpt" | "claude" | "reporting" | "generic";
 
 function computeClaudeAppDomain(mcpServerUrl: string) {
@@ -660,6 +663,7 @@ export function claudeReportFallback(reportState: ReportState) {
 }
 
 function campaignReviewFallback(state: CampaignReviewState) {
+  const demo = state.mode === "demo";
   const objective = {
     WEB_CONVERSIONS: "Website conversions",
     LEAD_GENERATION: "Lead generation",
@@ -692,10 +696,12 @@ function campaignReviewFallback(state: CampaignReviewState) {
     `- Catalog: ${state.campaign.catalogEnabled ? state.campaign.catalogType || "Used" : "Not used"}`,
     `- Special ad category: ${state.campaign.specialIndustriesConfirmed ? state.campaign.specialIndustries.join(", ") || "None selected" : "Not confirmed"}`,
     "- Status after creation: Active",
-    ...(state.execution?.campaignId ? [`- Campaign ID: ${state.execution.campaignId}`] : []),
+    ...(state.execution?.campaignId ? [`- ${demo ? "Demo receipt" : "Campaign ID"}: ${state.execution.campaignId}`] : []),
     ...(state.validationErrors.length ? ["", `Review required: ${state.validationErrors.join(" ")}`] : []),
     "",
-    "This review creates one Active Campaign only. It does not create Ad Groups, Ads, creatives, or delivery, so delivery cannot begin yet."
+    demo
+      ? "Interaction demo only. Confirmation does not call TikTok APIs or create any TikTok object."
+      : "This review creates one Active Campaign only. It does not create Ad Groups, Ads, creatives, or delivery, so delivery cannot begin yet."
   ].join("\n");
 }
 
@@ -703,6 +709,7 @@ export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
   const tikTokConfig = getTikTokAppConfig();
   const state = sharedLaunchState;
   const campaignReviewStore = createCampaignReviewStore();
+  const campaignReviewDemoStore = createCampaignReviewStore({ mode: "demo" });
   const endpointPath =
     hostSurface === "claude"
       ? "/mcp/claude"
@@ -1096,31 +1103,36 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
   });
 
   if (hostSurface === "reporting") {
-    registerAppResource(
-      server,
-      "tiktok-smartplus-campaign-review-v1",
-      CAMPAIGN_REVIEW_WIDGET_URI,
-      {
-        title: "TikTok Smart+ Campaign Review",
-        description: CAMPAIGN_REVIEW_WIDGET_DESCRIPTION,
-        mimeType: RESOURCE_MIME_TYPE,
-        _meta: campaignReviewResourceMeta
-      },
-      async () => ({
-        contents: [
-          {
-            uri: CAMPAIGN_REVIEW_WIDGET_URI,
-            mimeType: RESOURCE_MIME_TYPE,
-            text: `
+    const registerCampaignReviewResource = (name: string, uri: string) =>
+      registerAppResource(
+        server,
+        name,
+        uri,
+        {
+          title: "TikTok Smart+ Campaign Review",
+          description: CAMPAIGN_REVIEW_WIDGET_DESCRIPTION,
+          mimeType: RESOURCE_MIME_TYPE,
+          _meta: campaignReviewResourceMeta
+        },
+        async () => ({
+          contents: [
+            {
+              uri,
+              mimeType: RESOURCE_MIME_TYPE,
+              text: `
 <div id="campaign-review-root"></div>
 <style>${campaignReviewWidgetCss}</style>
 <script type="module">${campaignReviewWidgetJs}</script>
-          `.trim(),
-            _meta: campaignReviewResourceMeta
-          }
-        ]
-      })
-    );
+            `.trim(),
+              _meta: campaignReviewResourceMeta
+            }
+          ]
+        })
+      );
+    registerCampaignReviewResource("tiktok-smartplus-campaign-review-v2", CAMPAIGN_REVIEW_WIDGET_URI);
+    LEGACY_CAMPAIGN_REVIEW_WIDGET_URIS.forEach((uri, index) => {
+      registerCampaignReviewResource(`tiktok-smartplus-campaign-review-legacy-${index + 1}`, uri);
+    });
   }
 
   registerAppTool(
@@ -1339,10 +1351,111 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       _meta: {
         ...RESULT_CAMPAIGN_REVIEW_META,
         experienceType: "smartplus_campaign_review",
+        dataMode: campaignReviewState.mode,
         campaignScope: "campaign_only",
-        executionTool: "smart_plus_campaign_create"
+        executionTool: campaignReviewState.mode === "demo" ? "none" : "smart_plus_campaign_create",
+        mutationOccurred: campaignReviewState.mode === "live" && campaignReviewState.status === "created"
       }
     });
+
+    registerAppTool(
+      server,
+      "review_smartplus_campaign_demo",
+      {
+        title: "Preview Smart+ Campaign Review",
+        description:
+          "Render an OAuth-free interaction demo of the Campaign-level Smart+ review card. Use this whenever the user asks to test, preview, QA, simulate, or try the card without a working TikTok connection. It supports Website Conversions, Lead Generation, and App Promotion. Infer only fields supported by the user's prompt; if the user explicitly asks the model to recommend missing settings, pass those field names in aiSuggestedFields. The returned Edit, Apply changes, stale-version, Confirm, Submitting, success, and error interactions are functional, but no TikTok API is called and no Campaign, Ad Group, Ad, creative, delivery, or spend is created. Never use this tool for Reach, Video Views, Traffic, or Brand Awareness and never describe its demo receipt as a TikTok Campaign ID.",
+        inputSchema: reviewSmartPlusCampaignDemoInput,
+        outputSchema: reviewSmartPlusCampaignDemoOutput,
+        _meta: TOOL_CAMPAIGN_REVIEW_META,
+        annotations: {
+          readOnlyHint: true,
+          openWorldHint: false,
+          destructiveHint: false,
+          idempotentHint: false
+        }
+      },
+      async (input: CampaignReviewDemoInput) => {
+        const campaignReviewState = await campaignReviewDemoStore.prepare(input);
+        return campaignReviewResult(
+          campaignReviewState,
+          "Show the interactive Campaign Review demo and wait for the user's action in the card. This demo does not write to TikTok."
+        );
+      }
+    );
+
+    registerAppTool(
+      server,
+      "revise_smartplus_campaign_review_demo",
+      {
+        title: "Apply demo Campaign Review changes",
+        description:
+          "App-only action that applies edits to an OAuth-free Campaign Review demo and creates a new immutable proposal version. It never calls TikTok APIs.",
+        inputSchema: reviseSmartPlusCampaignReviewInput,
+        outputSchema: reviseSmartPlusCampaignReviewOutput,
+        _meta: TOOL_CAMPAIGN_REVIEW_APP_META,
+        annotations: {
+          readOnlyHint: false,
+          openWorldHint: false,
+          destructiveHint: false,
+          idempotentHint: false
+        }
+      },
+      async ({ proposalId, expectedVersion, ...input }) => {
+        const campaignReviewState = campaignReviewDemoStore.revise(
+          proposalId,
+          expectedVersion,
+          input as Omit<CampaignReviewInput, "advertiserId" | "advertiserName">
+        );
+        return campaignReviewResult(campaignReviewState, "Show the latest interaction-demo proposal version.");
+      }
+    );
+
+    registerAppTool(
+      server,
+      "get_smartplus_campaign_review_demo_status",
+      {
+        title: "Check demo Campaign Review status",
+        description:
+          "App-only action that reads the OAuth-free demo state, marks stale cards Inactive, and advances a simulated submission. It never calls TikTok APIs.",
+        inputSchema: getSmartPlusCampaignReviewStatusInput,
+        outputSchema: getSmartPlusCampaignReviewStatusOutput,
+        _meta: TOOL_CAMPAIGN_REVIEW_APP_META,
+        annotations: {
+          readOnlyHint: true,
+          openWorldHint: false,
+          destructiveHint: false,
+          idempotentHint: true
+        }
+      },
+      async ({ proposalId, expectedVersion }) => {
+        const campaignReviewState = await campaignReviewDemoStore.getStatus(proposalId, expectedVersion);
+        return campaignReviewResult(campaignReviewState, "Refresh the interaction-demo Campaign Review state.");
+      }
+    );
+
+    registerAppTool(
+      server,
+      "submit_smartplus_campaign_review_demo",
+      {
+        title: "Simulate approved Smart+ Campaign submission",
+        description:
+          "App-only action that simulates submission of the latest Campaign Review demo version. It returns a clearly labeled demo receipt after a short submitting state and never calls TikTok APIs or creates any object.",
+        inputSchema: createSmartPlusCampaignFromReviewInput,
+        outputSchema: createSmartPlusCampaignFromReviewOutput,
+        _meta: TOOL_CAMPAIGN_REVIEW_APP_META,
+        annotations: {
+          readOnlyHint: false,
+          openWorldHint: false,
+          destructiveHint: false,
+          idempotentHint: true
+        }
+      },
+      async ({ proposalId, expectedVersion }) => {
+        const campaignReviewState = await campaignReviewDemoStore.create(proposalId, expectedVersion);
+        return campaignReviewResult(campaignReviewState, "Show the simulated Campaign submission state.");
+      }
+    );
 
     registerAppTool(
       server,

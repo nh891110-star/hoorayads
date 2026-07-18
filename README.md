@@ -125,6 +125,14 @@ Golden prompts:
 - `Preview an App Promotion Campaign Review UI for Education Coaching0315 using App install and App ID 1234567890123456789. Do not create it.`
 - `Prepare a Brand Awareness campaign review.` The Smart+ review tool must not be called; route the request to a manual-campaign workflow.
 
+When OAuth is unavailable, ask for an interaction demo instead of a live review:
+
+- `OAuth is unavailable. Preview an interactive Smart+ Website Conversions Campaign Review for Education Coaching0315. Name it Summer Enrollment, use USD 50 dynamic daily budget, sales destination Website, CBO on, no catalog, and no special ad category. Do not create anything in TikTok.`
+- `Show a no-OAuth Campaign Review demo for Lead Generation with USD 80/day, CBO off, no catalog, and no special ad category.`
+- `Preview an App Promotion Campaign Review interaction demo using App install, App ID 1234567890123456789, USD 60/day, CBO on, and no special ad category.`
+
+The complete positive, interaction, validation, error, and unsupported-objective prompt matrix is in `docs/campaign-review-demo-golden-prompts.md`.
+
 Only the allowlisted advertiser IDs in `CAMPAIGN_REVIEW_WRITE_ADVERTISER_IDS` can use Confirm. `CAMPAIGN_REVIEW_WRITE_MODE` must be `campaign_only`.
 
 ## Reporting preview

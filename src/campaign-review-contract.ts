@@ -12,6 +12,11 @@ export const campaignCatalogTypeSchema = z.enum(["ECOMMERCE", "TRAVEL_ENTERTAINM
 export const campaignSpecialIndustrySchema = z.enum(["HOUSING", "EMPLOYMENT", "CREDIT"]);
 export const campaignAppPromotionTypeSchema = z.enum(["APP_INSTALL", "APP_RETARGETING", "MINIS"]);
 export const campaignTypeSchema = z.enum(["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]);
+export const campaignReviewDemoOutcomeSchema = z.enum([
+  "SUCCESS",
+  "SUBMISSION_ERROR",
+  "OUTCOME_UNKNOWN"
+]);
 export const campaignSourceFieldSchema = z.enum([
   "campaignName",
   "objectiveType",
@@ -51,6 +56,15 @@ export const reviewSmartPlusCampaignInput = {
 };
 
 export const reviewSmartPlusCampaignOutput = {
+  campaignReviewState: z.record(z.any())
+};
+
+export const reviewSmartPlusCampaignDemoInput = {
+  ...campaignReviewFields,
+  simulationOutcome: campaignReviewDemoOutcomeSchema.optional()
+};
+
+export const reviewSmartPlusCampaignDemoOutput = {
   campaignReviewState: z.record(z.any())
 };
 
@@ -104,6 +118,7 @@ export type CampaignSpecialIndustry = z.infer<typeof campaignSpecialIndustrySche
 export type CampaignAppPromotionType = z.infer<typeof campaignAppPromotionTypeSchema>;
 export type CampaignType = z.infer<typeof campaignTypeSchema>;
 export type CampaignSourceField = z.infer<typeof campaignSourceFieldSchema>;
+export type CampaignReviewDemoOutcome = z.infer<typeof campaignReviewDemoOutcomeSchema>;
 
 export type CampaignReviewInput = {
   advertiserId?: string;
@@ -122,4 +137,8 @@ export type CampaignReviewInput = {
   appId?: string;
   campaignType?: CampaignType;
   aiSuggestedFields?: CampaignSourceField[];
+};
+
+export type CampaignReviewDemoInput = CampaignReviewInput & {
+  simulationOutcome?: CampaignReviewDemoOutcome;
 };

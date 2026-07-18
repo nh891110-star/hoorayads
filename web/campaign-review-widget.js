@@ -10,6 +10,7 @@ let requestCounter = 0;
 let busy = false;
 let editMode = false;
 let editDraft = null;
+let statusRefreshTimer = null;
 const pendingRequests = new Map();
 
 function escapeHtml(value) {
@@ -22,6 +23,12 @@ function escapeHtml(value) {
 
 function createPreviewState() {
   return {
+    mode: "demo",
+    actionTools: {
+      revise: "revise_smartplus_campaign_review_demo",
+      status: "get_smartplus_campaign_review_demo_status",
+      submit: "submit_smartplus_campaign_review_demo"
+    },
     proposalId: "preview-proposal",
     version: 1,
     status: "proposed",
@@ -136,6 +143,19 @@ function applyState(next) {
   return true;
 }
 
+function isDemo() {
+  return reviewState?.mode === "demo";
+}
+
+function actionTool(action) {
+  const liveDefaults = {
+    revise: "revise_smartplus_campaign_review",
+    status: "get_smartplus_campaign_review_status",
+    submit: "create_smartplus_campaign_from_review"
+  };
+  return reviewState?.actionTools?.[action] || liveDefaults[action];
+}
+
 function labelForObjective(value) {
   return {
     WEB_CONVERSIONS: "Website conversions",
@@ -222,17 +242,17 @@ function reviewRows(campaign) {
     ["Campaign budget optimization", campaign.budgetOptimizeOn ? "On" : "Off"],
     ["Catalog", `${escapeHtml(labelForCatalog(campaign.catalogEnabled, campaign.catalogType))} ${sourceBadge("catalogEnabled")}`],
     ["Special ad category", `${escapeHtml(labelForSpecialIndustries(campaign))} ${sourceBadge("specialIndustries")}`],
-    ["Status after creation", '<span class="status-value"><span class="status-dot status-dot-active"></span>Active</span>']
+    ["Status after creation", `<span class="status-value"><span class="status-dot status-dot-active"></span>Active${isDemo() ? " · simulated" : ""}</span>`]
   );
   return rows;
 }
 
 function statusTag(state) {
   if (state.status === "outdated") return '<span class="tag tag-muted">Inactive</span>';
-  if (state.status === "created") return '<span class="tag tag-success">Submitted successfully</span>';
-  if (["creating", "checking"].includes(state.status)) return '<span class="tag tag-progress">Submitting…</span>';
+  if (state.status === "created") return `<span class="tag tag-success">${state.mode === "demo" ? "Demo · " : ""}Submitted successfully</span>`;
+  if (["creating", "checking"].includes(state.status)) return `<span class="tag tag-progress">${state.mode === "demo" ? "Demo · " : ""}Submitting…</span>`;
   if (["error", "outcome_unknown"].includes(state.status)) return '<span class="tag tag-error">Needs attention</span>';
-  return '<span class="tag tag-muted">Proposed campaign</span>';
+  return `<span class="tag tag-muted">${state.mode === "demo" ? "Demo · " : ""}Proposed campaign</span>`;
 }
 
 function renderNotice(state) {
@@ -242,13 +262,18 @@ function renderNotice(state) {
   if (state.status === "created") {
     const created = state.execution || {};
     return `<div class="receipt" role="status">
-      <span><strong>Campaign ID</strong> ${escapeHtml(created.campaignId || "Pending")}</span>
-      <span><strong>Status</strong> Active</span>
-      <span><strong>Verified</strong> ${escapeHtml(created.verifiedAt ? new Date(created.verifiedAt).toLocaleString() : "Pending")}</span>
+      <span><strong>${state.mode === "demo" ? "Demo receipt" : "Campaign ID"}</strong> ${escapeHtml(created.campaignId || "Pending")}</span>
+      <span><strong>Status</strong> ${state.mode === "demo" ? "Active · simulated" : "Active"}</span>
+      <span><strong>${state.mode === "demo" ? "Completed" : "Verified"}</strong> ${escapeHtml(created.verifiedAt ? new Date(created.verifiedAt).toLocaleString() : "Pending")}</span>
     </div>`;
   }
   if (["creating", "checking"].includes(state.status)) {
-    return `<div class="notice notice-progress" role="status" aria-live="polite"><span class="spinner"></span>${state.status === "checking" ? "TikTok accepted the request. Verifying the Campaign ID and Active status…" : "Creating one Active TikTok Campaign…"}</div>`;
+    const progress = state.mode === "demo"
+      ? "Simulating submission and receipt verification…"
+      : state.status === "checking"
+        ? "TikTok accepted the request. Verifying the Campaign ID and Active status…"
+        : "Creating one Active TikTok Campaign…";
+    return `<div class="notice notice-progress" role="status" aria-live="polite"><span class="spinner"></span>${progress}</div>`;
   }
   if (["error", "outcome_unknown"].includes(state.status)) {
     const message = state.execution?.errorMessage || state.validationErrors?.[0] || "Campaign creation could not be completed.";
@@ -280,8 +305,12 @@ function renderReview() {
         <button class="button button-primary" data-action="create" ${createDisabled ? "disabled" : ""}>Confirm</button>
       </div>`;
   const consequence = state.status === "created"
-    ? "TikTok returned and verified the Campaign ID. No Ad Group, Ad, creative, or delivery was created."
-    : "Confirming creates one Active TikTok Smart+ Campaign. It cannot deliver or spend until eligible Ad Group and Ad objects are added.";
+    ? isDemo()
+      ? "Interaction test completed. No TikTok API was called and no TikTok object was created."
+      : "TikTok returned and verified the Campaign ID. No Ad Group, Ad, creative, or delivery was created."
+    : isDemo()
+      ? "Confirming simulates an Active Campaign submission. It does not call TikTok APIs or create any TikTok object."
+      : "Confirming creates one Active TikTok Smart+ Campaign. It cannot deliver or spend until eligible Ad Group and Ad objects are added.";
 
   root.innerHTML = `<article class="campaign-card ${state.status === "outdated" ? "is-outdated" : ""} ${state.status === "created" ? "is-submitted" : ""}">
     <header class="card-header">
@@ -291,6 +320,7 @@ function renderReview() {
       </div>
       ${statusTag(state)}
     </header>
+    ${isDemo() ? '<div class="demo-banner" role="note"><strong>Interaction demo</strong><span>Uses sample account context. No data is sent to TikTok.</span></div>' : ""}
     ${renderNotice(state)}
     <dl class="review-grid">${rows}</dl>
     <footer class="card-footer">
@@ -346,6 +376,7 @@ function renderEdit() {
       </div>
       <span class="tag tag-muted">Proposal v${reviewState.version}</span>
     </header>
+    ${isDemo() ? '<div class="demo-banner" role="note"><strong>Interaction demo</strong><span>Edits create a new demo version only. No data is sent to TikTok.</span></div>' : ""}
     <form class="edit-form" data-edit-form>
       <label class="field field-wide"><span>Campaign name</span><input data-field="campaignName" value="${escapeHtml(campaign.campaignName)}" maxlength="512" required></label>
       <label class="field"><span>Campaign objective</span><select data-field="objectiveType" data-rerender>
@@ -377,10 +408,10 @@ function renderEdit() {
         ${option("EMPLOYMENT", "Employment", specialValue)}
         ${option("CREDIT", "Credit", specialValue)}
       </select></label>
-      <div class="fixed-status"><span>Status after creation</span><strong><span class="status-dot status-dot-active"></span>Active</strong><small>This card creates the Campaign only. Delivery requires an eligible Ad Group and Ad.</small></div>
+      <div class="fixed-status"><span>Status after creation</span><strong><span class="status-dot status-dot-active"></span>Active${isDemo() ? " · simulated" : ""}</strong><small>${isDemo() ? "Interaction demo only. No TikTok object will be created." : "This card creates the Campaign only. Delivery requires an eligible Ad Group and Ad."}</small></div>
     </form>
     <footer class="card-footer edit-footer">
-      <p>Applying changes creates a new proposal version. Nothing is created in TikTok until you select Confirm.</p>
+      <p>${isDemo() ? "Applying changes creates a new demo proposal version. Confirm simulates submission only." : "Applying changes creates a new proposal version. Nothing is created in TikTok until you select Confirm."}</p>
       <div class="actions">
         <button class="button button-secondary" data-action="cancel" ${busy ? "disabled" : ""}>Cancel</button>
         <button class="button button-primary" data-action="apply" ${busy ? "disabled" : ""}>Apply changes</button>
@@ -442,7 +473,7 @@ async function invoke(name, args) {
 async function refreshStatus() {
   if (!reviewState?.proposalId || busy || editMode || ["created", "error"].includes(reviewState.status)) return;
   try {
-    const result = await callTool("get_smartplus_campaign_review_status", {
+    const result = await callTool(actionTool("status"), {
       proposalId: reviewState.proposalId,
       expectedVersion: reviewState.version
     });
@@ -454,6 +485,16 @@ async function refreshStatus() {
   } catch {
     // Stale-state refresh is best-effort; every write is still checked by the server.
   }
+}
+
+function scheduleStatusRefresh() {
+  if (statusRefreshTimer) window.clearTimeout(statusRefreshTimer);
+  statusRefreshTimer = null;
+  if (!["creating", "checking"].includes(reviewState?.status)) return;
+  statusRefreshTimer = window.setTimeout(async () => {
+    await refreshStatus();
+    scheduleStatusRefresh();
+  }, 500);
 }
 
 function bindInteractions() {
@@ -471,21 +512,21 @@ function bindInteractions() {
   root.querySelector('[data-action="apply"]')?.addEventListener("click", async () => {
     const form = root.querySelector("[data-edit-form]");
     if (!form?.reportValidity()) return;
-    await invoke("revise_smartplus_campaign_review", {
+    await invoke(actionTool("revise"), {
       proposalId: reviewState.proposalId,
       expectedVersion: reviewState.version,
       ...collectEditDraft()
     });
   });
   root.querySelector('[data-action="create"]')?.addEventListener("click", async () => {
-    await invoke("create_smartplus_campaign_from_review", {
+    await invoke(actionTool("submit"), {
       proposalId: reviewState.proposalId,
       expectedVersion: reviewState.version,
       confirmed: true
     });
   });
   root.querySelector('[data-action="check-status"]')?.addEventListener("click", async () => {
-    await invoke("get_smartplus_campaign_review_status", {
+    await invoke(actionTool("status"), {
       proposalId: reviewState.proposalId,
       expectedVersion: reviewState.version
     });
@@ -512,6 +553,7 @@ function render() {
   if (!reviewState) return;
   if (editMode) renderEdit();
   else renderReview();
+  scheduleStatusRefresh();
 }
 
 window.addEventListener("message", (event) => {
