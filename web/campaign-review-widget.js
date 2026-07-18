@@ -135,8 +135,20 @@ async function callTool(name, args) {
   throw new Error("This host does not support interactive Campaign Review actions.");
 }
 
+function isSameReviewState(next) {
+  if (!reviewState || !next) return false;
+  return (
+    reviewState.proposalId === next.proposalId &&
+    reviewState.version === next.version &&
+    reviewState.status === next.status &&
+    JSON.stringify(reviewState.campaign) === JSON.stringify(next.campaign) &&
+    JSON.stringify(reviewState.validationErrors || []) === JSON.stringify(next.validationErrors || []) &&
+    JSON.stringify(reviewState.execution || null) === JSON.stringify(next.execution || null)
+  );
+}
+
 function applyState(next) {
-  if (!next) return false;
+  if (!next || isSameReviewState(next)) return false;
   reviewState = next;
   editMode = false;
   editDraft = null;

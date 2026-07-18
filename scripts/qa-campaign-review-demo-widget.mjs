@@ -104,6 +104,11 @@ assert(await page.getByText("No data is sent to TikTok.", { exact: false }).isVi
 if (screenshotPrefix) await page.screenshot({ path: `${screenshotPrefix}-proposed.png`, fullPage: true });
 
 await page.getByRole("button", { name: "Edit" }).click();
+await page.evaluate(() => window.dispatchEvent(new Event("openai:set_globals")));
+assert(
+  await page.getByRole("button", { name: "Apply changes" }).isVisible(),
+  "A duplicate ChatGPT host-state event reset edit mode."
+);
 await page.getByLabel("Campaign name").fill("Demo UI QA - Edited");
 await page.getByRole("button", { name: "Apply changes" }).click();
 let lastCall = await page.evaluate(() => window.__calls.at(-1));
