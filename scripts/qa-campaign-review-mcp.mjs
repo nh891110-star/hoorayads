@@ -29,7 +29,12 @@ try {
   const reviseTool = tools.tools.find((tool) => tool.name === "revise_smartplus_campaign_review");
   const statusTool = tools.tools.find((tool) => tool.name === "get_smartplus_campaign_review_status");
   const createTool = tools.tools.find((tool) => tool.name === "create_smartplus_campaign_from_review");
+  const legacyLaunchTool = tools.tools.find((tool) => tool.name === "review_campaign_launch_demo");
   assert(reviewTool && reviseTool && statusTool && createTool, "One or more Campaign Review tools are missing.");
+  assert(
+    legacyLaunchTool?._meta?.ui?.visibility?.includes("app") && !legacyLaunchTool?._meta?.ui?.visibility?.includes("model"),
+    "Legacy launch-review demo must not be model-visible on the Reporting endpoint."
+  );
   assert(reviewTool._meta?.ui?.resourceUri === resourceUri, "Review tool has the wrong resource URI.");
   assert(createTool.annotations?.destructiveHint === true, "Real Campaign creation must be marked destructive.");
   assert(createTool.annotations?.idempotentHint === true, "Campaign creation must declare idempotency.");
@@ -45,6 +50,10 @@ try {
     const hoorayTools = await hoorayClient.listTools();
     assert(hoorayTools.tools.some((tool) => tool.name === "open_tiktok_ads_workspace"), "Hooray endpoint lost its workspace tool.");
     assert(!hoorayTools.tools.some((tool) => tool.name === "review_smartplus_campaign"), "Campaign Review leaked into the Hooray endpoint.");
+    assert(
+      hoorayTools.tools.find((tool) => tool.name === "review_campaign_launch_demo")?._meta?.ui?.visibility?.includes("model"),
+      "Legacy Hooray launch-review demo unexpectedly became private."
+    );
   } finally {
     await hoorayTransport.close();
   }

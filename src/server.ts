@@ -206,6 +206,16 @@ const TOOL_REPORT_META = {
   "openai/toolInvocation/invoking": "Generating TikTok Ads report...",
   "openai/toolInvocation/invoked": "TikTok Ads report ready."
 } as const;
+const TOOL_LEGACY_REPORT_APP_META = {
+  ui: {
+    resourceUri: REPORT_WIDGET_URI,
+    visibility: ["app"]
+  },
+  "openai/outputTemplate": REPORT_WIDGET_URI,
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Generating TikTok Ads report...",
+  "openai/toolInvocation/invoked": "TikTok Ads report ready."
+} as const;
 const RESULT_REPORT_META = {
   [RESOURCE_URI_META_KEY]: REPORT_WIDGET_URI,
   ui: {
@@ -1274,7 +1284,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         "Render a deterministic pre-launch campaign review card when the user explicitly asks for a demo, sample, preview, or UI test and TikTok OAuth is unavailable. It shows the exact campaign, delivery, audience, measurement, creative, budget-exposure, and local preflight values that a user should review before campaign creation. The confirmation interaction produces a clearly labeled demo receipt only; it does not call TikTok APIs or create any campaign.",
       inputSchema: reviewCampaignLaunchDemoInput,
       outputSchema: decisionCardDemoOutput,
-      _meta: TOOL_REPORT_META,
+      _meta: hostSurface === "reporting" ? TOOL_LEGACY_REPORT_APP_META : TOOL_REPORT_META,
       annotations: {
         readOnlyHint: true,
         openWorldHint: false,
