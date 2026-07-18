@@ -1,0 +1,568 @@
+const root = document.getElementById("campaign-review-root") || document.getElementById("app-root");
+const APP_INFO = { name: "TikTok Campaign Review", version: "1.0.0" };
+const PROTOCOL_VERSION = "2026-01-26";
+
+let reviewState = null;
+let hostContext = {};
+let initialized = false;
+let initializeRequestId = null;
+let requestCounter = 0;
+let busy = false;
+let editMode = false;
+let editDraft = null;
+const pendingRequests = new Map();
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function createPreviewState() {
+  return {
+    proposalId: "preview-proposal",
+    version: 1,
+    status: "proposed",
+    readyToCreate: true,
+    isCurrentVersion: true,
+    createdAt: new Date().toISOString(),
+    validationErrors: [],
+    account: {
+      advertiserId: "7481826080479870993",
+      maskedAdvertiserId: "7481…0993",
+      advertiserName: "Education Coaching0315",
+      currency: "USD",
+      country: "US",
+      status: "STATUS_ENABLE",
+      timezone: "Etc/GMT+5"
+    },
+    campaign: {
+      advertiserId: "7481826080479870993",
+      campaignName: "MCP UI QA - Website Conversions",
+      objectiveType: "WEB_CONVERSIONS",
+      budget: 50,
+      budgetMode: "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+      budgetOptimizeOn: true,
+      salesDestination: "WEBSITE",
+      catalogEnabled: false,
+      specialIndustries: [],
+      specialIndustriesConfirmed: true,
+      campaignType: "REGULAR_CAMPAIGN",
+      aiSuggestedFields: ["budget"],
+      operationStatus: "ENABLE"
+    }
+  };
+}
+
+function extractReviewState(value) {
+  return (
+    value?.structuredContent?.campaignReviewState ||
+    value?.result?.structuredContent?.campaignReviewState ||
+    value?.mcp_tool_result?.structuredContent?.campaignReviewState ||
+    value?.toolResult?.structuredContent?.campaignReviewState ||
+    value?.campaignReviewState ||
+    null
+  );
+}
+
+function readChatGptState() {
+  const host = window.openai || {};
+  return (
+    extractReviewState(host.toolOutput) ||
+    extractReviewState(host.toolResponseMetadata) ||
+    extractReviewState(host.widgetState) ||
+    null
+  );
+}
+
+function postToHost(message) {
+  if (!window.parent || window.parent === window) return;
+  window.parent.postMessage({ jsonrpc: "2.0", ...message }, "*");
+}
+
+function rpc(method, params = {}) {
+  if (!window.parent || window.parent === window) {
+    return Promise.reject(new Error("No MCP Apps host is connected."));
+  }
+  const id = `campaign-review-${Date.now()}-${++requestCounter}`;
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      pendingRequests.delete(id);
+      reject(new Error(`${method} timed out.`));
+    }, 30000);
+    pendingRequests.set(id, { resolve, reject, timer });
+    postToHost({ id, method, params });
+  });
+}
+
+function sendInitialize() {
+  if (initialized || initializeRequestId || !window.parent || window.parent === window) return;
+  initializeRequestId = `campaign-init-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  postToHost({
+    id: initializeRequestId,
+    method: "ui/initialize",
+    params: {
+      appInfo: APP_INFO,
+      appCapabilities: {},
+      protocolVersion: PROTOCOL_VERSION
+    }
+  });
+}
+
+function notifySize() {
+  const width = Math.ceil(document.documentElement.scrollWidth);
+  const height = Math.ceil(document.documentElement.scrollHeight);
+  postToHost({ method: "ui/notifications/size-changed", params: { width, height } });
+  try {
+    window.openai?.notifyIntrinsicHeight?.(height);
+  } catch {
+    // Height notification is best-effort across hosts.
+  }
+}
+
+async function callTool(name, args) {
+  if (initialized) return rpc("tools/call", { name, arguments: args });
+  if (window.openai?.callTool) return window.openai.callTool(name, args);
+  throw new Error("This host does not support interactive Campaign Review actions.");
+}
+
+function applyState(next) {
+  if (!next) return false;
+  reviewState = next;
+  editMode = false;
+  editDraft = null;
+  return true;
+}
+
+function labelForObjective(value) {
+  return {
+    WEB_CONVERSIONS: "Website conversions",
+    LEAD_GENERATION: "Lead generation",
+    APP_PROMOTION: "App promotion"
+  }[value] || value;
+}
+
+function labelForBudgetMode(value) {
+  return {
+    BUDGET_MODE_DYNAMIC_DAILY_BUDGET: "Dynamic daily budget",
+    BUDGET_MODE_TOTAL: "Total budget",
+    BUDGET_MODE_INFINITE: "Unlimited",
+    BUDGET_MODE_DAY: "Daily budget"
+  }[value] || value;
+}
+
+function labelForSalesDestination(value) {
+  return { WEBSITE: "Website", APP: "App", WEB_AND_APP: "Website and app" }[value] || value;
+}
+
+function labelForAppPromotionType(value) {
+  return {
+    APP_INSTALL: "App install",
+    APP_RETARGETING: "App retargeting",
+    MINIS: "Minis"
+  }[value] || value;
+}
+
+function labelForCatalog(value, catalogType) {
+  if (!value) return "Not used";
+  return {
+    ECOMMERCE: "E-commerce catalog",
+    TRAVEL_ENTERTAINMENT: "Travel and entertainment catalog",
+    MINI_SERIES: "Mini Series catalog"
+  }[catalogType] || "Used";
+}
+
+function labelForSpecialIndustries(campaign) {
+  if (!campaign.specialIndustriesConfirmed) return "Not confirmed";
+  if (!campaign.specialIndustries?.length) return "None selected";
+  return campaign.specialIndustries
+    .map((value) => ({ HOUSING: "Housing", EMPLOYMENT: "Employment", CREDIT: "Credit" })[value] || value)
+    .join(", ");
+}
+
+function formatCurrency(value) {
+  if (value === undefined || value === null) return "Not set";
+  const currency = reviewState?.account?.currency || "USD";
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency, minimumFractionDigits: 2 }).format(value);
+  } catch {
+    return `${currency} ${Number(value).toFixed(2)}`;
+  }
+}
+
+function budgetSummary(campaign) {
+  if (campaign.budgetMode === "BUDGET_MODE_INFINITE") return "Unlimited";
+  const suffix = ["BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_DAY"].includes(campaign.budgetMode)
+    ? "/day"
+    : " total";
+  return `${formatCurrency(campaign.budget)}${suffix} · ${labelForBudgetMode(campaign.budgetMode)}`;
+}
+
+function sourceBadge(field) {
+  if (!reviewState?.campaign?.aiSuggestedFields?.includes(field)) return "";
+  return '<span class="source-badge">AI suggested</span>';
+}
+
+function reviewRows(campaign) {
+  const rows = [
+    ["Campaign budget", `${escapeHtml(budgetSummary(campaign))} ${sourceBadge("budget")}`],
+    ["Campaign objective", `${escapeHtml(labelForObjective(campaign.objectiveType))} ${sourceBadge("objectiveType")}`]
+  ];
+  if (campaign.objectiveType === "WEB_CONVERSIONS") {
+    rows.push(["Sales destination", `${escapeHtml(labelForSalesDestination(campaign.salesDestination))} ${sourceBadge("salesDestination")}`]);
+  }
+  if (campaign.objectiveType === "APP_PROMOTION") {
+    rows.push(["App promotion type", escapeHtml(labelForAppPromotionType(campaign.appPromotionType || "Not set"))]);
+    if (campaign.appId) rows.push(["App ID", escapeHtml(campaign.appId)]);
+    rows.push(["Campaign type", campaign.campaignType === "IOS14_CAMPAIGN" ? "iOS 14 Dedicated Campaign" : "Regular Campaign"]);
+  }
+  rows.push(
+    ["Campaign budget optimization", campaign.budgetOptimizeOn ? "On" : "Off"],
+    ["Catalog", `${escapeHtml(labelForCatalog(campaign.catalogEnabled, campaign.catalogType))} ${sourceBadge("catalogEnabled")}`],
+    ["Special ad category", `${escapeHtml(labelForSpecialIndustries(campaign))} ${sourceBadge("specialIndustries")}`],
+    ["Status after creation", '<span class="status-value"><span class="status-dot status-dot-active"></span>Active</span>']
+  );
+  return rows;
+}
+
+function statusTag(state) {
+  if (state.status === "outdated") return '<span class="tag tag-muted">Inactive</span>';
+  if (state.status === "created") return '<span class="tag tag-success">Submitted successfully</span>';
+  if (["creating", "checking"].includes(state.status)) return '<span class="tag tag-progress">Submitting…</span>';
+  if (["error", "outcome_unknown"].includes(state.status)) return '<span class="tag tag-error">Needs attention</span>';
+  return '<span class="tag tag-muted">Proposed campaign</span>';
+}
+
+function renderNotice(state) {
+  if (state.status === "outdated") {
+    return '<div class="notice notice-neutral" role="status">A newer version of this campaign is available below. This proposal can no longer be used.</div>';
+  }
+  if (state.status === "created") {
+    const created = state.execution || {};
+    return `<div class="receipt" role="status">
+      <span><strong>Campaign ID</strong> ${escapeHtml(created.campaignId || "Pending")}</span>
+      <span><strong>Status</strong> Active</span>
+      <span><strong>Verified</strong> ${escapeHtml(created.verifiedAt ? new Date(created.verifiedAt).toLocaleString() : "Pending")}</span>
+    </div>`;
+  }
+  if (["creating", "checking"].includes(state.status)) {
+    return `<div class="notice notice-progress" role="status" aria-live="polite"><span class="spinner"></span>${state.status === "checking" ? "TikTok accepted the request. Verifying the Campaign ID and Active status…" : "Creating one Active TikTok Campaign…"}</div>`;
+  }
+  if (["error", "outcome_unknown"].includes(state.status)) {
+    const message = state.execution?.errorMessage || state.validationErrors?.[0] || "Campaign creation could not be completed.";
+    const connect = state.execution?.authorizationUrl
+      ? `<button class="button button-link" data-action="connect" data-url="${escapeHtml(state.execution.authorizationUrl)}">Connect TikTok Ads</button>`
+      : "";
+    return `<div class="notice notice-error" role="alert"><strong>${state.status === "outcome_unknown" ? "Creation status is not yet confirmed." : "Campaign was not created."}</strong><span>${escapeHtml(message)}</span>${connect}</div>`;
+  }
+  if (state.validationErrors?.length) {
+    return `<div class="notice notice-error" role="alert"><strong>Review required</strong><span>${escapeHtml(state.validationErrors.join(" "))}</span></div>`;
+  }
+  return "";
+}
+
+function renderReview() {
+  const state = reviewState;
+  const campaign = state.campaign;
+  const locked = busy || !state.proposalId || !state.isCurrentVersion || ["creating", "checking", "created", "outdated"].includes(state.status);
+  const createDisabled = locked || !state.readyToCreate;
+  const rows = reviewRows(campaign)
+    .map(([label, value]) => `<div class="review-row"><dt>${escapeHtml(label)}</dt><dd>${value}</dd></div>`)
+    .join("");
+  const actions = state.status === "created" || state.status === "outdated" || !state.proposalId
+    ? ""
+    : state.status === "outcome_unknown"
+      ? `<div class="actions"><button class="button button-primary" data-action="check-status" ${busy ? "disabled" : ""}>Check status</button></div>`
+    : `<div class="actions">
+        <button class="button button-secondary" data-action="edit" ${locked ? "disabled" : ""}>Edit</button>
+        <button class="button button-primary" data-action="create" ${createDisabled ? "disabled" : ""}>Confirm</button>
+      </div>`;
+  const consequence = state.status === "created"
+    ? "TikTok returned and verified the Campaign ID. No Ad Group, Ad, creative, or delivery was created."
+    : "Confirming creates one Active TikTok Smart+ Campaign. It cannot deliver or spend until eligible Ad Group and Ad objects are added.";
+
+  root.innerHTML = `<article class="campaign-card ${state.status === "outdated" ? "is-outdated" : ""} ${state.status === "created" ? "is-submitted" : ""}">
+    <header class="card-header">
+      <div>
+        <p class="eyebrow">TIKTOK AD CAMPAIGN · ${escapeHtml(state.account.advertiserName)} · ${escapeHtml(state.account.maskedAdvertiserId)}</p>
+        <h1>${escapeHtml(campaign.campaignName)}</h1>
+      </div>
+      ${statusTag(state)}
+    </header>
+    ${renderNotice(state)}
+    <dl class="review-grid">${rows}</dl>
+    <footer class="card-footer">
+      <p>${escapeHtml(consequence)}</p>
+      ${actions}
+    </footer>
+  </article>`;
+  bindInteractions();
+  notifySize();
+}
+
+function option(value, label, current) {
+  return `<option value="${escapeHtml(value)}" ${value === current ? "selected" : ""}>${escapeHtml(label)}</option>`;
+}
+
+function renderEdit() {
+  const campaign = editDraft || { ...reviewState.campaign };
+  const budgetRequired = campaign.budgetMode !== "BUDGET_MODE_INFINITE";
+  const objectiveFields = campaign.objectiveType === "WEB_CONVERSIONS"
+    ? `<label class="field"><span>Sales destination</span><select data-field="salesDestination">
+        ${option("WEBSITE", "Website", campaign.salesDestination)}
+        ${option("APP", "App", campaign.salesDestination)}
+        ${option("WEB_AND_APP", "Website and app", campaign.salesDestination)}
+      </select></label>`
+    : campaign.objectiveType === "APP_PROMOTION"
+      ? `<label class="field"><span>App promotion type</span><select data-field="appPromotionType">
+          ${option("APP_INSTALL", "App install", campaign.appPromotionType)}
+          ${option("APP_RETARGETING", "App retargeting", campaign.appPromotionType)}
+          ${option("MINIS", "Minis", campaign.appPromotionType)}
+        </select></label>
+        <label class="field"><span>App ID</span><input data-field="appId" value="${escapeHtml(campaign.appId || "")}" placeholder="Required for iOS 14 Campaign"></label>
+        <label class="field"><span>Campaign type</span><select data-field="campaignType">
+          ${option("REGULAR_CAMPAIGN", "Regular Campaign", campaign.campaignType)}
+          ${option("IOS14_CAMPAIGN", "iOS 14 Dedicated Campaign", campaign.campaignType)}
+        </select></label>`
+      : "";
+  const catalogType = campaign.catalogEnabled
+    ? `<label class="field"><span>Catalog type</span><select data-field="catalogType">
+        ${option("ECOMMERCE", "E-commerce", campaign.catalogType)}
+        ${option("TRAVEL_ENTERTAINMENT", "Travel and entertainment", campaign.catalogType)}
+        ${option("MINI_SERIES", "Mini Series (allowlist only)", campaign.catalogType)}
+      </select></label>`
+    : "";
+  const specialValue = !campaign.specialIndustriesConfirmed
+    ? "NOT_CONFIRMED"
+    : campaign.specialIndustries?.[0] || "NONE";
+
+  root.innerHTML = `<article class="campaign-card edit-card">
+    <header class="card-header">
+      <div>
+        <p class="eyebrow">TIKTOK AD CAMPAIGN · ${escapeHtml(reviewState.account.advertiserName)} · ${escapeHtml(reviewState.account.maskedAdvertiserId)}</p>
+        <h1>Edit campaign proposal</h1>
+      </div>
+      <span class="tag tag-muted">Proposal v${reviewState.version}</span>
+    </header>
+    <form class="edit-form" data-edit-form>
+      <label class="field field-wide"><span>Campaign name</span><input data-field="campaignName" value="${escapeHtml(campaign.campaignName)}" maxlength="512" required></label>
+      <label class="field"><span>Campaign objective</span><select data-field="objectiveType" data-rerender>
+        ${option("WEB_CONVERSIONS", "Website conversions", campaign.objectiveType)}
+        ${option("LEAD_GENERATION", "Lead generation", campaign.objectiveType)}
+        ${option("APP_PROMOTION", "App promotion", campaign.objectiveType)}
+      </select></label>
+      <label class="field"><span>Campaign budget optimization</span><select data-field="budgetOptimizeOn" data-rerender>
+        ${option("true", "On", String(campaign.budgetOptimizeOn))}
+        ${option("false", "Off", String(campaign.budgetOptimizeOn))}
+      </select></label>
+      <label class="field"><span>Budget type</span><select data-field="budgetMode" data-rerender>
+        ${option("BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "Dynamic daily budget", campaign.budgetMode)}
+        ${option("BUDGET_MODE_TOTAL", "Total budget", campaign.budgetMode)}
+        ${option("BUDGET_MODE_DAY", "Daily budget", campaign.budgetMode)}
+        ${option("BUDGET_MODE_INFINITE", "Unlimited", campaign.budgetMode)}
+      </select></label>
+      <label class="field"><span>Campaign budget (${escapeHtml(reviewState.account.currency)})</span><input data-field="budget" type="number" min="0.01" step="0.01" value="${campaign.budget ?? ""}" ${budgetRequired ? "required" : "disabled"}></label>
+      ${objectiveFields}
+      <label class="field"><span>Catalog</span><select data-field="catalogEnabled" data-rerender>
+        ${option("false", "Not used", String(campaign.catalogEnabled))}
+        ${option("true", "Used", String(campaign.catalogEnabled))}
+      </select></label>
+      ${catalogType}
+      <label class="field"><span>Special ad category</span><select data-field="specialIndustry">
+        ${option("NOT_CONFIRMED", "Not confirmed", specialValue)}
+        ${option("NONE", "None selected", specialValue)}
+        ${option("HOUSING", "Housing", specialValue)}
+        ${option("EMPLOYMENT", "Employment", specialValue)}
+        ${option("CREDIT", "Credit", specialValue)}
+      </select></label>
+      <div class="fixed-status"><span>Status after creation</span><strong><span class="status-dot status-dot-active"></span>Active</strong><small>This card creates the Campaign only. Delivery requires an eligible Ad Group and Ad.</small></div>
+    </form>
+    <footer class="card-footer edit-footer">
+      <p>Applying changes creates a new proposal version. Nothing is created in TikTok until you select Confirm.</p>
+      <div class="actions">
+        <button class="button button-secondary" data-action="cancel" ${busy ? "disabled" : ""}>Cancel</button>
+        <button class="button button-primary" data-action="apply" ${busy ? "disabled" : ""}>Apply changes</button>
+      </div>
+    </footer>
+  </article>`;
+  bindInteractions();
+  notifySize();
+}
+
+function collectEditDraft() {
+  const value = (name) => root.querySelector(`[data-field="${name}"]`)?.value;
+  const specialIndustry = value("specialIndustry");
+  return {
+    campaignName: value("campaignName")?.trim() || "",
+    objectiveType: value("objectiveType"),
+    budget: value("budget") ? Number(value("budget")) : undefined,
+    budgetMode: value("budgetMode"),
+    budgetOptimizeOn: value("budgetOptimizeOn") === "true",
+    salesDestination: value("objectiveType") === "WEB_CONVERSIONS" ? value("salesDestination") : undefined,
+    catalogEnabled: value("catalogEnabled") === "true",
+    catalogType: value("catalogEnabled") === "true" ? value("catalogType") : undefined,
+    specialIndustries: specialIndustry && !["NONE", "NOT_CONFIRMED"].includes(specialIndustry) ? [specialIndustry] : [],
+    specialIndustriesConfirmed: specialIndustry !== "NOT_CONFIRMED",
+    appPromotionType: value("objectiveType") === "APP_PROMOTION" ? value("appPromotionType") : undefined,
+    appId: value("objectiveType") === "APP_PROMOTION" ? value("appId")?.trim() || undefined : undefined,
+    campaignType: value("objectiveType") === "APP_PROMOTION" ? value("campaignType") : "REGULAR_CAMPAIGN",
+    aiSuggestedFields: []
+  };
+}
+
+async function invoke(name, args) {
+  busy = true;
+  render();
+  try {
+    const result = await callTool(name, args);
+    const next = extractReviewState(result);
+    if (!next) throw new Error("Campaign Review returned no state.");
+    applyState(next);
+  } catch (error) {
+    reviewState = {
+      ...reviewState,
+      status: "error",
+      readyToCreate: false,
+      execution: {
+        ...(reviewState.execution || {}),
+        status: "failed",
+        errorCode: "HOST_TOOL_CALL_FAILED",
+        errorMessage: error instanceof Error ? error.message : "Campaign Review action failed."
+      }
+    };
+    editMode = false;
+  } finally {
+    busy = false;
+    render();
+  }
+}
+
+async function refreshStatus() {
+  if (!reviewState?.proposalId || busy || editMode || ["created", "error"].includes(reviewState.status)) return;
+  try {
+    const result = await callTool("get_smartplus_campaign_review_status", {
+      proposalId: reviewState.proposalId,
+      expectedVersion: reviewState.version
+    });
+    const next = extractReviewState(result);
+    if (next && JSON.stringify(next) !== JSON.stringify(reviewState)) {
+      applyState(next);
+      render();
+    }
+  } catch {
+    // Stale-state refresh is best-effort; every write is still checked by the server.
+  }
+}
+
+function bindInteractions() {
+  root.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
+    editMode = true;
+    editDraft = { ...reviewState.campaign };
+    render();
+    root.querySelector('[data-field="campaignName"]')?.focus();
+  });
+  root.querySelector('[data-action="cancel"]')?.addEventListener("click", () => {
+    editMode = false;
+    editDraft = null;
+    render();
+  });
+  root.querySelector('[data-action="apply"]')?.addEventListener("click", async () => {
+    const form = root.querySelector("[data-edit-form]");
+    if (!form?.reportValidity()) return;
+    await invoke("revise_smartplus_campaign_review", {
+      proposalId: reviewState.proposalId,
+      expectedVersion: reviewState.version,
+      ...collectEditDraft()
+    });
+  });
+  root.querySelector('[data-action="create"]')?.addEventListener("click", async () => {
+    await invoke("create_smartplus_campaign_from_review", {
+      proposalId: reviewState.proposalId,
+      expectedVersion: reviewState.version,
+      confirmed: true
+    });
+  });
+  root.querySelector('[data-action="check-status"]')?.addEventListener("click", async () => {
+    await invoke("get_smartplus_campaign_review_status", {
+      proposalId: reviewState.proposalId,
+      expectedVersion: reviewState.version
+    });
+  });
+  root.querySelector('[data-action="connect"]')?.addEventListener("click", async (event) => {
+    const url = event.currentTarget?.dataset?.url;
+    if (!url) return;
+    try {
+      if (initialized) await rpc("ui/open-link", { url });
+      else if (window.openai?.openExternal) await window.openai.openExternal({ href: url });
+    } catch {
+      // The authorization URL remains in tool state so the host can expose it as a fallback.
+    }
+  });
+  root.querySelectorAll("[data-rerender]").forEach((control) => {
+    control.addEventListener("change", () => {
+      editDraft = collectEditDraft();
+      render();
+    });
+  });
+}
+
+function render() {
+  if (!reviewState) return;
+  if (editMode) renderEdit();
+  else renderReview();
+}
+
+window.addEventListener("message", (event) => {
+  if (event.source !== window.parent) return;
+  const message = event.data;
+  if (!message || message.jsonrpc !== "2.0") return;
+
+  if (message.id === initializeRequestId && message.result) {
+    initialized = true;
+    initializeRequestId = null;
+    hostContext = { ...(message.result.hostContext || {}), capabilities: message.result.hostCapabilities || {} };
+    postToHost({ method: "ui/notifications/initialized", params: {} });
+    render();
+    return;
+  }
+
+  const pending = pendingRequests.get(message.id);
+  if (pending) {
+    window.clearTimeout(pending.timer);
+    pendingRequests.delete(message.id);
+    if (message.error) pending.reject(new Error(message.error.message || "Host request failed."));
+    else pending.resolve(message.result);
+    return;
+  }
+
+  if (message.method === "ui/notifications/tool-result") {
+    const next = extractReviewState(message.params);
+    if (applyState(next)) render();
+    return;
+  }
+
+  if (message.method === "ui/notifications/host-context-changed") {
+    hostContext = { ...hostContext, ...(message.params || {}) };
+    render();
+    return;
+  }
+
+  if (message.method === "ui/resource-teardown" && message.id !== undefined) {
+    postToHost({ id: message.id, result: {} });
+  }
+});
+
+window.addEventListener("openai:set_globals", () => {
+  const next = readChatGptState();
+  if (applyState(next)) render();
+});
+window.addEventListener("focus", refreshStatus);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void refreshStatus();
+});
+
+reviewState = readChatGptState() || window.__CAMPAIGN_REVIEW_PREVIEW_STATE__ || createPreviewState();
+sendInitialize();
+render();

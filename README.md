@@ -28,6 +28,8 @@ This is not Shopify-only. It is meant for any novice SMB advertiser who has a pr
   Self-contained MCP App UIs for the campaign workflow and cross-host reporting.
 - `src/reporting.ts`
   Flat MCP reporting client, level-specific requests, previous-period comparison, metadata enrichment, and official TikTok Ad Diagnosis normalization.
+- `src/campaign-review.ts`
+  Server-owned Smart+ Campaign proposal versions, advertiser resolution, write guard, idempotent Campaign-only creation, and TikTok read-back reconciliation.
 - `docs/capability-map.md`
   The concrete mapping between PRD flow steps and current TikTok Ads MCP coverage.
 - `docs/mcp-app-compatibility-playbook.md`
@@ -49,6 +51,9 @@ Already validated in the current environment:
 - `tool_diagnosis_get` supplies the report's Issues & recommendations module; the app does not generate performance diagnosis rules
 - The unauthenticated state returns the TikTok Ads connection step instead of sample report data
 - Live reporting never falls back to demo data; the two tools are intentionally separate
+- `/mcp/reporting` is isolated from the Hooray workspace tools and instructions
+- Campaign Review supports `WEB_CONVERSIONS`, `LEAD_GENERATION`, and `APP_PROMOTION`; unsupported brand objectives are rejected rather than remapped
+- Confirm creates one allowlisted Active Campaign only through `smart_plus_campaign_create`; no Ad Group, Ad, creative, delivery, or spend is created
 
 Still needed for production:
 
@@ -97,15 +102,30 @@ For the reporting demo, use these host-specific aliases after deployment:
 
 - ChatGPT: `https://<your-render-domain>/mcp/chatgpt`
 - Claude: `https://<your-render-domain>/mcp/claude`
+- TikTok Reporting and Campaign Review: `https://<your-render-domain>/mcp/reporting`
 
 Both aliases serve the same MCP server, `ReportState` contract, and MCP App UI. They are separate only to make host setup and production logs clearer.
 
-The Claude alias uses stateless Streamable HTTP requests so delayed widget resource reads do not depend on an in-memory session. The ChatGPT alias remains stateful for the multi-step campaign workflow. This transport difference does not create separate UIs or report contracts.
+The Claude alias uses stateless Streamable HTTP requests so delayed widget resource reads do not depend on an in-memory session. The ChatGPT and Reporting aliases remain stateful for multi-step UI interactions. The Reporting alias intentionally exposes reporting, decision-demo, and Campaign Review tools without exposing the Hooray workspace.
 
 Note:
 
 - Render gives you a stable HTTPS default domain immediately, which is much more reliable than a temporary tunnel.
 - The local `.local/` auth state directory is sufficient for first-pass testing, but production should move OAuth state/tokens into a persistent store.
+- A Render deploy restarts the service and can clear `.local/`; complete TikTok OAuth after each deploy until persistent token storage is added.
+
+## Campaign Review QA
+
+Use the Reporting connector URL `https://<your-render-domain>/mcp/reporting`.
+
+Golden prompts:
+
+- `Prepare a Website Conversions Smart+ Campaign review for Education Coaching0315 with a USD 50 dynamic daily budget, Website destination, no catalog, and no special ad category.`
+- `Prepare a Lead Generation Smart+ Campaign review for Education Coaching0315 with a USD 60 dynamic daily budget, no catalog, and no special ad category.`
+- `Preview an App Promotion Campaign Review UI for Education Coaching0315 using App install and App ID 1234567890123456789. Do not create it.`
+- `Prepare a Brand Awareness campaign review.` The Smart+ review tool must not be called; route the request to a manual-campaign workflow.
+
+Only the allowlisted advertiser IDs in `CAMPAIGN_REVIEW_WRITE_ADVERTISER_IDS` can use Confirm. `CAMPAIGN_REVIEW_WRITE_MODE` must be `campaign_only`.
 
 ## Reporting preview
 

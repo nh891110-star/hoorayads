@@ -51,6 +51,7 @@ const transports: Record<string, SessionTransport> = {};
 
 function hostSurfaceForPath(path: string): HostSurface {
   if (path.endsWith("/claude")) return "claude";
+  if (path.endsWith("/reporting")) return "reporting";
   if (path.endsWith("/chatgpt")) return "chatgpt";
   return "generic";
 }
@@ -198,7 +199,7 @@ async function handleDelete(req: Request, res: Response) {
   await transport.handleRequest(req, res);
 }
 
-const mcpEndpoints = ["/mcp", "/mcp-v2", "/mcp/chatgpt", "/mcp/claude"];
+const mcpEndpoints = ["/mcp", "/mcp-v2", "/mcp/chatgpt", "/mcp/claude", "/mcp/reporting"];
 app.post(mcpEndpoints, handlePost);
 app.get(mcpEndpoints, handleGet);
 app.delete(mcpEndpoints, handleDelete);
@@ -257,6 +258,7 @@ app.get("/health", (_req: Request, res: Response) => {
     mcpEndpointV2: "/mcp-v2",
     chatGptMcpEndpoint: "/mcp/chatgpt",
     claudeMcpEndpoint: "/mcp/claude",
+    reportingMcpEndpoint: "/mcp/reporting",
     claudeTransportMode: "stateless",
     reportPreview: "/report-preview",
     sessions: Object.keys(transports).length,
@@ -301,7 +303,7 @@ app.get("/callback", (req: Request, res: Response) => {
       <html>
         <body style="font-family: sans-serif; padding: 24px;">
           <h1>TikTok authorization received</h1>
-          <p>You can return to ChatGPT or Claude and continue the Hooray TikTok Ads flow.</p>
+          <p>You can return to your TikTok Ads app in ChatGPT or Claude and continue.</p>
           <p>Authorization target: ${surface === "flat" ? "TikTok Ads Flat MCP reporting" : "TikTok Ads Progressive MCP"}.</p>
         </body>
       </html>

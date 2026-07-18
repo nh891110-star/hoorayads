@@ -61,6 +61,19 @@ import {
   decisionCardDemoOutput
 } from "./tool-contract.js";
 import {
+  createSmartPlusCampaignFromReviewInput,
+  createSmartPlusCampaignFromReviewOutput,
+  getSmartPlusCampaignReviewStatusInput,
+  getSmartPlusCampaignReviewStatusOutput,
+  reviewSmartPlusCampaignInput,
+  reviewSmartPlusCampaignOutput,
+  reviseSmartPlusCampaignReviewInput,
+  reviseSmartPlusCampaignReviewOutput
+} from "./campaign-review-contract.js";
+import type { CampaignReviewInput } from "./campaign-review-contract.js";
+import { createCampaignReviewStore } from "./campaign-review.js";
+import type { CampaignReviewState } from "./campaign-review.js";
+import {
   accountAuthorizationResult,
   accountErrorResult,
   accountResult,
@@ -105,8 +118,11 @@ const widgetJs = readFileSync(join(currentDir, "../web/widget.js"), "utf8");
 const widgetCss = readFileSync(join(currentDir, "../web/widget.css"), "utf8");
 const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget.js"), "utf8");
 const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
+const campaignReviewWidgetJs = readFileSync(join(currentDir, "../web/campaign-review-widget.js"), "utf8");
+const campaignReviewWidgetCss = readFileSync(join(currentDir, "../web/campaign-review-widget.css"), "utf8");
 const WIDGET_URI = "ui://widget/tiktok-ads-workspace-v10.html";
 const REPORT_WIDGET_URI = "ui://widget/tiktok-ads-report-v13.html";
+const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v1.html";
 const LEGACY_REPORT_WIDGET_URIS = [
   "ui://widget/tiktok-ads-report-v12.html",
   "ui://widget/tiktok-ads-report-v11.html",
@@ -137,7 +153,11 @@ const WIDGET_DESCRIPTION =
   "Display-only TikTok Ads workspace for product intake, creative review, campaign drafting, publish, and reporting. The user controls each step through chat.";
 const REPORT_WIDGET_DESCRIPTION =
   "Interactive TikTok Ads performance reporting and decision cards for verified performance, creative evidence, launch review, and campaign update review.";
-export type HostSurface = "chatgpt" | "claude" | "generic";
+const CAMPAIGN_REVIEW_WIDGET_DESCRIPTION =
+  "Interactive review and approval card for one TikTok Upgraded Smart+ Campaign. It shows Campaign-level settings only, creates an Active Campaign after explicit confirmation, and never creates Ad Groups, Ads, creatives, or delivery.";
+const REPORTING_SERVER_INSTRUCTIONS =
+  "TikTok Ads Reporting provides verified reporting views and Campaign-level Smart+ review cards. Use get_ads_report for live performance questions and get_ads_report_demo only when the user explicitly requests demo data. Use review_smartplus_campaign only after the conversation contains enough Campaign-level information for WEB_CONVERSIONS, LEAD_GENERATION, or APP_PROMOTION. The review card is the human approval boundary: do not create a campaign before the user selects Create campaign in the card. The card creates exactly one Active Campaign and never creates an Ad Group, Ad, creative, delivery, or spend. Use the advertiser account selected by the user or the only authorized account; never invent an advertiser ID. Keep TikTok-returned data separate from model suggestions, label only genuinely model-suggested fields, and do not claim that an AI suggestion is a TikTok recommendation. Unsupported objectives such as Reach, Video Views, or Brand Awareness must be routed to a manual-campaign workflow rather than forced into Smart+.";
+export type HostSurface = "chatgpt" | "claude" | "reporting" | "generic";
 
 function computeClaudeAppDomain(mcpServerUrl: string) {
   const hash = createHash("sha256").update(mcpServerUrl).digest("hex").slice(0, 32);
@@ -189,6 +209,29 @@ const RESULT_REPORT_META = {
     resourceUri: REPORT_WIDGET_URI
   },
   "openai/outputTemplate": REPORT_WIDGET_URI
+} as const;
+const TOOL_CAMPAIGN_REVIEW_META = {
+  ui: {
+    resourceUri: CAMPAIGN_REVIEW_WIDGET_URI,
+    visibility: ["model", "app"]
+  },
+  "openai/outputTemplate": CAMPAIGN_REVIEW_WIDGET_URI,
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Preparing Campaign Review...",
+  "openai/toolInvocation/invoked": "Campaign Review ready."
+} as const;
+const TOOL_CAMPAIGN_REVIEW_APP_META = {
+  ui: {
+    visibility: ["app"]
+  },
+  "openai/widgetAccessible": true
+} as const;
+const RESULT_CAMPAIGN_REVIEW_META = {
+  [RESOURCE_URI_META_KEY]: CAMPAIGN_REVIEW_WIDGET_URI,
+  ui: {
+    resourceUri: CAMPAIGN_REVIEW_WIDGET_URI
+  },
+  "openai/outputTemplate": CAMPAIGN_REVIEW_WIDGET_URI
 } as const;
 
 function withWidgetToolMeta<T extends object>(definition: T): T & { _meta: Record<string, unknown> } {
@@ -616,10 +659,58 @@ export function claudeReportFallback(reportState: ReportState) {
   ].join("\n");
 }
 
+function campaignReviewFallback(state: CampaignReviewState) {
+  const objective = {
+    WEB_CONVERSIONS: "Website conversions",
+    LEAD_GENERATION: "Lead generation",
+    APP_PROMOTION: "App promotion"
+  }[state.campaign.objectiveType];
+  const dailyBudget =
+    state.campaign.budgetMode.includes("DAILY") || state.campaign.budgetMode === "BUDGET_MODE_DAY";
+  const budget =
+    state.campaign.budget === undefined
+      ? "Not set"
+      : `${state.account.currency} ${state.campaign.budget.toFixed(2)}${dailyBudget ? "/day" : " total"}`;
+  const status = {
+    proposed: "Proposed campaign",
+    outdated: "Outdated proposal",
+    creating: "Creating campaign",
+    checking: "Checking creation status",
+    created: "Campaign created",
+    error: "Needs attention",
+    outcome_unknown: "Creation status unconfirmed"
+  }[state.status];
+
+  return [
+    `### ${state.campaign.campaignName}`,
+    "",
+    `**${status}** · ${state.account.advertiserName} · ${state.account.maskedAdvertiserId}`,
+    "",
+    `- Campaign objective: ${objective}`,
+    `- Campaign budget: ${budget}`,
+    `- Campaign Budget Optimization: ${state.campaign.budgetOptimizeOn ? "On" : "Off"}`,
+    `- Catalog: ${state.campaign.catalogEnabled ? state.campaign.catalogType || "Used" : "Not used"}`,
+    `- Special ad category: ${state.campaign.specialIndustriesConfirmed ? state.campaign.specialIndustries.join(", ") || "None selected" : "Not confirmed"}`,
+    "- Status after creation: Active",
+    ...(state.execution?.campaignId ? [`- Campaign ID: ${state.execution.campaignId}`] : []),
+    ...(state.validationErrors.length ? ["", `Review required: ${state.validationErrors.join(" ")}`] : []),
+    "",
+    "This review creates one Active Campaign only. It does not create Ad Groups, Ads, creatives, or delivery, so delivery cannot begin yet."
+  ].join("\n");
+}
+
 export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
   const tikTokConfig = getTikTokAppConfig();
   const state = sharedLaunchState;
-  const endpointPath = hostSurface === "claude" ? "/mcp/claude" : hostSurface === "chatgpt" ? "/mcp/chatgpt" : "/mcp";
+  const campaignReviewStore = createCampaignReviewStore();
+  const endpointPath =
+    hostSurface === "claude"
+      ? "/mcp/claude"
+      : hostSurface === "chatgpt"
+        ? "/mcp/chatgpt"
+        : hostSurface === "reporting"
+          ? "/mcp/reporting"
+          : "/mcp";
   const uiDomain = computeClaudeAppDomain(`${PUBLIC_BASE_URL}${endpointPath}`);
   const resourceMeta = (description: string) => ({
     ui: {
@@ -644,6 +735,7 @@ export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
   });
   const workspaceResourceMeta = resourceMeta(WIDGET_DESCRIPTION);
   const reportResourceMeta = resourceMeta(REPORT_WIDGET_DESCRIPTION);
+  const campaignReviewResourceMeta = resourceMeta(CAMPAIGN_REVIEW_WIDGET_DESCRIPTION);
 
   const getCurrentProduct = (): SessionProductState => ({ ...state.currentProduct });
   const updateCurrentProduct = (updates: Partial<SessionProductState>): SessionProductState => {
@@ -923,10 +1015,15 @@ export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
   };
 
   const server = new McpServer(
-    { name: "tiktok-ads-agent-poc", version: "0.4.0" },
+    {
+      name: hostSurface === "reporting" ? "tiktok-ads-reporting" : "tiktok-ads-agent-poc",
+      version: "0.5.0"
+    },
     {
       instructions:
-        "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review as a chat-driven workflow. The rendered Hooray TikTok Ads workspace is display-only: do not ask the user to click buttons or edit fields inside the card. If the user provides a product URL, call open_tiktok_ads_workspace with productUrl so the first visible card is Confirm this product; do not show a Start card. If the user provides a store URL, call open_tiktok_ads_workspace with storeUrl so the first visible card is Pick a product; treat Pick product as a substep inside Product, not a separate main launch step. When showing a card, write exactly one short sentence before the card that explains what the card shows and what the user can reply in chat to do next, such as 'reply continue', 'use option A', 'pick product 2', 'change the title to...', or 'approve preview'. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. Wait for explicit chat confirmation for the exact current step before moving forward. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. When the user confirms in chat, call the next MCP tool with userAction:'chat_confirmed'. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview. When the user asks to show, generate, refresh, compare, or export a TikTok Ads performance report, call get_ads_report directly. Default to live data, the last 7 complete days, campaign level, and previous-period comparison unless the user specifies otherwise. Call get_ads_report_demo only when the user explicitly asks for demo, sample, preview, or UI test data, and never present demo output as live TikTok data. When OAuth is unavailable and the user explicitly asks to preview creative performance, call get_creative_performance_demo. For a demo pre-launch approval card, call review_campaign_launch_demo. For a demo campaign budget-change card, call review_campaign_update_demo. These three tools return deterministic demo evidence and never mutate TikTok Ads. Do not call render_tiktok_ads_workspace after any report or decision-card tool because each renders its own MCP App resource."
+        hostSurface === "reporting"
+          ? REPORTING_SERVER_INSTRUCTIONS
+          : "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review as a chat-driven workflow. The rendered Hooray TikTok Ads workspace is display-only: do not ask the user to click buttons or edit fields inside the card. If the user provides a product URL, call open_tiktok_ads_workspace with productUrl so the first visible card is Confirm this product; do not show a Start card. If the user provides a store URL, call open_tiktok_ads_workspace with storeUrl so the first visible card is Pick a product; treat Pick product as a substep inside Product, not a separate main launch step. When showing a card, write exactly one short sentence before the card that explains what the card shows and what the user can reply in chat to do next, such as 'reply continue', 'use option A', 'pick product 2', 'change the title to...', or 'approve preview'. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. Wait for explicit chat confirmation for the exact current step before moving forward. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. When the user confirms in chat, call the next MCP tool with userAction:'chat_confirmed'. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview. When the user asks to show, generate, refresh, compare, or export a TikTok Ads performance report, call get_ads_report directly. Default to live data, the last 7 complete days, campaign level, and previous-period comparison unless the user specifies otherwise. Call get_ads_report_demo only when the user explicitly asks for demo, sample, preview, or UI test data, and never present demo output as live TikTok data. When OAuth is unavailable and the user explicitly asks to preview creative performance, call get_creative_performance_demo. For a demo pre-launch approval card, call review_campaign_launch_demo. For a demo campaign budget-change card, call review_campaign_update_demo. These three tools return deterministic demo evidence and never mutate TikTok Ads. Do not call render_tiktok_ads_workspace after any report or decision-card tool because each renders its own MCP App resource."
     }
   );
 
@@ -958,10 +1055,12 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     );
   };
 
-  registerWidgetResource("tiktok-ads-workspace", WIDGET_URI);
-  LEGACY_WIDGET_URIS.forEach((uri, index) => {
-    registerWidgetResource(`tiktok-ads-workspace-legacy-${index + 1}`, uri);
-  });
+  if (hostSurface !== "reporting") {
+    registerWidgetResource("tiktok-ads-workspace", WIDGET_URI);
+    LEGACY_WIDGET_URIS.forEach((uri, index) => {
+      registerWidgetResource(`tiktok-ads-workspace-legacy-${index + 1}`, uri);
+    });
+  }
 
   const registerReportWidgetResource = (name: string, uri: string) => {
     registerAppResource(
@@ -995,6 +1094,34 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
   LEGACY_REPORT_WIDGET_URIS.forEach((uri, index) => {
     registerReportWidgetResource(`tiktok-ads-report-legacy-${index + 1}`, uri);
   });
+
+  if (hostSurface === "reporting") {
+    registerAppResource(
+      server,
+      "tiktok-smartplus-campaign-review-v1",
+      CAMPAIGN_REVIEW_WIDGET_URI,
+      {
+        title: "TikTok Smart+ Campaign Review",
+        description: CAMPAIGN_REVIEW_WIDGET_DESCRIPTION,
+        mimeType: RESOURCE_MIME_TYPE,
+        _meta: campaignReviewResourceMeta
+      },
+      async () => ({
+        contents: [
+          {
+            uri: CAMPAIGN_REVIEW_WIDGET_URI,
+            mimeType: RESOURCE_MIME_TYPE,
+            text: `
+<div id="campaign-review-root"></div>
+<style>${campaignReviewWidgetCss}</style>
+<script type="module">${campaignReviewWidgetJs}</script>
+          `.trim(),
+            _meta: campaignReviewResourceMeta
+          }
+        ]
+      })
+    );
+  }
 
   registerAppTool(
     server,
@@ -1199,6 +1326,132 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       };
     }
   );
+
+  if (hostSurface === "reporting") {
+    const campaignReviewResult = (campaignReviewState: CampaignReviewState, message: string) => ({
+      structuredContent: { campaignReviewState },
+      content: [
+        {
+          type: "text" as const,
+          text: `${message}\n\n${campaignReviewFallback(campaignReviewState)}`
+        }
+      ],
+      _meta: {
+        ...RESULT_CAMPAIGN_REVIEW_META,
+        experienceType: "smartplus_campaign_review",
+        campaignScope: "campaign_only",
+        executionTool: "smart_plus_campaign_create"
+      }
+    });
+
+    registerAppTool(
+      server,
+      "review_smartplus_campaign",
+      {
+        title: "Review Smart+ Campaign",
+        description:
+          "Prepare the interactive human-review card for exactly one TikTok Upgraded Smart+ Campaign. Call this only after the conversation contains enough Campaign-level information for WEB_CONVERSIONS, LEAD_GENERATION, or APP_PROMOTION and before any create call. Resolve the advertiser from the user's explicit selection or the only authorized account; never invent an advertiser ID. Pass fields selected by the model in aiSuggestedFields so the UI labels them as AI suggested, never as TikTok recommendations. The card shows Campaign-level fields only and does not create an Ad Group, Ad, creative, delivery, or spend.",
+        inputSchema: reviewSmartPlusCampaignInput,
+        outputSchema: reviewSmartPlusCampaignOutput,
+        _meta: TOOL_CAMPAIGN_REVIEW_META,
+        annotations: {
+          readOnlyHint: true,
+          openWorldHint: true,
+          destructiveHint: false,
+          idempotentHint: false
+        }
+      },
+      async (input: CampaignReviewInput) => {
+        const campaignReviewState = await campaignReviewStore.prepare(input);
+        return campaignReviewResult(
+          campaignReviewState,
+          campaignReviewState.status === "error"
+            ? "Show the Campaign Review error or connection state."
+            : "Show the Campaign Review card and wait for the user's action in the card."
+        );
+      }
+    );
+
+    registerAppTool(
+      server,
+      "revise_smartplus_campaign_review",
+      {
+        title: "Apply Campaign Review changes",
+        description:
+          "Apply edits from the Campaign Review UI and create a new immutable proposal version. The expectedVersion compare-and-swap prevents stale cards from overwriting a newer proposal. This changes only server-side review state and does not create or update TikTok Ads objects.",
+        inputSchema: reviseSmartPlusCampaignReviewInput,
+        outputSchema: reviseSmartPlusCampaignReviewOutput,
+        _meta: TOOL_CAMPAIGN_REVIEW_APP_META,
+        annotations: {
+          readOnlyHint: false,
+          openWorldHint: false,
+          destructiveHint: false,
+          idempotentHint: false
+        }
+      },
+      async ({ proposalId, expectedVersion, ...input }) => {
+        const campaignReviewState = campaignReviewStore.revise(
+          proposalId,
+          expectedVersion,
+          input as Omit<CampaignReviewInput, "advertiserId" | "advertiserName">
+        );
+        return campaignReviewResult(campaignReviewState, "Show the latest Campaign Review proposal version.");
+      }
+    );
+
+    registerAppTool(
+      server,
+      "get_smartplus_campaign_review_status",
+      {
+        title: "Check Campaign Review status",
+        description:
+          "Read the server-owned state for a Campaign Review version. The widget uses this to mark an older card Inactive and to reconcile a create request whose outcome was not immediately confirmed. It never retries campaign creation.",
+        inputSchema: getSmartPlusCampaignReviewStatusInput,
+        outputSchema: getSmartPlusCampaignReviewStatusOutput,
+        _meta: TOOL_CAMPAIGN_REVIEW_APP_META,
+        annotations: {
+          readOnlyHint: true,
+          openWorldHint: true,
+          destructiveHint: false,
+          idempotentHint: true
+        }
+      },
+      async ({ proposalId, expectedVersion }) => {
+        const campaignReviewState = await campaignReviewStore.getStatus(proposalId, expectedVersion);
+        return campaignReviewResult(campaignReviewState, "Refresh the existing Campaign Review card state.");
+      }
+    );
+
+    registerAppTool(
+      server,
+      "create_smartplus_campaign_from_review",
+      {
+        title: "Create approved Smart+ Campaign",
+        description:
+          "Create exactly one Active TikTok Upgraded Smart+ Campaign from the latest server-owned proposal snapshot after the user selects Confirm in the card. Never accept free-form Campaign fields here. The proposal version, numeric request_id, advertiser allowlist, and TikTok read-back make the operation idempotent and prevent stale or duplicate writes. This tool never creates an Ad Group, Ad, creative, delivery, or spend.",
+        inputSchema: createSmartPlusCampaignFromReviewInput,
+        outputSchema: createSmartPlusCampaignFromReviewOutput,
+        _meta: TOOL_CAMPAIGN_REVIEW_APP_META,
+        annotations: {
+          readOnlyHint: false,
+          openWorldHint: true,
+          destructiveHint: true,
+          idempotentHint: true
+        }
+      },
+      async ({ proposalId, expectedVersion }) => {
+        const campaignReviewState = await campaignReviewStore.create(proposalId, expectedVersion);
+        return campaignReviewResult(
+          campaignReviewState,
+          campaignReviewState.status === "created"
+            ? "Show the verified Campaign creation receipt."
+            : "Show the current Campaign creation status without retrying the write."
+        );
+      }
+    );
+
+    return server;
+  }
 
   const currentWorkspaceState = (): Record<string, unknown> => {
     if (state.currentVideoJob.status === "complete" && state.currentVideoJob.preview) {
