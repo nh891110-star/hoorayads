@@ -440,9 +440,28 @@ function stateFor(
   };
 }
 
-function createErrorState(error: unknown, mode: CampaignReviewMode = "live"): CampaignReviewState {
+function createErrorState(
+  error: unknown,
+  mode: CampaignReviewMode = "live",
+  input?: CampaignReviewInput | CampaignReviewDemoInput
+): CampaignReviewState {
   const reviewError = error instanceof CampaignReviewError ? error : new CampaignReviewError("CAMPAIGN_REVIEW_ERROR", error instanceof Error ? error.message : "Campaign review failed.");
   const now = new Date().toISOString();
+  const advertiserId = input?.advertiserId?.trim() || "";
+  const campaign = input
+    ? normalizeCampaignInput(input, advertiserId)
+    : {
+        advertiserId: "",
+        campaignName: "Campaign review unavailable",
+        objectiveType: "WEB_CONVERSIONS" as const,
+        budgetMode: "BUDGET_MODE_DYNAMIC_DAILY_BUDGET" as const,
+        budgetOptimizeOn: true,
+        catalogEnabled: false,
+        specialIndustries: [],
+        specialIndustriesConfirmed: false,
+        campaignType: "REGULAR_CAMPAIGN" as const,
+        aiSuggestedFields: []
+      };
   return {
     mode,
     actionTools: mode === "demo" ? DEMO_ACTION_TOOLS : LIVE_ACTION_TOOLS,
@@ -451,25 +470,16 @@ function createErrorState(error: unknown, mode: CampaignReviewMode = "live"): Ca
     status: "error",
     readyToCreate: false,
     account: {
-      advertiserId: "",
-      advertiserName: "Advertiser account required",
-      maskedAdvertiserId: "--",
+      advertiserId,
+      advertiserName: input?.advertiserName?.trim() || "Advertiser account required",
+      maskedAdvertiserId: advertiserId ? maskAdvertiserId(advertiserId) : "--",
       country: "--",
       currency: "USD",
       status: "UNKNOWN",
       timezone: "--"
     },
     campaign: {
-      advertiserId: "",
-      campaignName: "Campaign review unavailable",
-      objectiveType: "WEB_CONVERSIONS",
-      budgetMode: "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
-      budgetOptimizeOn: true,
-      catalogEnabled: false,
-      specialIndustries: [],
-      specialIndustriesConfirmed: false,
-      campaignType: "REGULAR_CAMPAIGN",
-      aiSuggestedFields: [],
+      ...campaign,
       operationStatus: "ENABLE"
     },
     validationErrors: [reviewError.message],
@@ -522,7 +532,7 @@ export function createCampaignReviewStore(
       proposals.set(record.proposalId, record);
       return stateFor(record, record.currentVersion, mode);
     } catch (error) {
-      return createErrorState(error, mode);
+      return createErrorState(error, mode, input);
     }
   };
 

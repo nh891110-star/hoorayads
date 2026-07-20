@@ -96,10 +96,15 @@ try {
     proposedState?.status === "error" &&
     ["TIKTOK_AUTH_REQUIRED", "TIKTOK_MCP_MISCONFIGURED"].includes(proposedState?.execution?.errorCode)
   ) {
+    assert(proposedState.campaign.campaignName === "MCP UI QA - Contract Review", "OAuth error state lost the proposed Campaign name.");
+    assert(proposedState.campaign.budget === 50, "OAuth error state lost the proposed Campaign budget.");
+    assert(proposedState.campaign.salesDestination === "WEBSITE", "OAuth error state lost the proposed sales destination.");
+    assert(proposedState.campaign.specialIndustriesConfirmed === true, "OAuth error state lost the special ad category confirmation.");
+    assert(proposedState.account.advertiserName === "Education Coaching0315", "OAuth error state lost the requested advertiser name.");
     console.log(JSON.stringify({
       ok: true,
       liveGate: proposedState.execution.errorCode,
-      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "flat_oauth_gate", "brand_negative_schema"]
+      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "flat_oauth_gate", "oauth_error_input_preservation", "brand_negative_schema"]
     }, null, 2));
     process.exitCode = 0;
   } else {
