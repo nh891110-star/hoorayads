@@ -102,7 +102,11 @@ function fallback(state: CampaignReviewState) {
     "",
     state.mode === "demo"
       ? "Interaction demo only. Confirmation does not call TikTok APIs or create any TikTok object."
-      : "This review creates one Active Campaign only. It does not create Ad Groups, Ads, creatives, delivery, or spend."
+      : state.status === "created"
+        ? "Fields returned by TikTok Campaign read-back are verified; omitted fields remain approved proposal values. No Ad Group, Ad, creative, delivery, or spend was created."
+        : state.status === "outcome_unknown"
+          ? "TikTok read-back is not verified. Check status before taking another action and do not submit this proposal again."
+          : "Proposal values only. Nothing exists in TikTok yet. Confirmation creates one Active Campaign only; it does not create Ad Groups, Ads, creatives, delivery, or spend."
   ].join("\n");
 }
 

@@ -106,6 +106,7 @@ await page.setContent(`
 
 assert(await page.getByText("MCP UI QA - Website Conversions").isVisible(), "Proposed Campaign name is not visible.");
 assert(await page.getByText("Status after creation").isVisible(), "Active status review is missing.");
+assert(await page.getByText("Proposal values only.", { exact: false }).isVisible(), "Proposed card must disclose that its fields are not TikTok read-back.");
 assert((await page.getByText("Ad Group", { exact: false }).count()) === 1, "Only consequence copy should mention Ad Groups.");
 if (screenshotPrefix) await page.screenshot({ path: `${screenshotPrefix}-proposed.png`, fullPage: true });
 
@@ -145,6 +146,7 @@ assert(lastCall.args.expectedVersion === 3, "Create campaign must submit only th
 assert(await page.getByText("Submitted successfully").isVisible(), "Verified success state was not rendered.");
 assert(await page.getByText("1840000000000000001").isVisible(), "Success receipt is missing Campaign ID.");
 assert(await page.getByText("TikTok Campaign read-back").isVisible(), "Success receipt must disclose its TikTok read-back source.");
+assert(await page.getByText("Fields marked TikTok verified", { exact: false }).isVisible(), "Success card must explain per-field provenance.");
 assert((await page.getByText("TikTok verified", { exact: true }).count()) >= 5, "Read-back fields are not marked TikTok verified.");
 assert((await page.getByText("Proposal", { exact: true }).count()) >= 2, "Fields omitted from TikTok read-back must remain marked Proposal.");
 assert((await page.getByRole("button", { name: "Confirm" }).count()) === 0, "Success state must not keep an active confirm button.");
@@ -173,6 +175,7 @@ await page.evaluate(() => {
 });
 assert(await page.getByText("Creation status is not yet confirmed.").isVisible(), "Read-back mismatch must render an unconfirmed status notice.");
 assert(await page.getByText("Unconfirmed · TikTok returned DISABLE").isVisible(), "Read-back mismatch must not be presented as Active.");
+assert(await page.getByText("do not submit this proposal again", { exact: false }).isVisible(), "Unconfirmed read-back must block duplicate submission guidance.");
 
 await page.evaluate(() => {
   window.openai.toolOutput = {

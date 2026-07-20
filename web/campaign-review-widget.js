@@ -371,10 +371,12 @@ function renderReview() {
   const consequence = state.status === "created"
     ? isDemo()
       ? "Interaction test completed. No TikTok API was called and no TikTok object was created."
-      : "TikTok returned and verified the Campaign ID. No Ad Group, Ad, creative, or delivery was created."
+      : "Fields marked TikTok verified were returned by Campaign read-back. Fields marked Proposal were not returned and remain the approved values. No Ad Group, Ad, creative, or delivery was created."
+    : state.status === "outcome_unknown"
+      ? "TikTok read-back is not verified. Check status before taking another action; do not submit this proposal again."
     : isDemo()
       ? "Confirming simulates an Active Campaign submission. It does not call TikTok APIs or create any TikTok object."
-      : "Confirming creates one Active TikTok Smart+ Campaign. It cannot deliver or spend until eligible Ad Group and Ad objects are added.";
+      : "Proposal values only. Nothing exists in TikTok yet. Confirming creates one Active TikTok Smart+ Campaign; it cannot deliver or spend until eligible Ad Group and Ad objects are added.";
 
   root.innerHTML = `<article class="campaign-card ${state.status === "outdated" ? "is-outdated" : ""} ${state.status === "created" ? "is-submitted" : ""}">
     <header class="card-header">
