@@ -205,7 +205,7 @@ await page.evaluate(() => {
         execution: {
           status: "failed",
           errorCode: "TIKTOK_AUTH_REQUIRED",
-          errorMessage: "Connect TikTok Ads before reviewing a campaign.",
+          errorMessage: "Connect a TikTok advertiser account before reviewing this campaign.",
           authorizationUrl: "https://business-api.tiktok.com/oauth/test"
         }
       }
@@ -214,7 +214,7 @@ await page.evaluate(() => {
   window.dispatchEvent(new Event("openai:set_globals"));
 });
 assert(await page.getByText("Campaign was not created.").isVisible(), "Error state must explain that no campaign was created.");
-assert(await page.getByRole("button", { name: "Connect TikTok Ads" }).isVisible(), "OAuth error state must expose a connection action.");
+assert(await page.getByRole("button", { name: "Connect advertiser account" }).isVisible(), "OAuth error state must expose a connection action.");
 
 await browser.close();
 console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "readback_mismatch", "inactive", "oauth_error"] }, null, 2));

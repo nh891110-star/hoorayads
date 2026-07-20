@@ -342,7 +342,7 @@ function renderNotice(state) {
   if (["error", "outcome_unknown"].includes(state.status)) {
     const message = state.execution?.errorMessage || state.validationErrors?.[0] || "Campaign creation could not be completed.";
     const connect = state.execution?.authorizationUrl
-      ? `<button class="button button-link" data-action="connect" data-url="${escapeHtml(state.execution.authorizationUrl)}">Connect TikTok Ads</button>`
+      ? `<button class="button button-link" data-action="connect" data-url="${escapeHtml(state.execution.authorizationUrl)}">Connect advertiser account</button>`
       : "";
     return `<div class="notice notice-error" role="alert"><strong>${state.status === "outcome_unknown" ? "Creation status is not yet confirmed." : "Campaign was not created."}</strong><span>${escapeHtml(message)}</span>${connect}</div>`;
   }

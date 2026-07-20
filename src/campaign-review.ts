@@ -363,7 +363,7 @@ async function resolveAdvertiserAccount(
     if (accountResult.status === "needs_authorization") {
       throw new CampaignReviewError(
         "TIKTOK_AUTH_REQUIRED",
-        "Connect TikTok Ads before reviewing a campaign.",
+        "Connect a TikTok advertiser account before reviewing this campaign.",
         accountResult.authorizationUrl
       );
     }
@@ -404,7 +404,7 @@ async function resolveAdvertiserAccount(
   if (authResult.status === "needs_authorization") {
     throw new CampaignReviewError(
       "TIKTOK_AUTH_REQUIRED",
-      "Connect TikTok Ads before reviewing a campaign.",
+      "Connect a TikTok advertiser account before reviewing this campaign.",
       authResult.authorizationUrl
     );
   }
@@ -443,7 +443,7 @@ async function resolveAdvertiserAccount(
   if (infoResult.status === "needs_authorization") {
     throw new CampaignReviewError(
       "TIKTOK_AUTH_REQUIRED",
-      "Reconnect TikTok Ads before reviewing the campaign.",
+      "Reconnect the TikTok advertiser account before reviewing this campaign.",
       infoResult.authorizationUrl
     );
   }
@@ -803,7 +803,7 @@ export function createCampaignReviewStore(
         authContext
       );
       if (createResult.status === "needs_authorization") {
-        throw new CampaignReviewError("TIKTOK_AUTH_REQUIRED", "Reconnect TikTok Ads before creating this campaign.", createResult.authorizationUrl);
+        throw new CampaignReviewError("TIKTOK_AUTH_REQUIRED", "Reconnect the TikTok advertiser account before creating this campaign.", createResult.authorizationUrl);
       }
       if (createResult.status === "misconfigured") {
         throw new CampaignReviewError("TIKTOK_MCP_MISCONFIGURED", createResult.message);

@@ -27,8 +27,11 @@ import { createCampaignReviewStore } from "./campaign-review.js";
 import type { CampaignReviewState } from "./campaign-review.js";
 import type { TikTokMcpAuthContext } from "./tiktok-mcp.js";
 
-export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v3.html";
-const LEGACY_CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v2.html";
+export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v4.html";
+const LEGACY_CAMPAIGN_REVIEW_WIDGET_URIS = [
+  "ui://widget/tiktok-smartplus-campaign-review-v3.html",
+  "ui://widget/tiktok-smartplus-campaign-review-v2.html"
+] as const;
 export const CAMPAIGN_REVIEW_WIDGET_DESCRIPTION =
   "Interactive Campaign-level review and approval card for one TikTok Upgraded Smart+ Campaign. Live confirmation creates one Active Campaign only. It never creates an Ad Group, Ad, creative, delivery, or spend.";
 
@@ -156,16 +159,19 @@ function registerResourceAt(
 function registerResource(server: McpServer, resourceMeta: Record<string, unknown>) {
   registerResourceAt(
     server,
-    "tiktok-smartplus-campaign-review-v3",
+    "tiktok-smartplus-campaign-review-v4",
     CAMPAIGN_REVIEW_WIDGET_URI,
     resourceMeta
   );
-  registerResourceAt(
-    server,
-    "tiktok-smartplus-campaign-review-v2",
-    LEGACY_CAMPAIGN_REVIEW_WIDGET_URI,
-    resourceMeta
-  );
+  for (const legacyUri of LEGACY_CAMPAIGN_REVIEW_WIDGET_URIS) {
+    const version = legacyUri.match(/-v(\d+)\.html$/)?.[1] || "legacy";
+    registerResourceAt(
+      server,
+      `tiktok-smartplus-campaign-review-v${version}`,
+      legacyUri,
+      resourceMeta
+    );
+  }
 }
 
 function registerLiveTools(server: McpServer, store: ReturnType<typeof createCampaignReviewStore>) {
