@@ -160,6 +160,8 @@ const CAMPAIGN_REVIEW_WIDGET_DESCRIPTION =
   "Interactive review and approval card for one TikTok Upgraded Smart+ Campaign. It shows Campaign-level settings only and supports isolated live and interaction-demo modes. Live confirmation creates one Active Campaign; demo confirmation never writes to TikTok. Neither mode creates Ad Groups, Ads, creatives, or delivery.";
 const REPORTING_SERVER_INSTRUCTIONS =
   "TikTok Ads Reporting provides verified reporting views and Campaign-level Smart+ review cards. Use get_ads_report for live performance questions and get_ads_report_demo only when the user explicitly requests demo data. For Campaign Review, use review_smartplus_campaign only when TikTok OAuth is available and the user is preparing a real WEB_CONVERSIONS, LEAD_GENERATION, or APP_PROMOTION Campaign. When the user asks to test, preview, QA, simulate, or use a card without OAuth, use review_smartplus_campaign_demo instead; its Edit, Confirm, submitting, success, error, and stale-version interactions are real UI behavior but it never writes to TikTok. Never present a demo receipt as a TikTok Campaign ID. Use either review tool only after the conversation contains enough Campaign-level information. The card is the human approval boundary: do not create a real campaign before the user selects Confirm in the live card. A live card creates exactly one Active Campaign and never creates an Ad Group, Ad, creative, delivery, or spend. Use the advertiser account selected by the user or the only authorized account; never invent an advertiser ID for live mode. Keep TikTok-returned data separate from model suggestions, label only genuinely model-suggested fields, and do not claim that an AI suggestion is a TikTok recommendation. Unsupported objectives such as Reach, Video Views, Traffic, or Brand Awareness must be routed to a manual-campaign workflow rather than forced into Smart+.";
+const CAMPAIGN_REVIEW_SERVER_INSTRUCTIONS =
+  "Hooray Campaign Review is the live human-approval boundary for creating exactly one TikTok Upgraded Smart+ Campaign. Use review_smartplus_campaign only after the conversation contains enough Campaign-level information for WEB_CONVERSIONS, LEAD_GENERATION, or APP_PROMOTION. Resolve the advertiser from the user's explicit selection or the only authorized account; never invent an advertiser ID. The card must appear before any write. Wait for the user to review or edit the card and select Confirm; only the card may call create_smartplus_campaign_from_review. Confirmation creates one Active Campaign and never creates an Ad Group, Ad, creative, delivery, or spend. Label only fields genuinely suggested by the model as AI suggested, never as TikTok recommendations. Do not generate demo data or simulated receipts on this server. Unsupported objectives such as Reach, Video Views, Traffic, or Brand Awareness must not call the Smart+ review tool.";
 export type HostSurface = "chatgpt" | "claude" | "reporting" | "generic";
 
 function computeClaudeAppDomain(mcpServerUrl: string) {
@@ -718,7 +720,8 @@ function campaignReviewFallback(state: CampaignReviewState) {
 export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
   const tikTokConfig = getTikTokAppConfig();
   const state = sharedLaunchState;
-  const campaignReviewStore = createCampaignReviewStore();
+  const campaignReviewSurface = hostSurface === "chatgpt" ? "progressive" : "flat";
+  const campaignReviewStore = createCampaignReviewStore({ surface: campaignReviewSurface });
   const campaignReviewDemoStore = createCampaignReviewStore({ mode: "demo" });
   const endpointPath =
     hostSurface === "claude"
@@ -1033,14 +1036,21 @@ export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
 
   const server = new McpServer(
     {
-      name: hostSurface === "reporting" ? "tiktok-ads-reporting" : "tiktok-ads-agent-poc",
-      version: "0.5.0"
+      name:
+        hostSurface === "chatgpt"
+          ? "hooray-tiktok-campaign-review"
+          : hostSurface === "reporting"
+            ? "tiktok-ads-reporting"
+            : "tiktok-ads-agent-poc",
+      version: "0.6.0"
     },
     {
       instructions:
-        hostSurface === "reporting"
-          ? REPORTING_SERVER_INSTRUCTIONS
-          : "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review as a chat-driven workflow. The rendered Hooray TikTok Ads workspace is display-only: do not ask the user to click buttons or edit fields inside the card. If the user provides a product URL, call open_tiktok_ads_workspace with productUrl so the first visible card is Confirm this product; do not show a Start card. If the user provides a store URL, call open_tiktok_ads_workspace with storeUrl so the first visible card is Pick a product; treat Pick product as a substep inside Product, not a separate main launch step. When showing a card, write exactly one short sentence before the card that explains what the card shows and what the user can reply in chat to do next, such as 'reply continue', 'use option A', 'pick product 2', 'change the title to...', or 'approve preview'. Then render the card. After rendering, stop; do not write post-card execution summaries such as 'done', 'called tool', 'returned status', implementation details, or progress recaps below the card. Wait for explicit chat confirmation for the exact current step before moving forward. Do not chain Product -> Storyboard -> Preview -> Account setup automatically. When the user confirms in chat, call the next MCP tool with userAction:'chat_confirmed'. Do not call approve_ad_inputs after generate_storyboard unless the user explicitly chooses a storyboard. Do not call get_video_status unless the user asks to check render status. Do not call get_ad_accounts, create_smartplus_campaign, approve_campaign_parameters, publish_campaign, or setup_reporting_digest without explicit user approval for that exact step. After a model-initiated business tool returns widgetState, call render_tiktok_ads_workspace with that widgetState, then stop. Account setup is optional: if TT4B, Business Center, Advertiser Account, and TikTok Account are already ready, skip it and continue to Review only after the user approves the preview. When the user asks to show, generate, refresh, compare, or export a TikTok Ads performance report, call get_ads_report directly. Default to live data, the last 7 complete days, campaign level, and previous-period comparison unless the user specifies otherwise. Call get_ads_report_demo only when the user explicitly asks for demo, sample, preview, or UI test data, and never present demo output as live TikTok data. When OAuth is unavailable and the user explicitly asks to preview creative performance, call get_creative_performance_demo. For a demo pre-launch approval card, call review_campaign_launch_demo. For a demo campaign budget-change card, call review_campaign_update_demo. These three tools return deterministic demo evidence and never mutate TikTok Ads. Do not call render_tiktok_ads_workspace after any report or decision-card tool because each renders its own MCP App resource."
+        hostSurface === "chatgpt"
+          ? CAMPAIGN_REVIEW_SERVER_INSTRUCTIONS
+          : hostSurface === "reporting"
+            ? REPORTING_SERVER_INSTRUCTIONS
+            : "Guide the advertiser through Product, Storyboard, Preview, optional Account setup, and Review as a chat-driven workflow. The rendered Hooray TikTok Ads workspace is display-only: do not ask the user to click buttons or edit fields inside the card. If the user provides a product URL, call open_tiktok_ads_workspace with productUrl so the first visible card is Confirm this product; do not show a Start card. If the user provides a store URL, call open_tiktok_ads_workspace with storeUrl so the first visible card is Pick a product; treat Pick product as a substep inside Product, not a separate main launch step. When showing a card, write exactly one short sentence before the card that explains what the card shows and what the user can reply in chat to do next. Then render the card and wait for explicit confirmation."
     }
   );
 
@@ -1072,7 +1082,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     );
   };
 
-  if (hostSurface !== "reporting") {
+  if (hostSurface !== "reporting" && hostSurface !== "chatgpt") {
     registerWidgetResource("tiktok-ads-workspace", WIDGET_URI);
     LEGACY_WIDGET_URIS.forEach((uri, index) => {
       registerWidgetResource(`tiktok-ads-workspace-legacy-${index + 1}`, uri);
@@ -1107,12 +1117,14 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     );
   };
 
-  registerReportWidgetResource("tiktok-ads-report-v13", REPORT_WIDGET_URI);
-  LEGACY_REPORT_WIDGET_URIS.forEach((uri, index) => {
-    registerReportWidgetResource(`tiktok-ads-report-legacy-${index + 1}`, uri);
-  });
+  if (hostSurface !== "chatgpt") {
+    registerReportWidgetResource("tiktok-ads-report-v13", REPORT_WIDGET_URI);
+    LEGACY_REPORT_WIDGET_URIS.forEach((uri, index) => {
+      registerReportWidgetResource(`tiktok-ads-report-legacy-${index + 1}`, uri);
+    });
+  }
 
-  if (hostSurface === "reporting") {
+  if (hostSurface === "reporting" || hostSurface === "chatgpt") {
     const registerCampaignReviewResource = (name: string, uri: string) =>
       registerAppResource(
         server,
@@ -1145,6 +1157,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
     });
   }
 
+  if (hostSurface !== "chatgpt") {
   registerAppTool(
     server,
     "get_ads_report",
@@ -1348,8 +1361,9 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       };
     }
   );
+  }
 
-  if (hostSurface === "reporting") {
+  if (hostSurface === "reporting" || hostSurface === "chatgpt") {
     const campaignReviewResult = (campaignReviewState: CampaignReviewState, message: string) => ({
       structuredContent: { campaignReviewState },
       content: [
@@ -1368,6 +1382,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       }
     });
 
+    if (hostSurface === "reporting") {
     registerAppTool(
       server,
       "review_smartplus_campaign_demo",
@@ -1466,6 +1481,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
         return campaignReviewResult(campaignReviewState, "Show the simulated Campaign submission state.");
       }
     );
+    }
 
     registerAppTool(
       server,

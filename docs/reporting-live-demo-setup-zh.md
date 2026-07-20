@@ -2,15 +2,16 @@
 
 ## 1. 最终架构
 
-这不是两套不同的报表产品，而是一套共享实现：
+这是两个明确隔离的 MCP 体验，共享同一个部署和 OAuth callback：
 
 - 两个明确隔离的入口：`get_ads_report` 只取真实数据，`get_ads_report_demo` 只用于无 OAuth 的 UI 测试
 - 一个数据协议：`ReportState`
 - 一个当前 UI 资源：`ui://widget/tiktok-ads-report-v13.html`，并保留 `v12` 至 `v1` 旧版本资源别名用于宿主缓存兼容
 - 三个只读决策卡片 Demo：Creative Performance、Campaign Launch Review、Campaign Update Review；均使用明确标注的固定示例数据，不执行 TikTok 写操作
-- ChatGPT 入口：`/mcp/chatgpt`
+- Hooray Campaign Review（ChatGPT）入口：`/mcp/chatgpt`
+- Reporting/QA 入口：`/mcp/reporting`
 - Claude 入口：`/mcp/claude`
-- Progressive MCP：保留现有建广告流程
+- Progressive MCP：为 Hooray Campaign Review 提供授权账号查询、Campaign 创建与回读
 - Flat MCP：负责 reporting、campaign/ad group/ad metadata 与官方 Ad Diagnosis 查询
 
 UI 优先使用 MCP Apps 标准 `_meta.ui.resourceUri`、`ui/initialize`、`ui/notifications/tool-result` 和 `tools/call`。`window.openai` 只作为 ChatGPT 兼容 fallback，所以不按 host 复制代码。
@@ -20,7 +21,8 @@ UI 优先使用 MCP Apps 标准 `_meta.ui.resourceUri`、`ui/initialize`、`ui/n
 当前 Render 服务域名：
 
 - Health：`https://tiktok-ads-agent-poc.onrender.com/health`
-- ChatGPT MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`
+- Hooray Campaign Review MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`
+- Reporting/QA MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/reporting`
 - Claude MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/claude`
 - OAuth callback：`https://tiktok-ads-agent-poc.onrender.com/callback`
 - 只读预览：`https://tiktok-ads-agent-poc.onrender.com/report-preview`
@@ -34,11 +36,11 @@ ChatGPT custom MCP apps 当前适用于 Business、Enterprise 和 Edu 的 ChatGP
 1. Business admin/owner 打开 `Settings > Apps > Advanced settings`，为自己启用 Developer mode；也可以从 `Workspace settings > Apps > Create` 开始。
 2. Enterprise/Edu admin 先在 `Workspace settings > Permissions & Roles > Connected Data` 授权 Developer mode；被授权用户再到 `Settings > Apps > Advanced settings` 打开开关。
 3. 从 `Settings > Apps > Create` 创建 app；admin/owner 也可以从 `Workspace settings > Apps > Create` 创建。
-4. Name 填 `Hooray TikTok Ads Reporting`。
-5. Description 填 `Generate interactive TikTok Ads performance reports from the TikTok Ads Flat MCP.`
+4. Name 填 `Hooray Campaign Review`。
+5. Description 填 `Review, edit, and confirm one live TikTok Smart+ Campaign before creation.`
 6. MCP server URL 填 `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`。
-7. App authentication 选择无认证；TikTok advertiser 授权由 `get_ads_report` 的 live flow 单独发起。
-8. 点击 `Scan Tools`，确认工具列表包含 `get_ads_report`、`get_ads_report_demo`、`get_creative_performance_demo`、`review_campaign_launch_demo` 和 `review_campaign_update_demo`，然后点击 `Create`。
+7. App authentication 选择无认证；TikTok advertiser 授权由 `review_smartplus_campaign` 的 live flow 单独发起。
+8. 点击 `Scan Tools`，确认模型可见工具只包含 `review_smartplus_campaign`；Edit、Status、Confirm/Create 是 widget-only action tools。确认列表中没有旧 workspace、report 或 demo tools，然后点击 `Create`。
 9. 新 app 会出现在 `Settings > Apps > Enabled Apps`，并带有 `Dev` 标签；在新 chat 的 tools menu 中选择它进行测试。
 
 官方说明：<https://help.openai.com/en/articles/12584461>
@@ -66,13 +68,13 @@ Team / Enterprise：
 
 ## 5. 测试 Prompt
 
-真实数据默认流程：
+Hooray 真实 Campaign Review：
 
 ```text
-Show my TikTok Ads report for the last 7 complete days.
+Prepare a Website Conversions Smart+ Campaign review for Education Coaching0315. Name it MCP UI QA Web Conversion, use USD 50 dynamic daily budget, Website destination, CBO on, no catalog, and no special ad category. Do not create it until I confirm in the card.
 ```
 
-更多例子：
+Reporting/QA connector 的报表例子：
 
 ```text
 Compare campaign performance with the previous period.
@@ -80,7 +82,7 @@ Show ad group performance from 2026-07-01 to 2026-07-07.
 Show the ad-level report and sort by spend.
 ```
 
-OAuth 暂不可用时，可明确要求测试数据：
+OAuth 暂不可用时，只在独立 Reporting/QA connector 明确要求测试数据：
 
 ```text
 Use get_ads_report_demo to show a TikTok Ads demo report from 2026-07-06 to 2026-07-12 at campaign level.

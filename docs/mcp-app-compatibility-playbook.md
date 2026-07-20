@@ -85,7 +85,8 @@ Run the automated report checks with:
 
 ```bash
 pnpm run check
-MCP_ENDPOINT=https://<host>/mcp/chatgpt pnpm run qa:reporting-widget
-MCP_ENDPOINT=https://<host>/mcp/chatgpt pnpm run qa:decision-cards
+MCP_ENDPOINT=https://<host>/mcp/reporting pnpm run qa:reporting-widget
+MCP_ENDPOINT=https://<host>/mcp/reporting pnpm run qa:decision-cards
+MCP_ENDPOINT=https://<host>/mcp/chatgpt pnpm run qa:campaign-review-mcp
 MCP_ENDPOINT=https://<host>/mcp/claude pnpm run qa:reporting-widget
 ```

@@ -172,7 +172,7 @@ type SmartPlusAdCreateResponse = {
 };
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
-const authStateDir = join(currentDir, "../.local");
+const authStateDir = process.env.TIKTOK_AUTH_STATE_DIR?.trim() || join(currentDir, "../.local");
 
 function getTikTokMcpUrl(surface: TikTokMcpSurface) {
   if (surface === "flat") {

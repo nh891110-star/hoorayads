@@ -98,25 +98,25 @@ Recommended first deploy steps:
 6. Put `https://<your-render-domain>/mcp` into the ChatGPT app builder.
 7. Put `https://<your-render-domain>/callback` into the TikTok developer app.
 
-For the reporting demo, use these host-specific aliases after deployment:
+Use these host-specific aliases after deployment:
 
-- ChatGPT: `https://<your-render-domain>/mcp/chatgpt`
+- Hooray Campaign Review for ChatGPT: `https://<your-render-domain>/mcp/chatgpt`
 - Claude: `https://<your-render-domain>/mcp/claude`
-- TikTok Reporting and Campaign Review: `https://<your-render-domain>/mcp/reporting`
+- TikTok Reporting and OAuth-free UI QA: `https://<your-render-domain>/mcp/reporting`
 
-Both aliases serve the same MCP server, `ReportState` contract, and MCP App UI. They are separate only to make host setup and production logs clearer.
+The Hooray ChatGPT endpoint intentionally exposes only the live Campaign Review experience. It uses the Progressive TikTok MCP OAuth bridge and does not expose the retired product/storyboard/render workspace, reporting UI, or demo tools. The Reporting endpoint remains isolated on the Flat MCP surface for reporting and OAuth-free UI QA.
 
 The Claude alias uses stateless Streamable HTTP requests so delayed widget resource reads do not depend on an in-memory session. The ChatGPT and Reporting aliases remain stateful for multi-step UI interactions. The Reporting alias intentionally exposes reporting, decision-demo, and Campaign Review tools without exposing the Hooray workspace.
 
 Note:
 
 - Render gives you a stable HTTPS default domain immediately, which is much more reliable than a temporary tunnel.
-- The local `.local/` auth state directory is sufficient for first-pass testing, but production should move OAuth state/tokens into a persistent store.
+- The local `.local/` auth state directory is sufficient for first-pass testing. Set `TIKTOK_AUTH_STATE_DIR` to a mounted persistent path in production so OAuth state survives deploys and restarts.
 - A Render deploy restarts the service and can clear `.local/`; complete TikTok OAuth after each deploy until persistent token storage is added.
 
 ## Campaign Review QA
 
-Use the Reporting connector URL `https://<your-render-domain>/mcp/reporting`.
+Use the Hooray connector URL `https://<your-render-domain>/mcp/chatgpt` for live review and creation. Use `/mcp/reporting` only for OAuth-free interaction QA.
 
 Golden prompts:
 
@@ -125,7 +125,7 @@ Golden prompts:
 - `Preview an App Promotion Campaign Review UI for Education Coaching0315 using App install and App ID 1234567890123456789. Do not create it.`
 - `Prepare a Brand Awareness campaign review.` The Smart+ review tool must not be called; route the request to a manual-campaign workflow.
 
-When OAuth is unavailable, ask for an interaction demo instead of a live review:
+When OAuth is unavailable, use the separate Reporting connector for an interaction demo instead of adding demo behavior to Hooray:
 
 - `OAuth is unavailable. Preview an interactive Smart+ Website Conversions Campaign Review for Education Coaching0315. Name it Summer Enrollment, use USD 50 dynamic daily budget, sales destination Website, CBO on, no catalog, and no special ad category. Do not create anything in TikTok.`
 - `Show a no-OAuth Campaign Review demo for Lead Generation with USD 80/day, CBO off, no catalog, and no special ad category.`

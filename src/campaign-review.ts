@@ -13,7 +13,8 @@ import type {
   CampaignSpecialIndustry,
   CampaignType
 } from "./campaign-review-contract.js";
-import { callTikTokMcpTool } from "./tiktok-mcp.js";
+import { callTikTokMcpTool, listTikTokAdvertiserAccounts } from "./tiktok-mcp.js";
+import type { TikTokMcpSurface } from "./tiktok-mcp.js";
 
 type AdvertiserAccount = {
   advertiserId: string;
@@ -275,7 +276,52 @@ export function buildSmartPlusCampaignPayload(campaign: NormalizedCampaignReview
   return payload;
 }
 
-async function resolveAdvertiserAccount(input: Pick<CampaignReviewInput, "advertiserId" | "advertiserName">) {
+async function resolveAdvertiserAccount(
+  input: Pick<CampaignReviewInput, "advertiserId" | "advertiserName">,
+  surface: TikTokMcpSurface
+) {
+  if (surface === "progressive") {
+    const accountResult = await listTikTokAdvertiserAccounts(surface);
+    if (accountResult.status === "needs_authorization") {
+      throw new CampaignReviewError(
+        "TIKTOK_AUTH_REQUIRED",
+        "Connect TikTok Ads before reviewing a campaign.",
+        accountResult.authorizationUrl
+      );
+    }
+    if (accountResult.status === "misconfigured") {
+      throw new CampaignReviewError("TIKTOK_MCP_MISCONFIGURED", accountResult.message);
+    }
+
+    const accounts = accountResult.data.accounts;
+    const advertiserName = input.advertiserName?.trim().toLowerCase();
+    const selected = input.advertiserId
+      ? accounts.find((account) => account.advertiserId === input.advertiserId)
+      : advertiserName
+        ? accounts.find((account) => account.advertiserName.trim().toLowerCase() === advertiserName)
+        : accounts.length === 1
+          ? accounts[0]
+          : undefined;
+
+    if (!selected) {
+      throw new CampaignReviewError(
+        accounts.length > 1 ? "ADVERTISER_SELECTION_REQUIRED" : "ADVERTISER_NOT_AUTHORIZED",
+        accounts.length > 1
+          ? "Choose one authorized advertiser account before reviewing the campaign."
+          : "The selected advertiser account is not authorized for this TikTok connection."
+      );
+    }
+
+    return {
+      advertiserId: selected.advertiserId,
+      advertiserName: selected.advertiserName,
+      country: selected.country,
+      currency: selected.currency,
+      status: selected.status,
+      timezone: selected.timezone
+    } satisfies AdvertiserAccount;
+  }
+
   const authResult = await callTikTokMcpTool<AuthAdvertiserResponse>("flat", "auth_advertiser_get");
   if (authResult.status === "needs_authorization") {
     throw new CampaignReviewError(
@@ -448,8 +494,11 @@ function createErrorState(error: unknown, mode: CampaignReviewMode = "live"): Ca
   };
 }
 
-export function createCampaignReviewStore(options: { mode?: CampaignReviewMode } = {}) {
+export function createCampaignReviewStore(
+  options: { mode?: CampaignReviewMode; surface?: TikTokMcpSurface } = {}
+) {
   const mode = options.mode ?? "live";
+  const surface = options.surface ?? "flat";
   const proposals = new Map<string, CampaignProposalRecord>();
 
   const demoAccount = (input: Pick<CampaignReviewInput, "advertiserId" | "advertiserName">): AdvertiserAccount => ({
@@ -463,7 +512,7 @@ export function createCampaignReviewStore(options: { mode?: CampaignReviewMode }
 
   const prepare = async (input: CampaignReviewInput | CampaignReviewDemoInput) => {
     try {
-      const account = mode === "demo" ? demoAccount(input) : await resolveAdvertiserAccount(input);
+      const account = mode === "demo" ? demoAccount(input) : await resolveAdvertiserAccount(input, surface);
       const campaign = normalizeCampaignInput(input, account.advertiserId);
       const record: CampaignProposalRecord = {
         proposalId: randomUUID(),
@@ -569,7 +618,7 @@ export function createCampaignReviewStore(options: { mode?: CampaignReviewMode }
   const reconcile = async (record: CampaignProposalRecord, campaignId?: string) => {
     const campaign = record.versions.get(record.currentVersion)?.campaign;
     if (!campaign) throw new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found.");
-    const getResult = await callTikTokMcpTool<SmartPlusCampaignGetResponse>("flat", "smart_plus_campaign_get", {
+    const getResult = await callTikTokMcpTool<SmartPlusCampaignGetResponse>(surface, "smart_plus_campaign_get", {
       advertiser_id: campaign.advertiserId,
       fields: [
         "campaign_id",
@@ -631,7 +680,7 @@ export function createCampaignReviewStore(options: { mode?: CampaignReviewMode }
       assertWriteGuard(version.campaign);
       record.execution = { ...record.execution, status: "creating", errorCode: undefined, errorMessage: undefined };
       const createResult = await callTikTokMcpTool<SmartPlusCampaignCreateResponse>(
-        "flat",
+        surface,
         "smart_plus_campaign_create",
         buildSmartPlusCampaignPayload(version.campaign, record.execution.requestId)
       );

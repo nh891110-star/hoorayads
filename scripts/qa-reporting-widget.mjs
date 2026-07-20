@@ -27,7 +27,7 @@ const LEGACY_REPORT_URIS = [
 ];
 const endpoint =
   process.env.MCP_ENDPOINT ||
-  `${(process.env.MCP_BASE_URL || "https://tiktok-ads-agent-poc.onrender.com").replace(/\/$/, "")}/mcp/chatgpt`;
+  `${(process.env.MCP_BASE_URL || "https://tiktok-ads-agent-poc.onrender.com").replace(/\/$/, "")}/mcp/reporting`;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema, ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
-const endpoint = process.env.MCP_ENDPOINT || "http://localhost:3010/mcp/reporting";
+const endpoint = process.env.MCP_ENDPOINT || "http://localhost:3010/mcp/chatgpt";
 const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v2.html";
 
 function assert(condition, message) {
@@ -24,17 +24,17 @@ await client.connect(transport);
 
 try {
   const tools = await client.listTools();
-  assert(!tools.tools.some((tool) => tool.name === "open_tiktok_ads_workspace"), "Reporting endpoint leaked the Hooray workspace tool.");
+  const toolNames = tools.tools.map((tool) => tool.name);
+  assert(!toolNames.includes("open_tiktok_ads_workspace"), "Hooray still exposes the legacy workspace entry tool.");
+  assert(!toolNames.includes("get_ads_report"), "Hooray still exposes the legacy reporting tool.");
+  assert(!toolNames.includes("review_campaign_launch_demo"), "Hooray still exposes the legacy launch demo.");
+  assert(!toolNames.includes("review_smartplus_campaign_demo"), "Hooray must not expose demo Campaign Review tools.");
+  assert(!toolNames.includes("create_smartplus_campaign"), "Hooray still exposes the old full-funnel creation tool.");
   const reviewTool = tools.tools.find((tool) => tool.name === "review_smartplus_campaign");
   const reviseTool = tools.tools.find((tool) => tool.name === "revise_smartplus_campaign_review");
   const statusTool = tools.tools.find((tool) => tool.name === "get_smartplus_campaign_review_status");
   const createTool = tools.tools.find((tool) => tool.name === "create_smartplus_campaign_from_review");
-  const legacyLaunchTool = tools.tools.find((tool) => tool.name === "review_campaign_launch_demo");
   assert(reviewTool && reviseTool && statusTool && createTool, "One or more Campaign Review tools are missing.");
-  assert(
-    legacyLaunchTool?._meta?.ui?.visibility?.includes("app") && !legacyLaunchTool?._meta?.ui?.visibility?.includes("model"),
-    "Legacy launch-review demo must not be model-visible on the Reporting endpoint."
-  );
   assert(reviewTool._meta?.ui?.resourceUri === resourceUri, "Review tool has the wrong resource URI.");
   assert(createTool.annotations?.destructiveHint === true, "Real Campaign creation must be marked destructive.");
   assert(createTool.annotations?.idempotentHint === true, "Campaign creation must declare idempotency.");
@@ -43,19 +43,20 @@ try {
   assert(objectives.includes("WEB_CONVERSIONS") && objectives.includes("LEAD_GENERATION") && objectives.includes("APP_PROMOTION"), "Supported Smart+ objectives are incomplete.");
   assert(!objectives.includes("REACH") && !objectives.includes("VIDEO_VIEWS"), "Brand objectives leaked into the Smart+ review tool.");
 
-  const hoorayClient = new Client({ name: "qa-campaign-review-isolation", version: "1.0.0" }, { capabilities: {} });
-  const hoorayTransport = new StreamableHTTPClientTransport(new URL(endpoint.replace(/\/mcp\/reporting$/, "/mcp/chatgpt")));
-  await hoorayClient.connect(hoorayTransport);
+  const reportingClient = new Client({ name: "qa-reporting-isolation", version: "1.0.0" }, { capabilities: {} });
+  const reportingEndpoint = endpoint.replace(/\/mcp\/chatgpt$/, "/mcp/reporting");
+  const reportingTransport = new StreamableHTTPClientTransport(new URL(reportingEndpoint));
+  await reportingClient.connect(reportingTransport);
   try {
-    const hoorayTools = await hoorayClient.listTools();
-    assert(hoorayTools.tools.some((tool) => tool.name === "open_tiktok_ads_workspace"), "Hooray endpoint lost its workspace tool.");
-    assert(!hoorayTools.tools.some((tool) => tool.name === "review_smartplus_campaign"), "Campaign Review leaked into the Hooray endpoint.");
+    const reportingTools = await reportingClient.listTools();
+    assert(reportingTools.tools.some((tool) => tool.name === "get_ads_report"), "Reporting endpoint lost its live report tool.");
+    assert(reportingTools.tools.some((tool) => tool.name === "review_smartplus_campaign_demo"), "Reporting endpoint lost its interaction demo.");
     assert(
-      hoorayTools.tools.find((tool) => tool.name === "review_campaign_launch_demo")?._meta?.ui?.visibility?.includes("model"),
-      "Legacy Hooray launch-review demo unexpectedly became private."
+      !reportingTools.tools.some((tool) => tool.name === "open_tiktok_ads_workspace"),
+      "Reporting endpoint leaked the retired Hooray workspace."
     );
   } finally {
-    await hoorayTransport.close();
+    await reportingTransport.close();
   }
 
   const resource = await client.request(
@@ -98,7 +99,7 @@ try {
     console.log(JSON.stringify({
       ok: true,
       liveGate: proposedState.execution.errorCode,
-      checked: ["reporting_endpoint_isolation", "tools_list", "resource", "live_config_or_oauth_gate", "brand_negative_schema"]
+      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "progressive_oauth_gate", "brand_negative_schema"]
     }, null, 2));
     process.exitCode = 0;
   } else {
@@ -147,7 +148,7 @@ try {
     console.log(JSON.stringify({
       ok: true,
       auth: "connected",
-      checked: ["tools_list", "resource", "live_account_resolution", "proposed", "revision_cas", "outdated_version", "brand_negative_schema"]
+      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "progressive_live_account_resolution", "proposed", "revision_cas", "outdated_version", "brand_negative_schema"]
     }, null, 2));
   }
 } finally {
