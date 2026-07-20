@@ -57,7 +57,7 @@ function createPreviewState() {
       specialIndustries: [],
       specialIndustriesConfirmed: true,
       campaignType: "REGULAR_CAMPAIGN",
-      aiSuggestedFields: ["budget"],
+      aiSuggestedFields: ["campaignName", "objectiveType", "budget", "budgetMode", "budgetOptimizeOn", "salesDestination", "catalogEnabled"],
       operationStatus: "ENABLE"
     }
   };
@@ -276,7 +276,11 @@ function sourceBadge(field) {
       ? '<span class="source-badge source-badge-verified">TikTok verified</span>'
       : '<span class="source-badge source-badge-proposal">Proposal</span>';
   }
-  if (!reviewState?.campaign?.aiSuggestedFields?.includes(field)) return "";
+  const recommendedKeys = {
+    budget: ["budget", "budgetMode"],
+    catalogEnabled: ["catalogEnabled", "catalogType"]
+  }[field] || [field];
+  if (!recommendedKeys.some((key) => reviewState?.campaign?.aiSuggestedFields?.includes(key))) return "";
   return '<span class="source-badge">AI suggested</span>';
 }
 

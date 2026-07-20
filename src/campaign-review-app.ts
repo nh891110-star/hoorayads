@@ -27,8 +27,9 @@ import { createCampaignReviewStore } from "./campaign-review.js";
 import type { CampaignReviewState } from "./campaign-review.js";
 import type { TikTokMcpAuthContext } from "./tiktok-mcp.js";
 
-export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v4.html";
+export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v5.html";
 const LEGACY_CAMPAIGN_REVIEW_WIDGET_URIS = [
+  "ui://widget/tiktok-smartplus-campaign-review-v4.html",
   "ui://widget/tiktok-smartplus-campaign-review-v3.html",
   "ui://widget/tiktok-smartplus-campaign-review-v2.html"
 ] as const;
@@ -159,7 +160,7 @@ function registerResourceAt(
 function registerResource(server: McpServer, resourceMeta: Record<string, unknown>) {
   registerResourceAt(
     server,
-    "tiktok-smartplus-campaign-review-v4",
+    "tiktok-smartplus-campaign-review-v5",
     CAMPAIGN_REVIEW_WIDGET_URI,
     resourceMeta
   );
@@ -181,7 +182,7 @@ function registerLiveTools(server: McpServer, store: ReturnType<typeof createCam
     {
       title: "Review Smart+ Campaign",
       description:
-        "Prepare the human-review card for exactly one TikTok Upgraded Smart+ Campaign through TikTok Ads Flat MCP. Use only after the conversation contains enough Campaign-level information for WEB_CONVERSIONS, LEAD_GENERATION, or APP_PROMOTION and before any create call. Resolve the advertiser from the user's explicit selection or the only authorized account; never invent an advertiser ID. Pass model-selected fields in aiSuggestedFields. The card creates nothing until the user explicitly confirms.",
+        "Prepare the human-review card for exactly one TikTok Upgraded Smart+ Campaign through TikTok Ads Flat MCP. Support three starting states: (1) for complete user inputs, preserve the confirmed values and do not include them in aiSuggestedFields; (2) for partial inputs, preserve confirmed values, propose only missing Campaign settings supported by conversation or retrieved business context, and list every model-proposed field in aiSuggestedFields; (3) for an exploratory request, first ask a concise business-language interview about outcome, website/app/lead destination, advertiser account, and budget comfort, and do not call this tool until enough information exists. Resolve the advertiser from the user's explicit selection or the only authorized account; never invent an advertiser ID or App ID, and never infer special-ad-category confirmation. Explain recommendation rationale in the chat text. The card creates nothing until the user explicitly confirms.",
       inputSchema: reviewSmartPlusCampaignInput,
       outputSchema: reviewSmartPlusCampaignOutput,
       _meta: TOOL_META,

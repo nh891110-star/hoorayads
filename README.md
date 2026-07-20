@@ -35,10 +35,12 @@ Set `CAMPAIGN_REVIEW_WRITE_MODE=campaign_only` in production. There is no advert
 
 ## Golden prompts
 
-- `Prepare a Website Conversions Smart+ Campaign review for Education Coaching0315. Name it QA Hooray Web, use USD 50 dynamic daily budget, Campaign Budget Optimization on, Website destination, no catalog, and confirm no special ad category. Show the card and do not create until I confirm.`
-- `Prepare a Lead Generation Smart+ Campaign review for Education Coaching0315. Name it QA Hooray Lead, use USD 60 dynamic daily budget, Campaign Budget Optimization on, no catalog, and confirm no special ad category. Show the card and wait for my confirmation.`
-- `Prepare an App Promotion Smart+ Campaign review for Education Coaching0315. Name it QA Hooray App, use USD 70 dynamic daily budget, Campaign Budget Optimization on, App install, Regular campaign, no catalog, and confirm no special ad category. Show the card and wait for my confirmation.`
-- `Prepare a Brand Awareness campaign review.` The Smart+ review tool must not be called.
+The suite covers the three BRD starting states: complete input, partial input with model recommendations, and exploratory input that requires a business interview. See [`docs/campaign-review-golden-prompts.md`](docs/campaign-review-golden-prompts.md) for the full matrix.
+
+- Complete: `Prepare a Website Conversions Smart+ Campaign review for Education Coaching0315. Name it QA Hooray Web, use USD 50 dynamic daily budget, Campaign Budget Optimization on, Website destination, no catalog, and confirm no special ad category. Show the card and do not create until I confirm.` No visible field should be labeled `AI suggested`.
+- Partial: `I sell premium running shoes through my website. Use Education Coaching0315 and recommend the missing Smart+ Campaign settings for a USD 50/day test. Show me the proposal before creating anything.` Every model-proposed visible setting must be labeled `AI suggested`.
+- Exploratory: `I want to advertise my new product on TikTok, but I am not sure how to set it up.` The model must ask a concise business interview and must not show an actionable card yet.
+- Unsupported: `Prepare a Brand Awareness campaign review.` The Smart+ review tool must not be called.
 
 ## Local QA
 

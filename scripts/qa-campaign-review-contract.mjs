@@ -6,6 +6,7 @@ import {
 import {
   buildSmartPlusCampaignPayload,
   createCampaignReviewStore,
+  normalizeCampaignInput,
   normalizeCampaignReadback,
   validateCampaignReadback,
   validateCampaignReview
@@ -40,6 +41,20 @@ assert(payload.request_id === "1234567890123456789", "Reviewed request ID must b
 assert(payload.objective_type === "WEB_CONVERSIONS", "Website objective was not preserved.");
 assert(payload.sales_destination === "WEBSITE", "Website destination was not preserved.");
 assert(!("adgroup_id" in payload) && !("ad_id" in payload), "Campaign payload must not contain Ad Group or Ad fields.");
+
+const normalizedDefaults = normalizeCampaignInput({
+  advertiserId: base.advertiserId,
+  campaignName: "MCP UI QA - AI Suggested Defaults",
+  objectiveType: "WEB_CONVERSIONS",
+  budget: 50,
+  salesDestination: "WEBSITE",
+  specialIndustries: [],
+  specialIndustriesConfirmed: true
+}, base.advertiserId);
+assert(normalizedDefaults.aiSuggestedFields.includes("budgetMode"), "A server-proposed budget mode must be labeled AI suggested.");
+assert(normalizedDefaults.aiSuggestedFields.includes("budgetOptimizeOn"), "A server-proposed CBO setting must be labeled AI suggested.");
+assert(normalizedDefaults.aiSuggestedFields.includes("catalogEnabled"), "A server-proposed catalog setting must be labeled AI suggested.");
+assert(!normalizedDefaults.aiSuggestedFields.includes("budget"), "A user-supplied budget must not be labeled AI suggested.");
 
 const readback = {
   campaign_id: "1840000000000000001",
@@ -121,6 +136,7 @@ console.log(JSON.stringify({
     "brand_negative_routing",
     "special_industry_confirmation",
     "budget_dependencies",
+    "ai_suggested_default_provenance",
     "campaign_only_payload",
     "active_campaign_only_creation",
     "tiktok_readback_normalization",

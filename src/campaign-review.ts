@@ -193,6 +193,15 @@ export function normalizeCampaignInput(input: CampaignReviewInput, advertiserId:
   const budgetMode =
     input.budgetMode ??
     (budgetOptimizeOn ? "BUDGET_MODE_DYNAMIC_DAILY_BUDGET" : "BUDGET_MODE_INFINITE");
+  const aiSuggestedFields = new Set(input.aiSuggestedFields ?? []);
+
+  // Defaults are proposed settings too; never present them as if the user supplied them.
+  if (input.budgetMode === undefined) aiSuggestedFields.add("budgetMode");
+  if (input.budgetOptimizeOn === undefined) aiSuggestedFields.add("budgetOptimizeOn");
+  if (input.catalogEnabled === undefined) aiSuggestedFields.add("catalogEnabled");
+  if (input.objectiveType === "APP_PROMOTION" && input.campaignType === undefined) {
+    aiSuggestedFields.add("campaignType");
+  }
 
   return {
     advertiserId,
@@ -209,7 +218,7 @@ export function normalizeCampaignInput(input: CampaignReviewInput, advertiserId:
     appPromotionType: input.appPromotionType,
     appId: input.appId?.trim() || undefined,
     campaignType: input.campaignType ?? "REGULAR_CAMPAIGN",
-    aiSuggestedFields: unique(input.aiSuggestedFields ?? [])
+    aiSuggestedFields: [...aiSuggestedFields]
   };
 }
 

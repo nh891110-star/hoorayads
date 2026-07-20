@@ -3,8 +3,9 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CallToolResultSchema, ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const endpoint = process.env.MCP_ENDPOINT || "http://localhost:3010/mcp/chatgpt";
-const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v4.html";
+const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v5.html";
 const legacyResourceUris = [
+  "ui://widget/tiktok-smartplus-campaign-review-v4.html",
   "ui://widget/tiktok-smartplus-campaign-review-v3.html",
   "ui://widget/tiktok-smartplus-campaign-review-v2.html"
 ];
@@ -40,6 +41,9 @@ try {
   const createTool = tools.tools.find((tool) => tool.name === "create_smartplus_campaign_from_review");
   assert(reviewTool && reviseTool && statusTool && createTool, "One or more Campaign Review tools are missing.");
   assert(reviewTool._meta?.ui?.resourceUri === resourceUri, "Review tool has the wrong resource URI.");
+  assert(reviewTool.description?.includes("three starting states"), "Review tool lost the BRD complete/partial/exploratory routing guidance.");
+  assert(reviewTool.description?.includes("aiSuggestedFields"), "Review tool lost model-suggested field provenance guidance.");
+  assert(reviewTool.description?.includes("exploratory request"), "Review tool lost the exploratory business-interview behavior.");
   assert(createTool.annotations?.destructiveHint === true, "Real Campaign creation must be marked destructive.");
   assert(createTool.annotations?.idempotentHint === true, "Campaign creation must declare idempotency.");
   assert(statusTool.annotations?.readOnlyHint === true, "Status tool must be read-only.");
@@ -127,6 +131,7 @@ try {
   assert(resource.contents[0]?.mimeType === "text/html;profile=mcp-app", "Campaign Review resource has the wrong MIME type.");
   assert(html.includes('id="campaign-review-root"'), "Campaign Review root is missing.");
   assert(html.includes("Confirm"), "Campaign Review confirm CTA is missing.");
+  assert(html.includes("AI suggested"), "Campaign Review is missing the model-suggestion source label.");
   assert(html.includes("Status after creation"), "Campaign Review status disclosure is missing.");
   assert(html.includes("TikTok verified"), "Campaign Review is missing per-field TikTok read-back provenance.");
   assert(html.includes("TikTok Campaign read-back"), "Campaign Review success receipt is missing its TikTok read-back source.");
