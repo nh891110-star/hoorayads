@@ -131,8 +131,11 @@ function notifySize() {
 }
 
 async function callTool(name, args) {
-  if (initialized) return rpc("tools/call", { name, arguments: args });
+  // ChatGPT exposes the legacy bridge even after MCP Apps initialization. Prefer
+  // it there because app-only actions are authorized by the host through this
+  // bridge; use protocol RPC as the portable fallback for other MCP hosts.
   if (window.openai?.callTool) return window.openai.callTool(name, args);
+  if (initialized) return rpc("tools/call", { name, arguments: args });
   throw new Error("This host does not support interactive Campaign Review actions.");
 }
 
