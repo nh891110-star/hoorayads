@@ -10,7 +10,7 @@ import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import { createTikTokAdsPocServer } from "./server.js";
 import type { HostSurface } from "./server.js";
-import { getTikTokConfigSummary } from "./config.js";
+import { getTikTokAppConfig, getTikTokConfigSummary } from "./config.js";
 import { getTikTokMcpAuthSummary, saveTikTokMcpAuthorizationCode } from "./tiktok-mcp.js";
 import { getReportExport } from "./report-export.js";
 import {
@@ -40,9 +40,13 @@ app.use(
 const publicBaseUrl = (
   process.env.PUBLIC_BASE_URL || process.env.HOORAY_PUBLIC_BASE_URL || "https://tiktok-ads-agent-poc.onrender.com"
 ).replace(/\/$/, "");
+const tikTokAppConfig = getTikTokAppConfig();
 const delegatedOAuth = registerDelegatedOAuthRoutes(app, {
   publicBaseUrl,
-  tikTokFlatMcpUrl: process.env.TIKTOK_FLAT_MCP_URL
+  tikTokFlatMcpUrl: process.env.TIKTOK_FLAT_MCP_URL,
+  upstreamClientId: process.env.TIKTOK_OAUTH_CLIENT_ID || tikTokAppConfig.appId,
+  // Dedicated key is preferred; App Secret fallback keeps existing deployments working during migration.
+  registrationSigningKey: process.env.OAUTH_REGISTRATION_SIGNING_KEY || tikTokAppConfig.appSecret
 });
 const requireChatGptOAuth = requireDelegatedChatGptOAuth(delegatedOAuth.resourceMetadataUrl);
 
@@ -270,6 +274,8 @@ app.get("/health", (_req: Request, res: Response) => {
     chatGptOAuth: {
       mode: "delegated_per_user",
       issuer: delegatedOAuth.issuer,
+      dynamicClientRegistration: delegatedOAuth.registrationEnabled,
+      registrationEndpoint: delegatedOAuth.registrationEnabled ? delegatedOAuth.registrationEndpoint : null,
       resourceMetadataUrl: delegatedOAuth.resourceMetadataUrl,
       upstreamRedirectUri: delegatedOAuth.upstreamRedirectUri
     },

@@ -16,6 +16,8 @@ services:
         sync: false
       - key: TIKTOK_APP_SECRET
         sync: false
+      - key: OAUTH_REGISTRATION_SIGNING_KEY
+        sync: false
       - key: TIKTOK_REDIRECT_URI
         value: https://tiktok-ads-agent-poc.onrender.com/callback
       - key: TIKTOK_ADVERTISER_AUTH_URL

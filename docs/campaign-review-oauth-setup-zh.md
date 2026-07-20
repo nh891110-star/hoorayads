@@ -23,7 +23,7 @@
 
 ## ChatGPT Custom App
 
-在 `Workspace settings > Apps > Create`（或 draft app 的配置页）填写：
+推荐使用 Dynamic Client Registration，让 ChatGPT 自动登记它生成的 callback，而不是手工复制 TikTok App ID：
 
 | ChatGPT field | Value |
 |---|---|
@@ -31,10 +31,21 @@
 | Description | `Review, edit, and confirm one TikTok Smart+ Campaign before creation.` |
 | MCP server URL | `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt` |
 | Authentication | `OAuth` |
-| OAuth Client ID | 已审批 TikTok app 的 App ID |
+| Registration URL | `https://tiktok-ads-agent-poc.onrender.com/oauth/register` |
+| Authorization server base | `https://tiktok-ads-agent-poc.onrender.com/oauth` |
+| Resource | `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt` |
+| Auth URL | `https://tiktok-ads-agent-poc.onrender.com/oauth/authorize` |
+| Token URL | `https://tiktok-ads-agent-poc.onrender.com/oauth/token` |
+| Token endpoint authentication | `None` / `Public client` |
+| OAuth Client ID | DCR 模式由 ChatGPT 自动生成，不手工填写 |
 | OAuth Client Secret | 留空 |
+| Scope | `mcp:tt4b` |
 
-OAuth Client Secret 必须留空的原因：TikTok Flat MCP 的线上 OAuth discovery 明确返回 `token_endpoint_auth_methods_supported: ["none"]`。它是通过 Authorization Code + PKCE 保护的 public client；向 token endpoint 发送 App Secret 不符合该接口契约。
+OAuth Client Secret 必须留空。Hooray 和 TikTok Flat MCP 都声明 `token_endpoint_auth_methods_supported: ["none"]`，并使用 Authorization Code + PKCE。误填 Secret 会收到明确的 `invalid_client`，不会把 Secret 转发给 TikTok。
+
+Hooray DCR 只接受 `https://chatgpt.com/connector/oauth/*` 和兼容的 OpenAI callback。注册时的完整 callback 会与签名 client ID 绑定；authorization 和 token exchange 会逐字符复核。localhost、动态端口、IP、EC2 动态域名、非 HTTPS、查询参数和未注册 callback 均被拒绝。
+
+旧的静态 Client ID 配置仍向后兼容：可以把 TikTok App ID 作为 Client ID，Registration URL 留空，Secret 仍必须留空。但新建 Connector 应优先使用 DCR。
 
 点击 `Scan Tools` 后，预期流程为：
 
@@ -55,7 +66,9 @@ OAuth Client Secret 必须留空的原因：TikTok Flat MCP 的线上 OAuth disc
 
 ## 安全要求
 
-- App Secret 不写入 GitHub、Lark、截图、日志或 Render。
+- App Secret 不写入 GitHub、Lark、截图或 ChatGPT 配置。
 - 已经在聊天或其他文本中暴露过的 Secret，在正式发布前应 rotate。
 - Hooray 不记录 `Authorization` header、authorization code、access token 或 refresh token。
+- Render 应设置独立的 `OAUTH_REGISTRATION_SIGNING_KEY`。当前兼容逻辑可暂时使用已有 App Secret 派生 DCR 签名，但正式发布前应切换到独立随机值；切换后需要重新连接已注册的 ChatGPT App。
+- OAuth 诊断日志只记录阶段、correlation ID、client/callback 哈希、可信 callback 类型和上游 HTTP status，不记录 credential material。
 - 生产扩容到多个 Render instance 前，需要把短期 OAuth authorization transaction 存储迁移到共享、加密、带 TTL 的 store；单 instance 当前可用。

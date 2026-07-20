@@ -66,8 +66,12 @@ Required Render variables for the ChatGPT path are:
 - `PUBLIC_BASE_URL=https://tiktok-ads-agent-poc.onrender.com`
 - `CAMPAIGN_REVIEW_WRITE_MODE=campaign_only`
 - `TIKTOK_FLAT_MCP_URL=https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat`
+- `TIKTOK_APP_ID=<approved TikTok app ID>`
+- `OAUTH_REGISTRATION_SIGNING_KEY=<dedicated random secret>`
 
-TikTok's live Flat MCP metadata declares a PKCE public client (`token_endpoint_auth_methods_supported: ["none"]`). Therefore the ChatGPT connection uses the TikTok App ID as OAuth Client ID and leaves OAuth Client Secret empty. Do not store the TikTok App Secret in source code or Render for this delegated ChatGPT flow.
+TikTok's live Flat MCP metadata declares a PKCE public client (`token_endpoint_auth_methods_supported: ["none"]`). New ChatGPT connections should use Hooray's restricted Dynamic Client Registration endpoint at `/oauth/register`; ChatGPT receives a signed public client ID bound to its exact callback, while Hooray uses the approved TikTok App ID upstream. OAuth Client Secret remains empty and is never forwarded to TikTok.
+
+The static TikTok App ID client path remains available for existing connectors. DCR rejects localhost, dynamic ports, raw IPs, EC2 dynamic hosts, non-HTTPS callbacks, and redirect URIs not included in the original registration.
 
 Register this exact advertiser redirect URL in the TikTok developer app:
 

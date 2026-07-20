@@ -12,6 +12,7 @@ function assert(condition, message) {
 
 const publicBaseUrl = "https://tiktok-ads-agent-poc.onrender.com";
 const resource = `${publicBaseUrl}/mcp/chatgpt`;
+const upstreamClientId = "qa-tiktok-app-id";
 const upstreamCalls = [];
 const fakeFetch = async (url, init) => {
   upstreamCalls.push({ url: String(url), body: String(init?.body || "") });
@@ -28,7 +29,12 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cors({ exposedHeaders: ["WWW-Authenticate"], origin: "*" }));
-const oauth = registerDelegatedOAuthRoutes(app, { publicBaseUrl, fetchFn: fakeFetch });
+const oauth = registerDelegatedOAuthRoutes(app, {
+  publicBaseUrl,
+  fetchFn: fakeFetch,
+  registrationSigningKey: "qa-registration-signing-key-with-sufficient-entropy",
+  upstreamClientId
+});
 app.get("/protected", requireDelegatedChatGptOAuth(oauth.resourceMetadataUrl), (_req, res) => res.json({ ok: true }));
 
 const server = createServer(app);
@@ -70,6 +76,7 @@ try {
   assert(metadataBody.issuer === `${publicBaseUrl}/oauth`, "OAuth issuer metadata is incorrect.");
   assert(metadataBody.authorization_endpoint === `${publicBaseUrl}/oauth/authorize`, "Authorization endpoint metadata is incorrect.");
   assert(metadataBody.token_endpoint === `${publicBaseUrl}/oauth/token`, "Token endpoint metadata is incorrect.");
+  assert(metadataBody.registration_endpoint === `${publicBaseUrl}/oauth/register`, "Registration endpoint metadata is incorrect.");
   assert(metadataBody.code_challenge_methods_supported.includes("S256"), "OAuth metadata must require PKCE S256.");
   assert(metadata.headers.get("access-control-allow-origin") === "*", "OAuth metadata is missing CORS headers.");
 
@@ -169,6 +176,124 @@ try {
   });
   assert(mismatch.status === 400, "A PKCE mismatch was accepted.");
 
+  const dcrResponse = await fetch(`${localBase}/oauth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      client_name: "ChatGPT QA",
+      redirect_uris: [clientRedirectUri],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none"
+    })
+  });
+  assert(dcrResponse.status === 201, `Trusted ChatGPT DCR failed with ${dcrResponse.status}.`);
+  const dcrClient = await dcrResponse.json();
+  assert(dcrClient.client_id?.startsWith("hooray-dcr-v1."), "DCR did not return a signed client ID.");
+  assert(!dcrClient.client_secret, "A public DCR client must not receive a client secret.");
+  assert(dcrClient.token_endpoint_auth_method === "none", "DCR did not register a public client.");
+
+  for (const rejectedRedirect of [
+    "http://localhost:49152/callback",
+    "https://54.81.22.17/callback",
+    "https://ec2-54-81-22-17.compute-1.amazonaws.com/callback"
+  ]) {
+    const rejectedRegistration = await fetch(`${localBase}/oauth/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ redirect_uris: [rejectedRedirect], token_endpoint_auth_method: "none" })
+    });
+    assert(rejectedRegistration.status === 400, `DCR accepted unsafe redirect ${rejectedRedirect}.`);
+  }
+
+  const confidentialRegistration = await fetch(`${localBase}/oauth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      redirect_uris: [clientRedirectUri],
+      grant_types: ["authorization_code"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "client_secret_basic"
+    })
+  });
+  assert(confidentialRegistration.status === 400, "DCR accepted a confidential client with a secret.");
+
+  const dcrMismatch = new URL(`${localBase}/oauth/authorize`);
+  dcrMismatch.search = new URLSearchParams({
+    response_type: "code",
+    client_id: dcrClient.client_id,
+    redirect_uri: "https://chatgpt.com/connector/oauth/different-callback",
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
+    scope: "mcp:tt4b",
+    resource
+  }).toString();
+  assert((await fetch(dcrMismatch, { redirect: "manual" })).status === 400, "A DCR client used an unregistered redirect URI.");
+
+  const tamperedClientId = `${dcrClient.client_id.slice(0, -1)}${dcrClient.client_id.endsWith("A") ? "B" : "A"}`;
+  const tamperedAuthorize = new URL(`${localBase}/oauth/authorize`);
+  tamperedAuthorize.search = new URLSearchParams({
+    response_type: "code",
+    client_id: tamperedClientId,
+    redirect_uri: clientRedirectUri,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
+    scope: "mcp:tt4b",
+    resource
+  }).toString();
+  assert((await fetch(tamperedAuthorize, { redirect: "manual" })).status === 400, "A tampered DCR client ID was accepted.");
+
+  const dcrVerifier = "qa-dcr-pkce-verifier-0123456789-ABCDEFG";
+  const dcrChallenge = createHash("sha256").update(dcrVerifier).digest("base64url");
+  const dcrAuthorize = new URL(`${localBase}/oauth/authorize`);
+  dcrAuthorize.search = new URLSearchParams({
+    response_type: "code",
+    client_id: dcrClient.client_id,
+    redirect_uri: clientRedirectUri,
+    state: "chatgpt-dcr-state",
+    code_challenge: dcrChallenge,
+    code_challenge_method: "S256",
+    scope: "mcp:tt4b",
+    resource
+  }).toString();
+  const dcrAuthorizeResponse = await fetch(dcrAuthorize, { redirect: "manual" });
+  assert(dcrAuthorizeResponse.status === 302, "A registered DCR client could not authorize.");
+  const dcrUpstream = new URL(dcrAuthorizeResponse.headers.get("location"));
+  assert(dcrUpstream.searchParams.get("client_id") === upstreamClientId, "DCR did not map to the configured TikTok App ID.");
+  assert(dcrUpstream.searchParams.get("redirect_uri") === oauth.upstreamRedirectUri, "DCR exposed the ChatGPT callback to TikTok.");
+
+  const dcrCallback = new URL(`${localBase}/oauth/tiktok/callback`);
+  dcrCallback.searchParams.set("code", "dcr-upstream-code");
+  dcrCallback.searchParams.set("state", dcrUpstream.searchParams.get("state"));
+  const dcrCallbackResponse = await fetch(dcrCallback, { redirect: "manual" });
+  const dcrCode = new URL(dcrCallbackResponse.headers.get("location")).searchParams.get("code");
+  const dcrUpstreamCallIndex = upstreamCalls.length;
+  const dcrTokenResponse = await fetch(`${localBase}/oauth/token`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: dcrClient.client_id,
+      code: dcrCode,
+      redirect_uri: clientRedirectUri,
+      code_verifier: dcrVerifier
+    })
+  });
+  assert(dcrTokenResponse.status === 200, "DCR authorization-code exchange failed.");
+  const dcrUpstreamExchange = new URLSearchParams(upstreamCalls[dcrUpstreamCallIndex].body);
+  assert(dcrUpstreamExchange.get("client_id") === upstreamClientId, "DCR token exchange used the downstream client ID upstream.");
+
+  const secretTokenAttempt = await fetch(`${localBase}/oauth/token`, {
+    method: "POST",
+    headers: {
+      authorization: `Basic ${Buffer.from(`${dcrClient.client_id}:must-not-be-used`).toString("base64")}`,
+      "content-type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: "qa-refresh-token" })
+  });
+  assert(secretTokenAttempt.status === 401, "The public-client token endpoint accepted a Client Secret.");
+  assert((await secretTokenAttempt.json()).error_description.includes("does not accept a Client Secret"), "Secret rejection was not actionable.");
+
   console.log(JSON.stringify({
     ok: true,
     checked: [
@@ -177,12 +302,17 @@ try {
       "cors",
       "bearer_gate",
       "chatgpt_redirect_allowlist",
+      "dynamic_client_registration",
+      "dcr_exact_redirect_binding",
+      "dcr_tamper_resistance",
+      "localhost_and_dynamic_ip_rejection",
       "downstream_pkce",
       "independent_upstream_pkce",
       "authorization_code_exchange",
       "one_time_code",
       "refresh_token_exchange",
-      "tiktok_public_client_no_secret"
+      "tiktok_public_client_no_secret",
+      "actionable_secret_rejection"
     ]
   }, null, 2));
 } finally {

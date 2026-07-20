@@ -131,12 +131,14 @@ ChatGPT Campaign Review 路径的 Render 必须配置：
 
 ```text
 TIKTOK_FLAT_MCP_URL=https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat
+TIKTOK_APP_ID=<approved TikTok app ID>
+OAUTH_REGISTRATION_SIGNING_KEY=<dedicated random secret>
 PUBLIC_BASE_URL=https://tiktok-ads-agent-poc.onrender.com
 CAMPAIGN_REVIEW_WRITE_MODE=campaign_only
 REPORTING_DEFAULT_ADVERTISER_ID=<optional>
 ```
 
-TikTok developer portal 的 Advertiser redirect URL 必须精确等于 `https://tiktok-ads-agent-poc.onrender.com/oauth/tiktok/callback`。App Secret 不进入 Render 或仓库；每位用户的 token 由 ChatGPT 保存并作为 bearer 发送。旧 `/callback` 仅为 Reporting/Claude legacy fallback 保留，不属于正式 Hooray ChatGPT 授权链路。
+TikTok developer portal 的 Advertiser redirect URL 必须精确等于 `https://tiktok-ads-agent-poc.onrender.com/oauth/tiktok/callback`。ChatGPT 使用 Hooray `/oauth/register` 动态注册它自己的 callback；ChatGPT callback 不直接登记到 TikTok。OAuth Client Secret 不进入 ChatGPT 配置或 token exchange；每位用户的 token 由 ChatGPT 保存并作为 bearer 发送。旧 `/callback` 仅为 Reporting/Claude legacy fallback 保留，不属于正式 Hooray ChatGPT 授权链路。
 
 ## 8. 当前能力与生产边界
 
