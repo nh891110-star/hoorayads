@@ -339,7 +339,7 @@ await protocolPage.evaluate(({ css, widgetJs, initialState }) => {
       event.source.postMessage({
         jsonrpc: "2.0",
         id: message.id,
-        result: { structuredContent: { campaignReviewState: window.__protocolState } }
+        result: { _meta: { campaignReviewState: window.__protocolState } }
       }, "*");
     }
   });
@@ -357,4 +357,4 @@ assert(protocolCalls.every((call) => call.arguments?.proposalId === "proposal-qa
 await protocolPage.close();
 
 await browser.close();
-console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge"] }, null, 2));
+console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge_metadata_fallback"] }, null, 2));

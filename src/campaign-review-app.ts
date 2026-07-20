@@ -32,8 +32,9 @@ import {
 import type { CampaignReviewState } from "./campaign-review.js";
 import type { TikTokMcpAuthContext } from "./tiktok-mcp.js";
 
-export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v12.html";
+export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v13.html";
 const LEGACY_CAMPAIGN_REVIEW_WIDGET_URIS = [
+  "ui://widget/tiktok-smartplus-campaign-review-v12.html",
   "ui://widget/tiktok-smartplus-campaign-review-v11.html",
   "ui://widget/tiktok-smartplus-campaign-review-v10.html",
   "ui://widget/tiktok-smartplus-campaign-review-v9.html",
@@ -133,6 +134,9 @@ function result(campaignReviewState: CampaignReviewState, message: string, rende
     content: [{ type: "text" as const, text: `${message}\n\n${fallback(campaignReviewState)}` }],
     _meta: {
       ...(rendersWidget ? RESULT_META : {}),
+      // Some hosts expose app-initiated tool results through response metadata
+      // instead of preserving arbitrary structuredContent keys.
+      campaignReviewState,
       experienceType: "smartplus_campaign_review",
       dataMode: campaignReviewState.mode,
       campaignScope: "campaign_only",
@@ -172,7 +176,7 @@ function registerResourceAt(
 function registerResource(server: McpServer, resourceMeta: Record<string, unknown>) {
   registerResourceAt(
     server,
-    "tiktok-smartplus-campaign-review-v12",
+    "tiktok-smartplus-campaign-review-v13",
     CAMPAIGN_REVIEW_WIDGET_URI,
     resourceMeta
   );

@@ -3,8 +3,9 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CallToolResultSchema, ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const endpoint = process.env.MCP_ENDPOINT || "http://localhost:3010/mcp/chatgpt";
-const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v12.html";
+const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v13.html";
 const legacyResourceUris = [
+  "ui://widget/tiktok-smartplus-campaign-review-v12.html",
   "ui://widget/tiktok-smartplus-campaign-review-v11.html",
   "ui://widget/tiktok-smartplus-campaign-review-v10.html",
   "ui://widget/tiktok-smartplus-campaign-review-v9.html",

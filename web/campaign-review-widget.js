@@ -124,9 +124,13 @@ function createPreviewState() {
 function extractReviewState(value) {
   return (
     value?.structuredContent?.campaignReviewState ||
+    value?._meta?.campaignReviewState ||
     value?.result?.structuredContent?.campaignReviewState ||
+    value?.result?._meta?.campaignReviewState ||
     value?.mcp_tool_result?.structuredContent?.campaignReviewState ||
+    value?.mcp_tool_result?._meta?.campaignReviewState ||
     value?.toolResult?.structuredContent?.campaignReviewState ||
+    value?.toolResult?._meta?.campaignReviewState ||
     value?.campaignReviewState ||
     null
   );
