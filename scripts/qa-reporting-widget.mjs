@@ -11,20 +11,6 @@ import {
 import { chromium } from "playwright";
 
 const REPORT_URI = "ui://widget/tiktok-ads-report-v13.html";
-const LEGACY_REPORT_URIS = [
-  "ui://widget/tiktok-ads-report-v12.html",
-  "ui://widget/tiktok-ads-report-v11.html",
-  "ui://widget/tiktok-ads-report-v10.html",
-  "ui://widget/tiktok-ads-report-v9.html",
-  "ui://widget/tiktok-ads-report-v8.html",
-  "ui://widget/tiktok-ads-report-v7.html",
-  "ui://widget/tiktok-ads-report-v6.html",
-  "ui://widget/tiktok-ads-report-v5.html",
-  "ui://widget/tiktok-ads-report-v4.html",
-  "ui://widget/tiktok-ads-report-v3.html",
-  "ui://widget/tiktok-ads-report-v2.html",
-  "ui://widget/tiktok-ads-report-v1.html"
-];
 const endpoint =
   process.env.MCP_ENDPOINT ||
   `${(process.env.MCP_BASE_URL || "https://tiktok-ads-agent-poc.onrender.com").replace(/\/$/, "")}/mcp/reporting`;
@@ -194,17 +180,6 @@ async function main() {
       resourceHtml.indexOf('data-filter="advertiserId"') < resourceHtml.indexOf('data-filter="level"'),
       "Advertiser Account must appear before Level in the shared widget."
     );
-    for (const legacyUri of LEGACY_REPORT_URIS) {
-      const legacyResource = await client.request(
-        { method: "resources/read", params: { uri: legacyUri } },
-        ReadResourceResultSchema
-      );
-      const legacyContent = legacyResource.contents[0];
-      assert(legacyContent?.uri === legacyUri, `Legacy resource returned a mismatched URI for ${legacyUri}.`);
-      assert(legacyContent?.mimeType === "text/html;profile=mcp-app", `Legacy resource has the wrong MIME type for ${legacyUri}.`);
-      assert(legacyContent?.text === resourceHtml, `Legacy resource does not serve the current widget HTML for ${legacyUri}.`);
-    }
-
     const liveToolResult = await client.callTool(
       {
         name: "get_ads_report",

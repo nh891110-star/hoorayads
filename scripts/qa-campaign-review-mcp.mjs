@@ -99,7 +99,7 @@ try {
     console.log(JSON.stringify({
       ok: true,
       liveGate: proposedState.execution.errorCode,
-      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "progressive_oauth_gate", "brand_negative_schema"]
+      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "flat_oauth_gate", "brand_negative_schema"]
     }, null, 2));
     process.exitCode = 0;
   } else {
@@ -148,7 +148,7 @@ try {
     console.log(JSON.stringify({
       ok: true,
       auth: "connected",
-      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "progressive_live_account_resolution", "proposed", "revision_cas", "outdated_version", "brand_negative_schema"]
+      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "flat_live_account_resolution", "proposed", "revision_cas", "outdated_version", "brand_negative_schema"]
     }, null, 2));
   }
 } finally {

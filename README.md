@@ -1,158 +1,62 @@
-# TikTok Ads Agent POC
+# Hooray TikTok Ads
 
-This folder contains a private `v0` scaffold for the broader `"[PRD] TikTok <—> ChatGPT App"` flow.
+This service hosts two isolated MCP Apps on the TikTok Ads Flat MCP data surface.
 
-The base journey is now:
+## Endpoints
 
-1. product URL input
-2. scrape and verify product details
-3. review reference images
-4. generate and review a 2-scene storyboard
-5. render a candidate ad video
-6. verify ad account, identity, and payment readiness
-7. create a Smart+ draft
-8. publish after explicit approval
-9. generate a live TikTok Ads performance report
+- Hooray Campaign Review for ChatGPT: `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`
+- Hooray Campaign Review for Claude: `https://tiktok-ads-agent-poc.onrender.com/mcp/claude`
+- TikTok Ads Reporting and explicit UI demos: `https://tiktok-ads-agent-poc.onrender.com/mcp/reporting`
+- Health: `https://tiktok-ads-agent-poc.onrender.com/health`
 
-This is not Shopify-only. It is meant for any novice SMB advertiser who has a promotable product URL, with TikTok MCP handling the account and campaign side wherever possible.
+`/mcp/chatgpt` contains only the live Campaign Review experience. The retired product, storyboard, video-render, Account setup, and full-funnel workspace are not registered.
 
-## What is included
+## Campaign Review
 
-- `src/server.ts`
-  Apps SDK-style MCP server scaffold with the user-facing tools described by the original PRD.
-- `src/mock-data.ts`
-  Deterministic POC data for the rich UI states.
-- `src/tool-contract.ts`
-  Tool schemas plus a capability map from productized app tools to observed TikTok Ads MCP capabilities.
-- `web/`
-  Self-contained MCP App UIs for the campaign workflow and cross-host reporting.
-- `src/reporting.ts`
-  Flat MCP reporting client, level-specific requests, previous-period comparison, metadata enrichment, and official TikTok Ad Diagnosis normalization.
-- `src/campaign-review.ts`
-  Server-owned Smart+ Campaign proposal versions, advertiser resolution, write guard, idempotent Campaign-only creation, and TikTok read-back reconciliation.
-- `docs/capability-map.md`
-  The concrete mapping between PRD flow steps and current TikTok Ads MCP coverage.
-- `docs/mcp-app-compatibility-playbook.md`
-  Persistent debugging guidance for cached widget templates and cross-host MCP transport failures.
+The live flow is:
 
-## Current scope
+1. `review_smartplus_campaign` resolves the user's authorized advertiser and prepares an immutable Campaign-level proposal.
+2. The user can select Edit. `revise_smartplus_campaign_review` creates a new proposal version and the previous card becomes Inactive.
+3. The user explicitly selects Confirm. `create_smartplus_campaign_from_review` creates one Active Upgraded Smart+ Campaign through Flat MCP `smart_plus_campaign_create`.
+4. The server reads the Campaign back through `smart_plus_campaign_get` before showing a verified receipt.
+5. `get_smartplus_campaign_review_status` reconciles an uncertain outcome without retrying the write.
 
-This is a private POC scaffold with a working reporting demo, not a production-ready public app.
+Supported objectives:
 
-Already validated in the current environment:
+- `WEB_CONVERSIONS`
+- `LEAD_GENERATION`
+- `APP_PROMOTION`
 
-- TikTok Ads MCP auth works for `user_info_get` and `bc_get`
-- Business Center discovery is available
-- Advertiser, identity, Smart+, ad, and reporting APIs are exposed
-- `get_ads_report` returns the reporting MCP App directly
-- `get_ads_report_demo` returns the same app with isolated deterministic data for OAuth-free host testing
-- ChatGPT and Claude endpoint aliases expose the same portable UI and data contract
-- Campaign, ad group, and ad level request mappings pass contract tests
-- `tool_diagnosis_get` supplies the report's Issues & recommendations module; the app does not generate performance diagnosis rules
-- The unauthenticated state returns the TikTok Ads connection step instead of sample report data
-- Live reporting never falls back to demo data; the two tools are intentionally separate
-- `/mcp/reporting` is isolated from the Hooray workspace tools and instructions
-- Campaign Review supports `WEB_CONVERSIONS`, `LEAD_GENERATION`, and `APP_PROMOTION`; unsupported brand objectives are rejected rather than remapped
-- Confirm creates one allowlisted Active Campaign only through `smart_plus_campaign_create`; no Ad Group, Ad, creative, delivery, or spend is created
+The write is Campaign-only. It does not create an Ad Group, Ad, creative, delivery, or spend. Unsupported objectives such as Reach, Video Views, Traffic, and Brand Awareness are rejected instead of being remapped.
 
-Still needed for production:
+Set `CAMPAIGN_REVIEW_WRITE_MODE=campaign_only` in production. There is no advertiser allowlist: each user can create only in an advertiser returned by their own Flat MCP authorization.
 
-- deploy the current reporting build to the existing public HTTPS service
-- create the ChatGPT and Claude custom connectors
-- OpenAI app submission assets and review
-- a real scrape pipeline for arbitrary product URLs
-- a real storyboard-to-video render pipeline
-- identity connect-link handling and callback session storage
-- payment verification path
+## Golden prompts
 
-## Suggested next steps
+- `Prepare a Website Conversions Smart+ Campaign review for Education Coaching0315. Name it QA Hooray Web, use USD 50 dynamic daily budget, Campaign Budget Optimization on, Website destination, no catalog, and confirm no special ad category. Show the card and do not create until I confirm.`
+- `Prepare a Lead Generation Smart+ Campaign review for Education Coaching0315. Name it QA Hooray Lead, use USD 60 dynamic daily budget, Campaign Budget Optimization on, no catalog, and confirm no special ad category. Show the card and wait for my confirmation.`
+- `Prepare an App Promotion Smart+ Campaign review for Education Coaching0315. Name it QA Hooray App, use USD 70 dynamic daily budget, Campaign Budget Optimization on, App install, Regular campaign, no catalog, and confirm no special ad category. Show the card and wait for my confirmation.`
+- `Prepare a Brand Awareness campaign review.` The Smart+ review tool must not be called.
 
-1. Install dependencies with `npm install`.
-2. Replace mock handlers in `src/server.ts` with real orchestrator calls.
-3. Add an HTTP transport at `/mcp` for local and hosted usage.
-4. Wire product scraping, rendering, watermarking, and session persistence.
-5. Connect the app with ChatGPT developer mode using the hosted MCP endpoint.
-
-## Fastest stable hosting path
-
-The quickest way to get a stable public HTTPS MCP endpoint is to deploy this service as a Node web service on Render and use Render's default domain first.
-
-This repo is prepared for that path:
-
-- `render.yaml` defines a Render web service with `/health` as the health check.
-- `src/http-server.ts` respects the platform `PORT` environment variable.
-- `pnpm start` runs the MCP HTTP server directly.
-
-Recommended first deploy steps:
-
-1. Push this repo to GitHub.
-2. In Render, create a new Blueprint or Web Service from the repo.
-3. If this repo contains only this app, leave the service root empty. If you later move it back into a monorepo, then set the service root accordingly.
-4. Add these environment variables in Render:
-   - `TIKTOK_APP_ENV=dev`
-   - `TIKTOK_APP_ID`
-   - `TIKTOK_APP_SECRET`
-   - `TIKTOK_REDIRECT_URI=https://<your-render-domain>/callback`
-   - `TIKTOK_ADVERTISER_AUTH_URL=https://business-api.tiktok.com/portal/auth?app_id=<your_app_id>&state=your_custom_params&redirect_uri=https%3A%2F%2F<your-render-domain>%2Fcallback`
-5. Wait for `/health` to return `200 OK`.
-6. Put `https://<your-render-domain>/mcp` into the ChatGPT app builder.
-7. Put `https://<your-render-domain>/callback` into the TikTok developer app.
-
-Use these host-specific aliases after deployment:
-
-- Hooray Campaign Review for ChatGPT: `https://<your-render-domain>/mcp/chatgpt`
-- Claude: `https://<your-render-domain>/mcp/claude`
-- TikTok Reporting and OAuth-free UI QA: `https://<your-render-domain>/mcp/reporting`
-
-The Hooray ChatGPT endpoint intentionally exposes only the live Campaign Review experience. It forwards each ChatGPT connection's delegated TikTok authorization to Progressive TikTok MCP and does not expose the retired product/storyboard/render workspace, reporting UI, or demo tools. The Reporting endpoint remains isolated on the Flat MCP surface for reporting and OAuth-free UI QA.
-
-The Claude alias uses stateless Streamable HTTP requests so delayed widget resource reads do not depend on an in-memory session. The ChatGPT and Reporting aliases remain stateful for multi-step UI interactions. The Reporting alias intentionally exposes reporting, decision-demo, and Campaign Review tools without exposing the Hooray workspace.
-
-Note:
-
-- Render gives you a stable HTTPS default domain immediately, which is much more reliable than a temporary tunnel.
-- The local `.local/` auth state directory is sufficient for first-pass testing. Set `TIKTOK_AUTH_STATE_DIR` to a mounted persistent path in production so OAuth state survives deploys and restarts.
-- A Render deploy restarts the service and can clear `.local/`; complete TikTok OAuth after each deploy until persistent token storage is added.
-
-## Campaign Review QA
-
-Use the Hooray connector URL `https://<your-render-domain>/mcp/chatgpt` for live review and creation. Use `/mcp/reporting` only for OAuth-free interaction QA.
-
-Golden prompts:
-
-- `Prepare a Website Conversions Smart+ Campaign review for Education Coaching0315 with a USD 50 dynamic daily budget, Website destination, no catalog, and no special ad category.`
-- `Prepare a Lead Generation Smart+ Campaign review for Education Coaching0315 with a USD 60 dynamic daily budget, no catalog, and no special ad category.`
-- `Preview an App Promotion Campaign Review UI for Education Coaching0315 using App install and App ID 1234567890123456789. Do not create it.`
-- `Prepare a Brand Awareness campaign review.` The Smart+ review tool must not be called; route the request to a manual-campaign workflow.
-
-When OAuth is unavailable, use the separate Reporting connector for an interaction demo instead of adding demo behavior to Hooray:
-
-- `OAuth is unavailable. Preview an interactive Smart+ Website Conversions Campaign Review for Education Coaching0315. Name it Summer Enrollment, use USD 50 dynamic daily budget, sales destination Website, CBO on, no catalog, and no special ad category. Do not create anything in TikTok.`
-- `Show a no-OAuth Campaign Review demo for Lead Generation with USD 80/day, CBO off, no catalog, and no special ad category.`
-- `Preview an App Promotion Campaign Review interaction demo using App install, App ID 1234567890123456789, USD 60/day, CBO on, and no special ad category.`
-
-The complete positive, interaction, validation, error, and unsupported-objective prompt matrix is in `docs/campaign-review-demo-golden-prompts.md`.
-
-`CAMPAIGN_REVIEW_WRITE_MODE` must be `campaign_only`. Confirm re-checks that the advertiser is enabled and still belongs to the current ChatGPT connection's delegated TikTok authorization; there is no production advertiser-ID allowlist.
-
-## Reporting preview
-
-Start the MCP service and open `http://localhost:3010/report-preview`. This read-only page uses the exact reporting CSS and JavaScript embedded in the MCP resource.
-
-Example prompts:
-
-- `Show my TikTok Ads report for the last 7 complete days.`
-- `Compare campaign performance with the previous period.`
-- `Show the ad-level report from 2026-07-01 to 2026-07-07.`
-
-See `docs/reporting-live-demo-setup-zh.md` for the complete ChatGPT, Claude, TikTok OAuth, and API input checklist.
-
-## Legacy widget preview
-
-You can preview the widget shell by serving `web/` locally:
+## Local QA
 
 ```bash
-npm run preview
+pnpm install
+pnpm run check
+pnpm start
+MCP_ENDPOINT=http://localhost:3010/mcp/chatgpt pnpm run qa:campaign-review-mcp
+pnpm run qa:campaign-review-contract
+pnpm run qa:campaign-review-widget
 ```
 
-Then open `http://localhost:4173/preview.html`.
+Reporting and demo QA remain isolated on `/mcp/reporting`; see `docs/reporting-live-demo-setup-zh.md`.
+
+## Production configuration
+
+Required Render variables include the existing TikTok app credentials and:
+
+- `PUBLIC_BASE_URL=https://tiktok-ads-agent-poc.onrender.com`
+- `CAMPAIGN_REVIEW_WRITE_MODE=campaign_only`
+- `TIKTOK_REDIRECT_URI=https://tiktok-ads-agent-poc.onrender.com/callback`
+
+The server forwards a delegated ChatGPT bearer token when supplied. It also retains the existing Flat OAuth callback as a fallback. For multi-user production, use delegated per-user authorization or persistent per-user token storage; do not rely on ephemeral global `.local` auth files.

@@ -249,14 +249,6 @@ app.get("/report-exports/:token.csv", (req: Request, res: Response) => {
   res.setHeader("Content-Disposition", `attachment; filename="${storedExport.filename}"`);
   res.type("text/csv; charset=utf-8").send(`\uFEFF${storedExport.csv}`);
 });
-app.use(
-  "/assets",
-  express.static(join(currentDir, "../web/assets"), {
-    immutable: true,
-    maxAge: "1h"
-  })
-);
-
 app.get("/health", (_req: Request, res: Response) => {
   res.json({
     ok: true,

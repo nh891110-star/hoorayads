@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Private POC scaffold for a TikTok Ads ChatGPT app based on the creative-first PRD flow.",
+  "description": "TikTok Smart+ Campaign Review MCP App with Flat MCP creation and read-back.",
   "scripts": {
     "check": "tsc --noEmit",
     "dev": "tsx src/http-server.ts",
