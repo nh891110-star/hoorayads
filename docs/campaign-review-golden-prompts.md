@@ -41,6 +41,6 @@ Use these prompts to test model behavior and UI assembly. `AI suggested` is a so
 - Put every model-proposed visible field in `aiSuggestedFields`.
 - Do not include fields explicitly provided or confirmed by the user.
 - Server-defaulted `budgetMode`, `budgetOptimizeOn`, `catalogEnabled`, and App `campaignType` are automatically labeled `AI suggested` when omitted from tool input.
-- A composite row gets one label: Campaign budget covers `budget` and `budgetMode`; Catalog covers `catalogEnabled` and `catalogType`.
+- Composite rows keep field-level provenance: Campaign budget labels the amount and budget mode independently; Catalog labels enablement and catalog type independently.
 - Advertiser account, App ID, and special-ad-category confirmation must come from user selection, authorized TikTok data, or explicit confirmation, not model invention.
 - Explain why settings were recommended in normal chat text. Do not present model rationale as TikTok official guidance.

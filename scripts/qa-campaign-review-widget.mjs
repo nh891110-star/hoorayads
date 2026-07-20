@@ -106,7 +106,7 @@ await page.setContent(`
 
 assert(await page.getByText("MCP UI QA - Website Conversions").isVisible(), "Proposed Campaign name is not visible.");
 assert(await page.getByText("Status after creation").isVisible(), "Active status review is missing.");
-assert((await page.getByText("AI suggested", { exact: true }).count()) === 4, "Model-proposed visible settings must use the green AI suggested label.");
+assert((await page.getByText("AI suggested", { exact: true }).count()) === 5, "Each model-proposed visible setting must use its own green AI suggested label.");
 assert(await page.getByText("Proposal values only.", { exact: false }).isVisible(), "Proposed card must disclose that its fields are not TikTok read-back.");
 assert((await page.getByText("Ad Group", { exact: false }).count()) === 1, "Only consequence copy should mention Ad Groups.");
 if (screenshotPrefix) await page.screenshot({ path: `${screenshotPrefix}-proposed.png`, fullPage: true });

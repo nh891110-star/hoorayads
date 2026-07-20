@@ -224,12 +224,21 @@ function formatCurrency(value) {
   }
 }
 
-function budgetSummary(campaign) {
-  if (campaign.budgetMode === "BUDGET_MODE_INFINITE") return "Unlimited";
+function budgetReviewValue(campaign) {
+  if (campaign.budgetMode === "BUDGET_MODE_INFINITE") {
+    return `Unlimited ${sourceBadge("budgetMode")}`;
+  }
   const suffix = ["BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_DAY"].includes(campaign.budgetMode)
     ? "/day"
     : " total";
-  return `${formatCurrency(campaign.budget)}${suffix} · ${labelForBudgetMode(campaign.budgetMode)}`;
+  return `${escapeHtml(`${formatCurrency(campaign.budget)}${suffix}`)} ${sourceBadge("budget")} · ${escapeHtml(labelForBudgetMode(campaign.budgetMode))} ${sourceBadge("budgetMode")}`;
+}
+
+function catalogReviewValue(campaign) {
+  if (!campaign.catalogEnabled) {
+    return `Not used ${sourceBadge("catalogEnabled")}`;
+  }
+  return `Used ${sourceBadge("catalogEnabled")} · ${escapeHtml(labelForCatalog(true, campaign.catalogType))} ${sourceBadge("catalogType")}`;
 }
 
 function verifiedReadback(state = reviewState) {
@@ -267,7 +276,8 @@ function sourceBadge(field) {
       budgetMode: ["budgetMode"],
       budgetOptimizeOn: ["budgetOptimizeOn"],
       salesDestination: ["salesDestination"],
-      catalogEnabled: ["catalogEnabled", "catalogType"],
+      catalogEnabled: ["catalogEnabled"],
+      catalogType: ["catalogType"],
       specialIndustries: ["specialIndustries"],
       operationStatus: ["operationStatus"]
     }[field] || [];
@@ -276,11 +286,7 @@ function sourceBadge(field) {
       ? '<span class="source-badge source-badge-verified">TikTok verified</span>'
       : '<span class="source-badge source-badge-proposal">Proposal</span>';
   }
-  const recommendedKeys = {
-    budget: ["budget", "budgetMode"],
-    catalogEnabled: ["catalogEnabled", "catalogType"]
-  }[field] || [field];
-  if (!recommendedKeys.some((key) => reviewState?.campaign?.aiSuggestedFields?.includes(key))) return "";
+  if (!reviewState?.campaign?.aiSuggestedFields?.includes(field)) return "";
   return '<span class="source-badge">AI suggested</span>';
 }
 
@@ -294,7 +300,7 @@ function operationStatusSummary() {
 
 function reviewRows(campaign) {
   const rows = [
-    ["Campaign budget", `${escapeHtml(budgetSummary(campaign))} ${sourceBadge("budget")}`],
+    ["Campaign budget", budgetReviewValue(campaign)],
     ["Campaign objective", `${escapeHtml(labelForObjective(campaign.objectiveType))} ${sourceBadge("objectiveType")}`]
   ];
   if (campaign.objectiveType === "WEB_CONVERSIONS") {
@@ -307,7 +313,7 @@ function reviewRows(campaign) {
   }
   rows.push(
     ["Campaign budget optimization", `${campaign.budgetOptimizeOn ? "On" : "Off"} ${sourceBadge("budgetOptimizeOn")}`],
-    ["Catalog", `${escapeHtml(labelForCatalog(campaign.catalogEnabled, campaign.catalogType))} ${sourceBadge("catalogEnabled")}`],
+    ["Catalog", catalogReviewValue(campaign)],
     ["Special ad category", `${escapeHtml(labelForSpecialIndustries(campaign))} ${sourceBadge("specialIndustries")}`],
     ["Status after creation", operationStatusSummary()]
   );
