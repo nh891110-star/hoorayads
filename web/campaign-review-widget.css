@@ -189,7 +189,7 @@ h1 { margin: 0; font-size: 26px; line-height: 1.2; letter-spacing: -.02em; }
 
 .field { display: grid; gap: 8px; min-width: 0; }
 .field-wide { grid-column: 1 / -1; }
-.field > span, .fixed-status > span { color: #4f4f53; font-size: 13px; font-weight: 650; }
+.field > span { color: #4f4f53; font-size: 13px; font-weight: 650; }
 
 input, select {
   width: 100%;
@@ -204,18 +204,6 @@ input, select {
 input:hover, select:hover { border-color: #d0d0d3; }
 input:disabled { color: #98989c; background: #f2f2f3; }
 
-.fixed-status {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 7px 12px;
-  border-radius: 6px;
-  padding: 11px 13px;
-  background: var(--field);
-}
-
-.fixed-status strong { display: inline-flex; align-items: center; gap: 7px; }
-.fixed-status small { grid-column: 1 / -1; color: #8b8b8f; }
 .edit-footer { align-items: flex-end; }
 
 @media (max-width: 640px) {

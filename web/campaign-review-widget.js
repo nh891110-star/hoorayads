@@ -278,8 +278,7 @@ function sourceBadge(field) {
       salesDestination: ["salesDestination"],
       catalogEnabled: ["catalogEnabled"],
       catalogType: ["catalogType"],
-      specialIndustries: ["specialIndustries"],
-      operationStatus: ["operationStatus"]
+      specialIndustries: ["specialIndustries"]
     }[field] || [];
     const isVerified = verified && keys.some((key) => Object.prototype.hasOwnProperty.call(verified, key));
     return isVerified
@@ -288,14 +287,6 @@ function sourceBadge(field) {
   }
   if (!reviewState?.campaign?.aiSuggestedFields?.includes(field)) return "";
   return '<span class="source-badge">AI suggested</span>';
-}
-
-function operationStatusSummary() {
-  if (reviewState?.status === "outcome_unknown") {
-    const returned = reviewState?.execution?.verifiedCampaign?.operationStatus;
-    return `<span class="status-value"><span class="status-dot"></span>Unconfirmed${returned ? ` · TikTok returned ${escapeHtml(returned)}` : ""}</span>`;
-  }
-  return `<span class="status-value"><span class="status-dot status-dot-active"></span>Active${isDemo() ? " · simulated" : ""}</span> ${sourceBadge("operationStatus")}`;
 }
 
 function reviewRows(campaign) {
@@ -314,8 +305,7 @@ function reviewRows(campaign) {
   rows.push(
     ["Campaign budget optimization", `${campaign.budgetOptimizeOn ? "On" : "Off"} ${sourceBadge("budgetOptimizeOn")}`],
     ["Catalog", catalogReviewValue(campaign)],
-    ["Special ad category", `${escapeHtml(labelForSpecialIndustries(campaign))} ${sourceBadge("specialIndustries")}`],
-    ["Status after creation", operationStatusSummary()]
+    ["Special ad category", `${escapeHtml(labelForSpecialIndustries(campaign))} ${sourceBadge("specialIndustries")}`]
   );
   return rows;
 }
@@ -381,12 +371,12 @@ function renderReview() {
   const consequence = state.status === "created"
     ? isDemo()
       ? "Interaction test completed. No TikTok API was called and no TikTok object was created."
-      : "Fields marked TikTok verified were returned by Campaign read-back. Fields marked Proposal were not returned and remain the approved values. No Ad Group, Ad, creative, or delivery was created."
+      : "This campaign was submitted successfully. It cannot deliver or spend until an eligible Ad Group and Ad are added. We’ll guide you through those next steps. Fields marked TikTok verified were returned by Campaign read-back; other fields remain the approved proposal values."
     : state.status === "outcome_unknown"
       ? "TikTok read-back is not verified. Check status before taking another action; do not submit this proposal again."
     : isDemo()
       ? "Confirming simulates an Active Campaign submission. It does not call TikTok APIs or create any TikTok object."
-      : "Proposal values only. Nothing exists in TikTok yet. Confirming creates one Active TikTok Smart+ Campaign; it cannot deliver or spend until eligible Ad Group and Ad objects are added.";
+      : "After a successful submission, this campaign will be created in TikTok. It cannot deliver or spend until an eligible Ad Group and Ad are added. We’ll guide you through those next steps.";
 
   root.innerHTML = `<article class="campaign-card ${state.status === "outdated" ? "is-outdated" : ""} ${state.status === "created" ? "is-submitted" : ""}">
     <header class="card-header">
@@ -484,10 +474,9 @@ function renderEdit() {
         ${option("EMPLOYMENT", "Employment", specialValue)}
         ${option("CREDIT", "Credit", specialValue)}
       </select></label>
-      <div class="fixed-status"><span>Status after creation</span><strong><span class="status-dot status-dot-active"></span>Active${isDemo() ? " · simulated" : ""}</strong><small>${isDemo() ? "Interaction demo only. No TikTok object will be created." : "This card creates the Campaign only. Delivery requires an eligible Ad Group and Ad."}</small></div>
     </form>
     <footer class="card-footer edit-footer">
-      <p>${isDemo() ? "Applying changes creates a new demo proposal version. Confirm simulates submission only." : "Applying changes creates a new proposal version. Nothing is created in TikTok until you select Confirm."}</p>
+      <p>${isDemo() ? "Applying changes creates a new demo proposal version. Confirm simulates submission only." : "Applying changes creates a new proposal version. Nothing is submitted until you select Confirm. After a successful submission, we’ll guide you through adding an eligible Ad Group and Ad."}</p>
       <div class="actions">
         <button class="button button-secondary" data-action="cancel" ${busy ? "disabled" : ""}>Cancel</button>
         <button class="button button-primary" data-action="apply" ${busy ? "disabled" : ""}>Apply changes</button>

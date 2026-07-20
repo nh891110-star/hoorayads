@@ -27,8 +27,9 @@ import { createCampaignReviewStore } from "./campaign-review.js";
 import type { CampaignReviewState } from "./campaign-review.js";
 import type { TikTokMcpAuthContext } from "./tiktok-mcp.js";
 
-export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v6.html";
+export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v7.html";
 const LEGACY_CAMPAIGN_REVIEW_WIDGET_URIS = [
+  "ui://widget/tiktok-smartplus-campaign-review-v6.html",
   "ui://widget/tiktok-smartplus-campaign-review-v5.html",
   "ui://widget/tiktok-smartplus-campaign-review-v4.html",
   "ui://widget/tiktok-smartplus-campaign-review-v3.html",
@@ -101,7 +102,6 @@ function fallback(state: CampaignReviewState) {
     `- Campaign Budget Optimization: ${(verified?.budgetOptimizeOn ?? state.campaign.budgetOptimizeOn) ? "On" : "Off"}`,
     `- Catalog: ${(verified?.catalogEnabled ?? state.campaign.catalogEnabled) ? verified?.catalogType || state.campaign.catalogType || "Used" : "Not used"}`,
     `- Special ad category: ${verified?.specialIndustries !== undefined ? verified.specialIndustries.join(", ") || "None selected" : state.campaign.specialIndustriesConfirmed ? state.campaign.specialIndustries.join(", ") || "None selected" : "Not confirmed"}`,
-    `- Status after creation: ${state.status === "outcome_unknown" ? "Unconfirmed" : "Active"}`,
     ...(state.execution?.campaignId ? [`- ${state.mode === "demo" ? "Demo receipt" : "Campaign ID"}: ${state.execution.campaignId}`] : []),
     ...(verified ? ["- Data source: TikTok Campaign read-back; fields omitted by TikTok remain proposal values."] : []),
     ...(state.validationErrors.length ? ["", `Review required: ${state.validationErrors.join(" ")}`] : []),
@@ -109,10 +109,10 @@ function fallback(state: CampaignReviewState) {
     state.mode === "demo"
       ? "Interaction demo only. Confirmation does not call TikTok APIs or create any TikTok object."
       : state.status === "created"
-        ? "Fields returned by TikTok Campaign read-back are verified; omitted fields remain approved proposal values. No Ad Group, Ad, creative, delivery, or spend was created."
+        ? "This campaign was submitted successfully. It cannot deliver or spend until an eligible Ad Group and Ad are added. We’ll guide you through those next steps. Fields returned by TikTok Campaign read-back are verified; omitted fields remain approved proposal values."
         : state.status === "outcome_unknown"
           ? "TikTok read-back is not verified. Check status before taking another action and do not submit this proposal again."
-          : "Proposal values only. Nothing exists in TikTok yet. Confirmation creates one Active Campaign only; it does not create Ad Groups, Ads, creatives, delivery, or spend."
+          : "After a successful submission, this campaign will be created in TikTok. It cannot deliver or spend until an eligible Ad Group and Ad are added. We’ll guide you through those next steps."
   ].join("\n");
 }
 
@@ -161,7 +161,7 @@ function registerResourceAt(
 function registerResource(server: McpServer, resourceMeta: Record<string, unknown>) {
   registerResourceAt(
     server,
-    "tiktok-smartplus-campaign-review-v6",
+    "tiktok-smartplus-campaign-review-v7",
     CAMPAIGN_REVIEW_WIDGET_URI,
     resourceMeta
   );

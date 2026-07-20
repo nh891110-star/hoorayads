@@ -3,8 +3,9 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CallToolResultSchema, ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const endpoint = process.env.MCP_ENDPOINT || "http://localhost:3010/mcp/chatgpt";
-const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v6.html";
+const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v7.html";
 const legacyResourceUris = [
+  "ui://widget/tiktok-smartplus-campaign-review-v6.html",
   "ui://widget/tiktok-smartplus-campaign-review-v5.html",
   "ui://widget/tiktok-smartplus-campaign-review-v4.html",
   "ui://widget/tiktok-smartplus-campaign-review-v3.html",
@@ -135,7 +136,8 @@ try {
   assert(html.includes('id="campaign-review-root"'), "Campaign Review root is missing.");
   assert(html.includes("Confirm"), "Campaign Review confirm CTA is missing.");
   assert(html.includes("AI suggested"), "Campaign Review is missing the model-suggestion source label.");
-  assert(html.includes("Status after creation"), "Campaign Review status disclosure is missing.");
+  assert(!html.includes("Status after creation"), "Campaign Review must not show a pre-creation status field.");
+  assert(html.includes("After a successful submission"), "Campaign Review next-step disclosure is missing.");
   assert(html.includes("TikTok verified"), "Campaign Review is missing per-field TikTok read-back provenance.");
   assert(html.includes("TikTok Campaign read-back"), "Campaign Review success receipt is missing its TikTok read-back source.");
 

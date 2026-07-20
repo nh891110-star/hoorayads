@@ -105,13 +105,14 @@ await page.setContent(`
 `);
 
 assert(await page.getByText("MCP UI QA - Website Conversions").isVisible(), "Proposed Campaign name is not visible.");
-assert(await page.getByText("Status after creation").isVisible(), "Active status review is missing.");
+assert((await page.getByText("Status after creation").count()) === 0, "Proposed Campaign must not show a status-after-creation field.");
 assert((await page.getByText("AI suggested", { exact: true }).count()) === 5, "Each model-proposed visible setting must use its own green AI suggested label.");
-assert(await page.getByText("Proposal values only.", { exact: false }).isVisible(), "Proposed card must disclose that its fields are not TikTok read-back.");
+assert(await page.getByText("After a successful submission", { exact: false }).isVisible(), "Proposed card must explain the Campaign-only next steps.");
 assert((await page.getByText("Ad Group", { exact: false }).count()) === 1, "Only consequence copy should mention Ad Groups.");
 if (screenshotPrefix) await page.screenshot({ path: `${screenshotPrefix}-proposed.png`, fullPage: true });
 
 await page.getByRole("button", { name: "Edit" }).click();
+assert((await page.getByText("Status after creation").count()) === 0, "Edit state must not show a status-after-creation field.");
 if (screenshotPrefix) await page.screenshot({ path: `${screenshotPrefix}-edit.png`, fullPage: true });
 await page.getByLabel("Campaign objective").selectOption("LEAD_GENERATION");
 assert((await page.getByLabel("Sales destination").count()) === 0, "Lead Generation edit state must hide Sales destination.");
@@ -144,7 +145,7 @@ await page.getByRole("button", { name: "Confirm" }).click();
 lastCall = await page.evaluate(() => window.__calls.at(-1));
 assert(lastCall.name === "create_smartplus_campaign_from_review", "Create campaign must call the dedicated create tool.");
 assert(lastCall.args.expectedVersion === 3, "Create campaign must submit only the latest proposal version.");
-assert(await page.getByText("Submitted successfully").isVisible(), "Verified success state was not rendered.");
+assert(await page.getByText("Submitted successfully", { exact: true }).isVisible(), "Verified success state was not rendered.");
 assert(await page.getByText("1840000000000000001").isVisible(), "Success receipt is missing Campaign ID.");
 assert(await page.getByText("TikTok Campaign read-back").isVisible(), "Success receipt must disclose its TikTok read-back source.");
 assert(await page.getByText("Fields marked TikTok verified", { exact: false }).isVisible(), "Success card must explain per-field provenance.");
@@ -175,7 +176,6 @@ await page.evaluate(() => {
   window.dispatchEvent(new Event("openai:set_globals"));
 });
 assert(await page.getByText("Creation status is not yet confirmed.").isVisible(), "Read-back mismatch must render an unconfirmed status notice.");
-assert(await page.getByText("Unconfirmed · TikTok returned DISABLE").isVisible(), "Read-back mismatch must not be presented as Active.");
 assert(await page.getByText("do not submit this proposal again", { exact: false }).isVisible(), "Unconfirmed read-back must block duplicate submission guidance.");
 
 await page.evaluate(() => {
