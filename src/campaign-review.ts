@@ -64,6 +64,7 @@ type CampaignProposalVersion = {
 type CampaignProposalRecord = {
   proposalId: string;
   currentVersion: number;
+  retired: boolean;
   account: AdvertiserAccount;
   versions: Map<number, CampaignProposalVersion>;
   execution: CampaignExecution;
@@ -405,7 +406,7 @@ function stateFor(
 ): CampaignReviewState {
   const version = record.versions.get(requestedVersion) || record.versions.get(record.currentVersion);
   if (!version) throw new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found.");
-  const isCurrentVersion = requestedVersion === record.currentVersion;
+  const isCurrentVersion = requestedVersion === record.currentVersion && !record.retired;
   const validationErrors = validateCampaignReview(version.campaign, record.account);
   let status: CampaignReviewState["status"] = isCurrentVersion ? "proposed" : "outdated";
 
@@ -505,6 +506,7 @@ export function createCampaignReviewStore(
   const surface = options.surface ?? "flat";
   const authContext = options.authContext ?? {};
   const proposals = new Map<string, CampaignProposalRecord>();
+  let activeProposalId: string | undefined;
 
   const demoAccount = (input: Pick<CampaignReviewInput, "advertiserId" | "advertiserName">): AdvertiserAccount => ({
     advertiserId: input.advertiserId || "7481826080479870993",
@@ -522,6 +524,7 @@ export function createCampaignReviewStore(
       const record: CampaignProposalRecord = {
         proposalId: randomUUID(),
         currentVersion: 1,
+        retired: false,
         account,
         versions: new Map([[1, { campaign, createdAt: new Date().toISOString() }]]),
         execution: { status: "idle", requestId: numericRequestId() },
@@ -529,7 +532,12 @@ export function createCampaignReviewStore(
           ? { simulationOutcome: (input as CampaignReviewDemoInput).simulationOutcome ?? "SUCCESS" }
           : {})
       };
+      const activeProposal = activeProposalId ? proposals.get(activeProposalId) : undefined;
+      if (activeProposal && ["idle", "failed"].includes(activeProposal.execution.status)) {
+        activeProposal.retired = true;
+      }
       proposals.set(record.proposalId, record);
+      activeProposalId = record.proposalId;
       return stateFor(record, record.currentVersion, mode);
     } catch (error) {
       return createErrorState(error, mode, input);
@@ -539,6 +547,7 @@ export function createCampaignReviewStore(
   const revise = (proposalId: string, expectedVersion: number, input: Omit<CampaignReviewInput, "advertiserId" | "advertiserName">) => {
     const record = proposals.get(proposalId);
     if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."), mode);
+    if (record.retired) return stateFor(record, expectedVersion, mode);
     if (expectedVersion !== record.currentVersion) return stateFor(record, expectedVersion, mode);
     if (record.execution.status === "creating" || record.execution.status === "checking" || record.execution.status === "created") {
       return stateFor(record, record.currentVersion, mode);
@@ -652,6 +661,7 @@ export function createCampaignReviewStore(
   const create = async (proposalId: string, expectedVersion: number) => {
     const record = proposals.get(proposalId);
     if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."), mode);
+    if (record.retired) return stateFor(record, expectedVersion, mode);
     if (expectedVersion !== record.currentVersion) return stateFor(record, expectedVersion, mode);
     if (record.execution.status === "created" || record.execution.status === "creating" || record.execution.status === "checking") {
       return stateFor(record, record.currentVersion, mode);

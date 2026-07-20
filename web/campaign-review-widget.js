@@ -483,7 +483,7 @@ async function invoke(name, args) {
 }
 
 async function refreshStatus() {
-  if (!reviewState?.proposalId || busy || editMode || ["created", "error"].includes(reviewState.status)) return;
+  if (!reviewState?.proposalId || busy || editMode || ["created", "outdated"].includes(reviewState.status)) return;
   try {
     const result = await callTool(actionTool("status"), {
       proposalId: reviewState.proposalId,
@@ -502,11 +502,16 @@ async function refreshStatus() {
 function scheduleStatusRefresh() {
   if (statusRefreshTimer) window.clearTimeout(statusRefreshTimer);
   statusRefreshTimer = null;
-  if (!["creating", "checking"].includes(reviewState?.status)) return;
+  const delay = ["creating", "checking"].includes(reviewState?.status)
+    ? 500
+    : ["proposed", "error", "outcome_unknown"].includes(reviewState?.status)
+      ? 3000
+      : undefined;
+  if (!delay) return;
   statusRefreshTimer = window.setTimeout(async () => {
     await refreshStatus();
     scheduleStatusRefresh();
-  }, 500);
+  }, delay);
 }
 
 function bindInteractions() {

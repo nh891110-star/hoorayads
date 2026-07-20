@@ -55,6 +55,62 @@ try {
       !reportingTools.tools.some((tool) => tool.name === "open_tiktok_ads_workspace"),
       "Reporting endpoint leaked the retired Hooray workspace."
     );
+    const firstDemoProposal = await reportingClient.request(
+      {
+        method: "tools/call",
+        params: {
+          name: "review_smartplus_campaign_demo",
+          arguments: {
+            advertiserName: "Education Coaching0315",
+            campaignName: "MCP UI QA - First Demo Proposal",
+            objectiveType: "WEB_CONVERSIONS",
+            budget: 50,
+            budgetMode: "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+            budgetOptimizeOn: true,
+            salesDestination: "WEBSITE",
+            catalogEnabled: false,
+            specialIndustries: [],
+            specialIndustriesConfirmed: true
+          }
+        }
+      },
+      CallToolResultSchema
+    );
+    await reportingClient.request(
+      {
+        method: "tools/call",
+        params: {
+          name: "review_smartplus_campaign_demo",
+          arguments: {
+            advertiserName: "Education Coaching0315",
+            campaignName: "MCP UI QA - Second Demo Proposal",
+            objectiveType: "LEAD_GENERATION",
+            budget: 60,
+            budgetMode: "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+            budgetOptimizeOn: true,
+            catalogEnabled: false,
+            specialIndustries: [],
+            specialIndustriesConfirmed: true
+          }
+        }
+      },
+      CallToolResultSchema
+    );
+    const firstDemoState = firstDemoProposal.structuredContent?.campaignReviewState;
+    const refreshedFirstDemo = await reportingClient.request(
+      {
+        method: "tools/call",
+        params: {
+          name: "get_smartplus_campaign_review_demo_status",
+          arguments: {
+            proposalId: firstDemoState?.proposalId,
+            expectedVersion: firstDemoState?.version
+          }
+        }
+      },
+      CallToolResultSchema
+    );
+    assert(refreshedFirstDemo.structuredContent?.campaignReviewState?.status === "outdated", "A prior proposal did not become Inactive after a new proposal was prepared.");
   } finally {
     await reportingTransport.close();
   }
@@ -104,7 +160,7 @@ try {
     console.log(JSON.stringify({
       ok: true,
       liveGate: proposedState.execution.errorCode,
-      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "flat_oauth_gate", "oauth_error_input_preservation", "brand_negative_schema"]
+      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "single_active_proposal", "flat_oauth_gate", "oauth_error_input_preservation", "brand_negative_schema"]
     }, null, 2));
     process.exitCode = 0;
   } else {
@@ -153,7 +209,7 @@ try {
     console.log(JSON.stringify({
       ok: true,
       auth: "connected",
-      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "flat_live_account_resolution", "proposed", "revision_cas", "outdated_version", "brand_negative_schema"]
+      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "single_active_proposal", "flat_live_account_resolution", "proposed", "revision_cas", "outdated_version", "brand_negative_schema"]
     }, null, 2));
   }
 } finally {

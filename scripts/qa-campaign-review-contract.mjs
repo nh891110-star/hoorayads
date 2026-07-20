@@ -5,6 +5,7 @@ import {
 } from "../src/campaign-review-contract.ts";
 import {
   buildSmartPlusCampaignPayload,
+  createCampaignReviewStore,
   validateCampaignReview
 } from "../src/campaign-review.ts";
 
@@ -68,6 +69,19 @@ assert(validateCampaignReview(unconfirmedSpecial).some((message) => message.incl
 const invalidBudget = { ...web, budgetMode: "BUDGET_MODE_INFINITE", budget: 50 };
 assert(validateCampaignReview(invalidBudget).some((message) => message.includes("omitted")), "Unlimited budget must reject a numeric budget.");
 
+const reviewStore = createCampaignReviewStore({ mode: "demo" });
+const firstProposal = await reviewStore.prepare(web);
+const secondProposal = await reviewStore.prepare({
+  ...lead,
+  campaignName: "MCP UI QA - New Active Proposal"
+});
+const refreshedFirstProposal = await reviewStore.getStatus(firstProposal.proposalId, firstProposal.version);
+assert(secondProposal.status === "proposed", "The latest Campaign proposal must remain active.");
+assert(refreshedFirstProposal.status === "outdated", "A previous Campaign proposal must become Inactive after a new proposal is prepared.");
+assert(refreshedFirstProposal.readyToCreate === false, "An inactive Campaign proposal must never remain creatable.");
+const staleSubmit = await reviewStore.create(firstProposal.proposalId, firstProposal.version);
+assert(staleSubmit.status === "outdated", "The server must reject submission from an inactive Campaign proposal.");
+
 console.log(JSON.stringify({
   ok: true,
   checked: [
@@ -78,6 +92,8 @@ console.log(JSON.stringify({
     "special_industry_confirmation",
     "budget_dependencies",
     "campaign_only_payload",
-    "active_campaign_only_creation"
+    "active_campaign_only_creation",
+    "single_active_proposal",
+    "inactive_proposal_write_guard"
   ]
 }, null, 2));
