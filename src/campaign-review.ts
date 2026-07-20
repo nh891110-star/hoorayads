@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 
 import type {
   CampaignAppPromotionType,
@@ -901,4 +901,62 @@ export function createCampaignReviewStore(
   };
 
   return { prepare, revise, getStatus, create };
+}
+
+type CampaignReviewStore = ReturnType<typeof createCampaignReviewStore>;
+
+type SharedCampaignReviewStore = {
+  lastAccessedAt: number;
+  store: CampaignReviewStore;
+};
+
+const SHARED_STORE_TTL_MS = 6 * 60 * 60 * 1_000;
+const SHARED_STORE_LIMIT = 500;
+const sharedLiveStores = new Map<string, SharedCampaignReviewStore>();
+
+function pruneSharedLiveStores(now: number) {
+  for (const [key, entry] of sharedLiveStores) {
+    if (now - entry.lastAccessedAt > SHARED_STORE_TTL_MS) sharedLiveStores.delete(key);
+  }
+
+  if (sharedLiveStores.size <= SHARED_STORE_LIMIT) return;
+  const oldest = [...sharedLiveStores.entries()]
+    .sort(([, left], [, right]) => left.lastAccessedAt - right.lastAccessedAt)
+    .slice(0, sharedLiveStores.size - SHARED_STORE_LIMIT);
+  for (const [key] of oldest) sharedLiveStores.delete(key);
+}
+
+function sharedStoreKey(authContext: TikTokMcpAuthContext, surface: TikTokMcpSurface) {
+  const bearerToken = authContext.authorization?.trim().replace(/^Bearer\s+/i, "");
+  if (!bearerToken) return undefined;
+  const tokenDigest = createHash("sha256").update(bearerToken).digest("base64url");
+  return `${surface}:${tokenDigest}`;
+}
+
+/**
+ * ChatGPT may initialize a new MCP server for a later app action. Keep proposal
+ * state at service scope while isolating it by the delegated TikTok bearer.
+ */
+export function getSharedCampaignReviewStore(
+  authContext: TikTokMcpAuthContext = {},
+  surface: TikTokMcpSurface = "flat"
+) {
+  const key = sharedStoreKey(authContext, surface);
+  if (!key) return createCampaignReviewStore({ authContext, surface });
+
+  const now = Date.now();
+  pruneSharedLiveStores(now);
+  const existing = sharedLiveStores.get(key);
+  if (existing) {
+    existing.lastAccessedAt = now;
+    return existing.store;
+  }
+
+  const store = createCampaignReviewStore({ authContext, surface });
+  sharedLiveStores.set(key, { lastAccessedAt: now, store });
+  return store;
+}
+
+export function resetSharedCampaignReviewStoresForTests() {
+  sharedLiveStores.clear();
 }

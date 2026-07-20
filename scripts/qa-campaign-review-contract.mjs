@@ -7,8 +7,10 @@ import {
 import {
   buildSmartPlusCampaignPayload,
   createCampaignReviewStore,
+  getSharedCampaignReviewStore,
   normalizeCampaignInput,
   normalizeCampaignReadback,
+  resetSharedCampaignReviewStoresForTests,
   validateCampaignReadback,
   validateCampaignReview
 } from "../src/campaign-review.ts";
@@ -154,6 +156,28 @@ assert(refreshedFirstProposal.readyToCreate === false, "An inactive Campaign pro
 const staleSubmit = await reviewStore.create(firstProposal.proposalId, firstProposal.version);
 assert(staleSubmit.status === "outdated", "The server must reject submission from an inactive Campaign proposal.");
 
+resetSharedCampaignReviewStoresForTests();
+const sharedUserAFirstServer = getSharedCampaignReviewStore({
+  authorization: "Bearer qa-user-a-token",
+  requireDelegatedAuthorization: true
+});
+const sharedUserASecondServer = getSharedCampaignReviewStore({
+  authorization: "Bearer qa-user-a-token",
+  requireDelegatedAuthorization: true
+});
+assert(sharedUserASecondServer === sharedUserAFirstServer, "A later MCP server instance did not receive the same user's proposal store.");
+
+const sharedUserBServer = getSharedCampaignReviewStore({
+  authorization: "Bearer qa-user-b-token",
+  requireDelegatedAuthorization: true
+});
+assert(sharedUserBServer !== sharedUserAFirstServer, "A different OAuth user inherited another user's proposal store.");
+assert(
+  getSharedCampaignReviewStore() !== getSharedCampaignReviewStore(),
+  "Unauthenticated callers must not share Campaign proposal state."
+);
+resetSharedCampaignReviewStoresForTests();
+
 console.log(JSON.stringify({
   ok: true,
   checked: [
@@ -172,6 +196,8 @@ console.log(JSON.stringify({
     "tiktok_readback_normalization",
     "tiktok_readback_mismatch_guard",
     "single_active_proposal",
-    "inactive_proposal_write_guard"
+    "inactive_proposal_write_guard",
+    "cross_server_proposal_state",
+    "oauth_user_store_isolation"
   ]
 }, null, 2));
