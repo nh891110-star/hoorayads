@@ -23,7 +23,12 @@ import {
   reviseSmartPlusCampaignReviewOutput
 } from "./campaign-review-contract.js";
 import type { CampaignReviewDemoInput, CampaignReviewInput } from "./campaign-review-contract.js";
-import { createCampaignReviewStore, getSharedCampaignReviewStore } from "./campaign-review.js";
+import {
+  createCampaignReviewStore,
+  getCampaignReviewStoreForProposal,
+  getSharedCampaignReviewStore,
+  registerCampaignReviewProposal
+} from "./campaign-review.js";
 import type { CampaignReviewState } from "./campaign-review.js";
 import type { TikTokMcpAuthContext } from "./tiktok-mcp.js";
 
@@ -182,7 +187,11 @@ function registerResource(server: McpServer, resourceMeta: Record<string, unknow
   }
 }
 
-function registerLiveTools(server: McpServer, store: ReturnType<typeof createCampaignReviewStore>) {
+function registerLiveTools(
+  server: McpServer,
+  store: ReturnType<typeof createCampaignReviewStore>,
+  authContext: TikTokMcpAuthContext = {}
+) {
   registerAppTool(
     server,
     "review_smartplus_campaign",
@@ -196,7 +205,7 @@ function registerLiveTools(server: McpServer, store: ReturnType<typeof createCam
       annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false, idempotentHint: false }
     },
     async (input: CampaignReviewInput) => {
-      const state = await store.prepare(input);
+      const state = registerCampaignReviewProposal(store, await store.prepare(input));
       return result(state, state.status === "error"
         ? "Show the Campaign Review connection or validation state."
         : "Show the Campaign Review card and wait for the user's action.");
@@ -215,11 +224,18 @@ function registerLiveTools(server: McpServer, store: ReturnType<typeof createCam
       _meta: APP_TOOL_META,
       annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ proposalId, expectedVersion, ...input }) => result(
-      store.revise(proposalId, expectedVersion, input as Omit<CampaignReviewInput, "advertiserId" | "advertiserName">),
-      "Show the latest Campaign Review proposal version.",
-      false
-    )
+    async ({ proposalId, expectedVersion, ...input }) => {
+      const proposalStore = getCampaignReviewStoreForProposal(proposalId, store);
+      const state = registerCampaignReviewProposal(
+        proposalStore,
+        proposalStore.revise(
+          proposalId,
+          expectedVersion,
+          input as Omit<CampaignReviewInput, "advertiserId" | "advertiserName">
+        )
+      );
+      return result(state, "Show the latest Campaign Review proposal version.", false);
+    }
   );
 
   registerAppTool(
@@ -234,11 +250,14 @@ function registerLiveTools(server: McpServer, store: ReturnType<typeof createCam
       _meta: APP_TOOL_META,
       annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false, idempotentHint: true }
     },
-    async ({ proposalId, expectedVersion }) => result(
-      await store.getStatus(proposalId, expectedVersion),
-      "Refresh the existing Campaign Review state.",
-      false
-    )
+    async ({ proposalId, expectedVersion }) => {
+      const proposalStore = getCampaignReviewStoreForProposal(proposalId, store);
+      return result(
+        await proposalStore.getStatus(proposalId, expectedVersion, authContext),
+        "Refresh the existing Campaign Review state.",
+        false
+      );
+    }
   );
 
   registerAppTool(
@@ -254,7 +273,8 @@ function registerLiveTools(server: McpServer, store: ReturnType<typeof createCam
       annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true, idempotentHint: true }
     },
     async ({ proposalId, expectedVersion }) => {
-      const state = await store.create(proposalId, expectedVersion);
+      const proposalStore = getCampaignReviewStoreForProposal(proposalId, store);
+      const state = await proposalStore.create(proposalId, expectedVersion, authContext);
       return result(state, state.status === "created"
         ? "Show the verified Campaign creation receipt."
         : "Show the current Campaign creation status without retrying the write.", false);
@@ -345,7 +365,11 @@ export function registerCampaignReviewApp(
   }
 ) {
   registerResource(server, options.resourceMeta);
-  registerLiveTools(server, getSharedCampaignReviewStore(options.authContext, "flat"));
+  registerLiveTools(
+    server,
+    getSharedCampaignReviewStore(options.authContext, "flat"),
+    options.authContext
+  );
   if (options.includeDemo) {
     registerDemoTools(server, createCampaignReviewStore({ mode: "demo" }));
   }

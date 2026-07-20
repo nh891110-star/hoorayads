@@ -7,9 +7,11 @@ import {
 import {
   buildSmartPlusCampaignPayload,
   createCampaignReviewStore,
+  getCampaignReviewStoreForProposal,
   getSharedCampaignReviewStore,
   normalizeCampaignInput,
   normalizeCampaignReadback,
+  registerCampaignReviewProposal,
   resetSharedCampaignReviewStoresForTests,
   validateCampaignReadback,
   validateCampaignReview
@@ -176,6 +178,27 @@ assert(
   getSharedCampaignReviewStore() !== getSharedCampaignReviewStore(),
   "Unauthenticated callers must not share Campaign proposal state."
 );
+
+const rotatedTokenStoreA = createCampaignReviewStore({ mode: "demo" });
+const rotatedTokenProposalA = registerCampaignReviewProposal(
+  rotatedTokenStoreA,
+  await rotatedTokenStoreA.prepare(web)
+);
+const rotatedTokenStoreB = createCampaignReviewStore({ mode: "demo" });
+const rotatedTokenProposalB = registerCampaignReviewProposal(
+  rotatedTokenStoreB,
+  await rotatedTokenStoreB.prepare({ ...lead, campaignName: "MCP UI QA - Rotated OAuth Token" })
+);
+assert(rotatedTokenProposalB.supersedesProposalId === rotatedTokenProposalA.proposalId, "A rotated OAuth token did not supersede the advertiser's prior proposal.");
+assert(
+  getCampaignReviewStoreForProposal(rotatedTokenProposalA.proposalId, rotatedTokenStoreB) === rotatedTokenStoreA,
+  "A proposal did not route back to its original store after OAuth token rotation."
+);
+const rotatedTokenOldStatus = await rotatedTokenStoreA.getStatus(
+  rotatedTokenProposalA.proposalId,
+  rotatedTokenProposalA.version
+);
+assert(rotatedTokenOldStatus.status === "outdated", "A proposal stayed active after an OAuth token rotation and replacement card.");
 resetSharedCampaignReviewStoresForTests();
 
 console.log(JSON.stringify({
@@ -198,6 +221,7 @@ console.log(JSON.stringify({
     "single_active_proposal",
     "inactive_proposal_write_guard",
     "cross_server_proposal_state",
-    "oauth_user_store_isolation"
+    "oauth_user_store_isolation",
+    "oauth_token_rotation_proposal_routing"
   ]
 }, null, 2));

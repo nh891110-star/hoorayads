@@ -706,14 +706,18 @@ export function createCampaignReviewStore(
     };
   };
 
-  const getStatus = async (proposalId: string, expectedVersion: number) => {
+  const getStatus = async (
+    proposalId: string,
+    expectedVersion: number,
+    requestAuthContext: TikTokMcpAuthContext = authContext
+  ) => {
     const record = proposals.get(proposalId);
     if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."), mode);
     completeDemoSubmission(record);
     if (mode === "demo") return stateFor(record, expectedVersion, mode);
     if (expectedVersion === record.currentVersion && record.execution.status === "outcome_unknown") {
       try {
-        const created = await reconcile(record, record.execution.campaignId);
+        const created = await reconcile(record, record.execution.campaignId, requestAuthContext);
         const campaign = record.versions.get(record.currentVersion)?.campaign;
         if (created?.campaign_id && campaign) {
           const readbackErrors = validateCampaignReadback(campaign, created);
@@ -749,7 +753,11 @@ export function createCampaignReviewStore(
     return stateFor(record, expectedVersion, mode);
   };
 
-  const reconcile = async (record: CampaignProposalRecord, campaignId?: string) => {
+  const reconcile = async (
+    record: CampaignProposalRecord,
+    campaignId?: string,
+    requestAuthContext: TikTokMcpAuthContext = authContext
+  ) => {
     const campaign = record.versions.get(record.currentVersion)?.campaign;
     if (!campaign) throw new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found.");
     const getResult = await callTikTokMcpTool<SmartPlusCampaignGetResponse>(surface, "smart_plus_campaign_get", {
@@ -773,12 +781,16 @@ export function createCampaignReviewStore(
       filtering: campaignId ? { campaign_ids: [campaignId] } : { campaign_name: campaign.campaignName },
       page: 1,
       page_size: 20
-    }, authContext);
+    }, requestAuthContext);
     if (getResult.status !== "connected") return undefined;
     return getResult.data.list?.find((item) => (campaignId ? item.campaign_id === campaignId : item.campaign_name === campaign.campaignName));
   };
 
-  const create = async (proposalId: string, expectedVersion: number) => {
+  const create = async (
+    proposalId: string,
+    expectedVersion: number,
+    requestAuthContext: TikTokMcpAuthContext = authContext
+  ) => {
     const record = proposals.get(proposalId);
     if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."), mode);
     if (record.retired) return stateFor(record, expectedVersion, mode);
@@ -821,7 +833,7 @@ export function createCampaignReviewStore(
       const authorizedAccount = await resolveAdvertiserAccount(
         { advertiserId: version.campaign.advertiserId },
         surface,
-        authContext
+        requestAuthContext
       );
       if (authorizedAccount.advertiserId !== record.account.advertiserId) {
         throw new CampaignReviewError(
@@ -834,7 +846,7 @@ export function createCampaignReviewStore(
         surface,
         "smart_plus_campaign_create",
         buildSmartPlusCampaignPayload(version.campaign, record.execution.requestId),
-        authContext
+        requestAuthContext
       );
       if (createResult.status === "needs_authorization") {
         throw new CampaignReviewError("TIKTOK_AUTH_REQUIRED", "Reconnect the TikTok advertiser account before creating this campaign.", createResult.authorizationUrl);
@@ -845,7 +857,7 @@ export function createCampaignReviewStore(
 
       const campaignId = createResult.data.campaign_id;
       record.execution = { ...record.execution, status: "checking", campaignId };
-      const created = await reconcile(record, campaignId);
+      const created = await reconcile(record, campaignId, requestAuthContext);
       if (!created?.campaign_id) {
         record.execution = {
           ...record.execution,
@@ -900,10 +912,18 @@ export function createCampaignReviewStore(
     }
   };
 
-  return { prepare, revise, getStatus, create };
+  const retire = (proposalId: string) => {
+    const record = proposals.get(proposalId);
+    if (!record || !["idle", "failed"].includes(record.execution.status)) return false;
+    record.retired = true;
+    if (activeProposalId === proposalId) activeProposalId = undefined;
+    return true;
+  };
+
+  return { prepare, revise, getStatus, create, retire };
 }
 
-type CampaignReviewStore = ReturnType<typeof createCampaignReviewStore>;
+export type CampaignReviewStore = ReturnType<typeof createCampaignReviewStore>;
 
 type SharedCampaignReviewStore = {
   lastAccessedAt: number;
@@ -913,6 +933,8 @@ type SharedCampaignReviewStore = {
 const SHARED_STORE_TTL_MS = 6 * 60 * 60 * 1_000;
 const SHARED_STORE_LIMIT = 500;
 const sharedLiveStores = new Map<string, SharedCampaignReviewStore>();
+const proposalOwners = new Map<string, SharedCampaignReviewStore>();
+const activeProposalByAdvertiser = new Map<string, string>();
 
 function pruneSharedLiveStores(now: number) {
   for (const [key, entry] of sharedLiveStores) {
@@ -957,6 +979,57 @@ export function getSharedCampaignReviewStore(
   return store;
 }
 
+function pruneProposalOwners(now: number) {
+  for (const [proposalId, entry] of proposalOwners) {
+    if (now - entry.lastAccessedAt <= SHARED_STORE_TTL_MS) continue;
+    proposalOwners.delete(proposalId);
+    for (const [advertiserId, activeProposalId] of activeProposalByAdvertiser) {
+      if (activeProposalId === proposalId) activeProposalByAdvertiser.delete(advertiserId);
+    }
+  }
+
+  if (proposalOwners.size <= SHARED_STORE_LIMIT) return;
+  const oldest = [...proposalOwners.entries()]
+    .sort(([, left], [, right]) => left.lastAccessedAt - right.lastAccessedAt)
+    .slice(0, proposalOwners.size - SHARED_STORE_LIMIT);
+  for (const [proposalId] of oldest) proposalOwners.delete(proposalId);
+}
+
+export function registerCampaignReviewProposal(
+  store: CampaignReviewStore,
+  state: CampaignReviewState
+) {
+  if (!state.proposalId || state.status === "error" || state.account.status === "UNKNOWN") return state;
+
+  const now = Date.now();
+  pruneProposalOwners(now);
+  const advertiserId = state.account.advertiserId;
+  const priorProposalId = activeProposalByAdvertiser.get(advertiserId);
+  if (priorProposalId && priorProposalId !== state.proposalId) {
+    proposalOwners.get(priorProposalId)?.store.retire(priorProposalId);
+  }
+
+  proposalOwners.set(state.proposalId, { lastAccessedAt: now, store });
+  activeProposalByAdvertiser.set(advertiserId, state.proposalId);
+  return priorProposalId && priorProposalId !== state.proposalId
+    ? { ...state, supersedesProposalId: priorProposalId }
+    : state;
+}
+
+export function getCampaignReviewStoreForProposal(
+  proposalId: string,
+  fallbackStore: CampaignReviewStore
+) {
+  const now = Date.now();
+  pruneProposalOwners(now);
+  const owner = proposalOwners.get(proposalId);
+  if (!owner) return fallbackStore;
+  owner.lastAccessedAt = now;
+  return owner.store;
+}
+
 export function resetSharedCampaignReviewStoresForTests() {
   sharedLiveStores.clear();
+  proposalOwners.clear();
+  activeProposalByAdvertiser.clear();
 }
