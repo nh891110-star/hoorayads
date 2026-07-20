@@ -14,7 +14,7 @@ import type {
   CampaignType
 } from "./campaign-review-contract.js";
 import { callTikTokMcpTool, listTikTokAdvertiserAccounts } from "./tiktok-mcp.js";
-import type { TikTokMcpSurface } from "./tiktok-mcp.js";
+import type { TikTokMcpAuthContext, TikTokMcpSurface } from "./tiktok-mcp.js";
 
 type AdvertiserAccount = {
   advertiserId: string;
@@ -278,10 +278,11 @@ export function buildSmartPlusCampaignPayload(campaign: NormalizedCampaignReview
 
 async function resolveAdvertiserAccount(
   input: Pick<CampaignReviewInput, "advertiserId" | "advertiserName">,
-  surface: TikTokMcpSurface
+  surface: TikTokMcpSurface,
+  authContext: TikTokMcpAuthContext
 ) {
   if (surface === "progressive") {
-    const accountResult = await listTikTokAdvertiserAccounts(surface);
+    const accountResult = await listTikTokAdvertiserAccounts(surface, authContext);
     if (accountResult.status === "needs_authorization") {
       throw new CampaignReviewError(
         "TIKTOK_AUTH_REQUIRED",
@@ -322,7 +323,7 @@ async function resolveAdvertiserAccount(
     } satisfies AdvertiserAccount;
   }
 
-  const authResult = await callTikTokMcpTool<AuthAdvertiserResponse>("flat", "auth_advertiser_get");
+  const authResult = await callTikTokMcpTool<AuthAdvertiserResponse>("flat", "auth_advertiser_get", {}, authContext);
   if (authResult.status === "needs_authorization") {
     throw new CampaignReviewError(
       "TIKTOK_AUTH_REQUIRED",
@@ -353,10 +354,15 @@ async function resolveAdvertiserAccount(
     );
   }
 
-  const infoResult = await callTikTokMcpTool<AdvertiserInfoResponse>("flat", "advertiser_info_get", {
-    advertiser_ids: [selected.advertiser_id],
-    fields: ["advertiser_id", "name", "country", "currency", "status", "timezone"]
-  });
+  const infoResult = await callTikTokMcpTool<AdvertiserInfoResponse>(
+    "flat",
+    "advertiser_info_get",
+    {
+      advertiser_ids: [selected.advertiser_id],
+      fields: ["advertiser_id", "name", "country", "currency", "status", "timezone"]
+    },
+    authContext
+  );
   if (infoResult.status === "needs_authorization") {
     throw new CampaignReviewError(
       "TIKTOK_AUTH_REQUIRED",
@@ -383,27 +389,11 @@ async function resolveAdvertiserAccount(
   } satisfies AdvertiserAccount;
 }
 
-function allowedWriteAdvertiserIds() {
-  return new Set(
-    (process.env.CAMPAIGN_REVIEW_WRITE_ADVERTISER_IDS || "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean)
-  );
-}
-
-function assertWriteGuard(campaign: NormalizedCampaignReview) {
+function assertWriteGuard() {
   if ((process.env.CAMPAIGN_REVIEW_WRITE_MODE || "off") !== "campaign_only") {
     throw new CampaignReviewError(
       "CAMPAIGN_WRITE_DISABLED",
       "Campaign creation is disabled on this server. The proposal remains available for review."
-    );
-  }
-  const allowlist = allowedWriteAdvertiserIds();
-  if (allowlist.size === 0 || !allowlist.has(campaign.advertiserId)) {
-    throw new CampaignReviewError(
-      "ADVERTISER_NOT_ALLOWED_FOR_WRITE",
-      "This advertiser is not enabled for Campaign Review writes on the current server."
     );
   }
 }
@@ -495,10 +485,15 @@ function createErrorState(error: unknown, mode: CampaignReviewMode = "live"): Ca
 }
 
 export function createCampaignReviewStore(
-  options: { mode?: CampaignReviewMode; surface?: TikTokMcpSurface } = {}
+  options: {
+    authContext?: TikTokMcpAuthContext;
+    mode?: CampaignReviewMode;
+    surface?: TikTokMcpSurface;
+  } = {}
 ) {
   const mode = options.mode ?? "live";
   const surface = options.surface ?? "flat";
+  const authContext = options.authContext ?? {};
   const proposals = new Map<string, CampaignProposalRecord>();
 
   const demoAccount = (input: Pick<CampaignReviewInput, "advertiserId" | "advertiserName">): AdvertiserAccount => ({
@@ -512,7 +507,7 @@ export function createCampaignReviewStore(
 
   const prepare = async (input: CampaignReviewInput | CampaignReviewDemoInput) => {
     try {
-      const account = mode === "demo" ? demoAccount(input) : await resolveAdvertiserAccount(input, surface);
+      const account = mode === "demo" ? demoAccount(input) : await resolveAdvertiserAccount(input, surface, authContext);
       const campaign = normalizeCampaignInput(input, account.advertiserId);
       const record: CampaignProposalRecord = {
         proposalId: randomUUID(),
@@ -639,7 +634,7 @@ export function createCampaignReviewStore(
       filtering: campaignId ? { campaign_ids: [campaignId] } : { campaign_name: campaign.campaignName },
       page: 1,
       page_size: 20
-    });
+    }, authContext);
     if (getResult.status !== "connected") return undefined;
     return getResult.data.list?.find((item) => (campaignId ? item.campaign_id === campaignId : item.campaign_name === campaign.campaignName));
   };
@@ -677,12 +672,24 @@ export function createCampaignReviewStore(
     }
 
     try {
-      assertWriteGuard(version.campaign);
+      assertWriteGuard();
+      const authorizedAccount = await resolveAdvertiserAccount(
+        { advertiserId: version.campaign.advertiserId },
+        surface,
+        authContext
+      );
+      if (authorizedAccount.advertiserId !== record.account.advertiserId) {
+        throw new CampaignReviewError(
+          "ADVERTISER_AUTHORIZATION_CHANGED",
+          "The approved advertiser account no longer matches this TikTok authorization. Review the campaign again."
+        );
+      }
       record.execution = { ...record.execution, status: "creating", errorCode: undefined, errorMessage: undefined };
       const createResult = await callTikTokMcpTool<SmartPlusCampaignCreateResponse>(
         surface,
         "smart_plus_campaign_create",
-        buildSmartPlusCampaignPayload(version.campaign, record.execution.requestId)
+        buildSmartPlusCampaignPayload(version.campaign, record.execution.requestId),
+        authContext
       );
       if (createResult.status === "needs_authorization") {
         throw new CampaignReviewError("TIKTOK_AUTH_REQUIRED", "Reconnect TikTok Ads before creating this campaign.", createResult.authorizationUrl);

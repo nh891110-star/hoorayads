@@ -15,6 +15,11 @@ const DEFAULT_TIKTOK_FLAT_MCP_URL = "https://business-api.tiktok.com/open_mcp/tt
 
 export type TikTokMcpSurface = "progressive" | "flat";
 
+export type TikTokMcpAuthContext = {
+  authorization?: string;
+  requireDelegatedAuthorization?: boolean;
+};
+
 type StoredClientInformation = {
   client_id: string;
   client_secret?: string;
@@ -330,18 +335,31 @@ function createAuthProvider(surface: TikTokMcpSurface): OAuthClientProvider {
   };
 }
 
-async function connectTikTokClient(surface: TikTokMcpSurface): Promise<TikTokClientState> {
+async function connectTikTokClient(
+  surface: TikTokMcpSurface,
+  authContext: TikTokMcpAuthContext = {}
+): Promise<TikTokClientState> {
   const config = getTikTokAppConfig();
-  if (!config.appId || !config.appSecret || !config.redirectUri) {
+  const delegatedAuthorization = authContext.authorization?.trim();
+  if (authContext.requireDelegatedAuthorization && !delegatedAuthorization) {
+    return {
+      message: "Reconnect TikTok Ads so this ChatGPT session can use its own authorized advertiser accounts.",
+      status: "misconfigured"
+    };
+  }
+  if (!delegatedAuthorization && (!config.appId || !config.appSecret || !config.redirectUri)) {
     return {
       message: "TikTok MCP bridge is not configured. Set app ID, app secret, and redirect URI first.",
       status: "misconfigured"
     };
   }
 
-  const provider = createAuthProvider(surface);
+  const provider = delegatedAuthorization ? undefined : createAuthProvider(surface);
   const transport = new StreamableHTTPClientTransport(new URL(getTikTokMcpUrl(surface)), {
-    authProvider: provider
+    ...(provider ? { authProvider: provider } : {}),
+    ...(delegatedAuthorization
+      ? { requestInit: { headers: { Authorization: delegatedAuthorization } } }
+      : {})
   });
   const client = new Client(
     {
@@ -351,8 +369,8 @@ async function connectTikTokClient(surface: TikTokMcpSurface): Promise<TikTokCli
     { capabilities: {} }
   );
 
-  const authState = loadAuthState(surface);
-  if (authState.pendingAuthorizationCode) {
+  const authState = delegatedAuthorization ? undefined : loadAuthState(surface);
+  if (authState?.pendingAuthorizationCode) {
     try {
       await transport.finishAuth(authState.pendingAuthorizationCode);
       const nextState = loadAuthState(surface);
@@ -378,12 +396,19 @@ async function connectTikTokClient(surface: TikTokMcpSurface): Promise<TikTokCli
   } catch (error) {
     await transport.close().catch(() => undefined);
 
-    if (error instanceof UnauthorizedError) {
+    if (error instanceof UnauthorizedError && !delegatedAuthorization) {
       const nextState = loadAuthState(surface);
       return {
         authorizationUrl: nextState.authorizationUrl || config.advertiserAuthUrl,
         redirectUri: config.redirectUri,
         status: "needs_authorization"
+      };
+    }
+
+    if (error instanceof UnauthorizedError) {
+      return {
+        message: "The TikTok authorization for this ChatGPT session is missing or expired. Reconnect the app and try again.",
+        status: "misconfigured"
       };
     }
 
@@ -482,9 +507,10 @@ function readStringValue(payload: Record<string, unknown>, keys: string[]) {
 
 async function withTikTokClient<T>(
   run: (client: Client) => Promise<T>,
-  surface: TikTokMcpSurface = "progressive"
+  surface: TikTokMcpSurface = "progressive",
+  authContext: TikTokMcpAuthContext = {}
 ): Promise<TikTokToolResponse<T>> {
-  const state = await connectTikTokClient(surface);
+  const state = await connectTikTokClient(surface, authContext);
   if (state.status !== "connected") {
     return state;
   }
@@ -503,13 +529,15 @@ async function withTikTokClient<T>(
 export async function callTikTokMcpTool<T>(
   surface: TikTokMcpSurface,
   name: string,
-  args: Record<string, unknown> = {}
+  args: Record<string, unknown> = {},
+  authContext: TikTokMcpAuthContext = {}
 ): Promise<TikTokToolResponse<T>> {
-  return withTikTokClient((client) => callTikTokTool<T>(client, name, args), surface);
+  return withTikTokClient((client) => callTikTokTool<T>(client, name, args), surface, authContext);
 }
 
 export async function listTikTokAdvertiserAccounts(
-  surface: TikTokMcpSurface = "progressive"
+  surface: TikTokMcpSurface = "progressive",
+  authContext: TikTokMcpAuthContext = {}
 ): Promise<
   TikTokToolResponse<{
     accounts: TikTokAdvertiserAccount[];
@@ -606,7 +634,7 @@ export async function listTikTokAdvertiserAccounts(
       accounts,
       userDisplayName: userInfo.display_name || "TikTok Ads user"
     };
-  }, surface);
+  }, surface, authContext);
 }
 
 export async function verifyTikTokAdvertiserIdentity(

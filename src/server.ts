@@ -105,6 +105,7 @@ import {
   verifyTikTokAdvertiserIdentity
 } from "./tiktok-mcp.js";
 import type { TikTokAdvertiserAccount, TikTokIdentity } from "./tiktok-mcp.js";
+import type { TikTokMcpAuthContext } from "./tiktok-mcp.js";
 import { getTikTokAdsReport } from "./reporting.js";
 import type { GetAdsReportInput, ReportState } from "./reporting.js";
 import { createDemoTikTokAdsReport } from "./reporting-demo.js";
@@ -717,11 +718,21 @@ function campaignReviewFallback(state: CampaignReviewState) {
   ].join("\n");
 }
 
-export function createTikTokAdsPocServer(hostSurface: HostSurface = "generic") {
+export function createTikTokAdsPocServer(
+  hostSurface: HostSurface = "generic",
+  options: { tikTokAuthorization?: string } = {}
+) {
   const tikTokConfig = getTikTokAppConfig();
   const state = sharedLaunchState;
   const campaignReviewSurface = hostSurface === "chatgpt" ? "progressive" : "flat";
-  const campaignReviewStore = createCampaignReviewStore({ surface: campaignReviewSurface });
+  const campaignReviewAuthContext: TikTokMcpAuthContext = {
+    authorization: options.tikTokAuthorization,
+    requireDelegatedAuthorization: hostSurface === "chatgpt"
+  };
+  const campaignReviewStore = createCampaignReviewStore({
+    authContext: campaignReviewAuthContext,
+    surface: campaignReviewSurface
+  });
   const campaignReviewDemoStore = createCampaignReviewStore({ mode: "demo" });
   const endpointPath =
     hostSurface === "claude"
@@ -1567,7 +1578,7 @@ window.__POC_PREVIEW_STATE__ = ${JSON.stringify(previewState)};
       {
         title: "Create approved Smart+ Campaign",
         description:
-          "Create exactly one Active TikTok Upgraded Smart+ Campaign from the latest server-owned proposal snapshot after the user selects Confirm in the card. Never accept free-form Campaign fields here. The proposal version, numeric request_id, advertiser allowlist, and TikTok read-back make the operation idempotent and prevent stale or duplicate writes. This tool never creates an Ad Group, Ad, creative, delivery, or spend.",
+          "Create exactly one Active TikTok Upgraded Smart+ Campaign from the latest server-owned proposal snapshot after the user selects Confirm in the card. Never accept free-form Campaign fields here. The proposal version, numeric request_id, current-user advertiser authorization check, and TikTok read-back make the operation idempotent and prevent stale, cross-account, or duplicate writes. This tool never creates an Ad Group, Ad, creative, delivery, or spend.",
         inputSchema: createSmartPlusCampaignFromReviewInput,
         outputSchema: createSmartPlusCampaignFromReviewOutput,
         _meta: TOOL_CAMPAIGN_REVIEW_APP_META,

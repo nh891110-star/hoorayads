@@ -28,7 +28,5 @@ services:
         sync: false
       - key: CAMPAIGN_REVIEW_WRITE_MODE
         value: campaign_only
-      - key: CAMPAIGN_REVIEW_WRITE_ADVERTISER_IDS
-        value: 7481826080479870993
       - key: PUBLIC_BASE_URL
         value: https://tiktok-ads-agent-poc.onrender.com

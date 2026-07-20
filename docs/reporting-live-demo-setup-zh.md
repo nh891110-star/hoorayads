@@ -155,7 +155,7 @@ TikTok developer portal 的 allowlisted redirect URI 必须与 `TIKTOK_REDIRECT_
 
 公开给大量用户前仍需补：
 
-- 把 `.local/*.json` OAuth token/state 迁移到按用户隔离的持久化存储
+- Hooray ChatGPT Campaign Review 已使用连接级 delegated OAuth，不读取共享 `.local` token；Reporting/Claude 等仍使用 bridge OAuth 的入口需要把 `.local/*.json` token/state 迁移到按用户隔离的持久化存储
 - 把当前进程内 session state 迁移到持久化 session store
 - 为 MCP endpoint 增加调用方认证、rate limiting 和审计日志
 - 明确同步报告超过 20,000 ads 时的分批策略

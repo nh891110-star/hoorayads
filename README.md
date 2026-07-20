@@ -104,7 +104,7 @@ Use these host-specific aliases after deployment:
 - Claude: `https://<your-render-domain>/mcp/claude`
 - TikTok Reporting and OAuth-free UI QA: `https://<your-render-domain>/mcp/reporting`
 
-The Hooray ChatGPT endpoint intentionally exposes only the live Campaign Review experience. It uses the Progressive TikTok MCP OAuth bridge and does not expose the retired product/storyboard/render workspace, reporting UI, or demo tools. The Reporting endpoint remains isolated on the Flat MCP surface for reporting and OAuth-free UI QA.
+The Hooray ChatGPT endpoint intentionally exposes only the live Campaign Review experience. It forwards each ChatGPT connection's delegated TikTok authorization to Progressive TikTok MCP and does not expose the retired product/storyboard/render workspace, reporting UI, or demo tools. The Reporting endpoint remains isolated on the Flat MCP surface for reporting and OAuth-free UI QA.
 
 The Claude alias uses stateless Streamable HTTP requests so delayed widget resource reads do not depend on an in-memory session. The ChatGPT and Reporting aliases remain stateful for multi-step UI interactions. The Reporting alias intentionally exposes reporting, decision-demo, and Campaign Review tools without exposing the Hooray workspace.
 
@@ -133,7 +133,7 @@ When OAuth is unavailable, use the separate Reporting connector for an interacti
 
 The complete positive, interaction, validation, error, and unsupported-objective prompt matrix is in `docs/campaign-review-demo-golden-prompts.md`.
 
-Only the allowlisted advertiser IDs in `CAMPAIGN_REVIEW_WRITE_ADVERTISER_IDS` can use Confirm. `CAMPAIGN_REVIEW_WRITE_MODE` must be `campaign_only`.
+`CAMPAIGN_REVIEW_WRITE_MODE` must be `campaign_only`. Confirm re-checks that the advertiser is enabled and still belongs to the current ChatGPT connection's delegated TikTok authorization; there is no production advertiser-ID allowlist.
 
 ## Reporting preview
 

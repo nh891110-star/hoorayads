@@ -49,6 +49,11 @@ app.use(
 type SessionTransport = StreamableHTTPServerTransport;
 const transports: Record<string, SessionTransport> = {};
 
+function delegatedTikTokAuthorization(req: Request) {
+  const authorization = req.headers.authorization?.trim();
+  return authorization && /^Bearer\s+\S+$/i.test(authorization) ? authorization : undefined;
+}
+
 function hostSurfaceForPath(path: string): HostSurface {
   if (path.endsWith("/claude")) return "claude";
   if (path.endsWith("/reporting")) return "reporting";
@@ -56,7 +61,7 @@ function hostSurfaceForPath(path: string): HostSurface {
   return "generic";
 }
 
-async function createTransport(hostSurface: HostSurface) {
+async function createTransport(hostSurface: HostSurface, tikTokAuthorization?: string) {
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: () => randomUUID(),
     onsessioninitialized: (sessionId: string) => {
@@ -71,7 +76,7 @@ async function createTransport(hostSurface: HostSurface) {
     }
   };
 
-  const server = createTikTokAdsPocServer(hostSurface);
+  const server = createTikTokAdsPocServer(hostSurface, { tikTokAuthorization });
   await server.connect(transport);
   return transport;
 }
@@ -80,7 +85,9 @@ async function handleStatelessPost(req: Request, res: Response, hostSurface: Hos
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined
   });
-  const server = createTikTokAdsPocServer(hostSurface);
+  const server = createTikTokAdsPocServer(hostSurface, {
+    tikTokAuthorization: delegatedTikTokAuthorization(req)
+  });
   let closed = false;
 
   const close = () => {
@@ -109,7 +116,7 @@ async function handlePost(req: Request, res: Response) {
     let transport = sessionId ? transports[sessionId] : undefined;
 
     if (!transport && !sessionId && isInitializeRequest(req.body)) {
-      transport = await createTransport(hostSurface);
+      transport = await createTransport(hostSurface, delegatedTikTokAuthorization(req));
       await transport.handleRequest(req, res, req.body);
       return;
     }
