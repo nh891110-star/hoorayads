@@ -3,8 +3,9 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CallToolResultSchema, ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const endpoint = process.env.MCP_ENDPOINT || "http://localhost:3010/mcp/chatgpt";
-const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v8.html";
+const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v9.html";
 const legacyResourceUris = [
+  "ui://widget/tiktok-smartplus-campaign-review-v8.html",
   "ui://widget/tiktok-smartplus-campaign-review-v7.html",
   "ui://widget/tiktok-smartplus-campaign-review-v6.html",
   "ui://widget/tiktok-smartplus-campaign-review-v5.html",
@@ -48,6 +49,11 @@ try {
   const createTool = tools.tools.find((tool) => tool.name === "create_smartplus_campaign_from_review");
   assert(reviewTool && reviseTool && statusTool && createTool, "One or more Campaign Review tools are missing.");
   assert(reviewTool._meta?.ui?.resourceUri === resourceUri, "Review tool has the wrong resource URI.");
+  for (const appTool of [reviseTool, statusTool, createTool]) {
+    assert(appTool._meta?.ui?.visibility?.length === 1 && appTool._meta.ui.visibility[0] === "app", `${appTool.name} must remain app-only.`);
+    assert(!appTool._meta?.ui?.resourceUri, `${appTool.name} must not declare a UI resource.`);
+    assert(!appTool._meta?.["openai/outputTemplate"], `${appTool.name} must not declare an output template.`);
+  }
   assert(reviewTool.description?.includes("three starting states"), "Review tool lost the BRD complete/partial/exploratory routing guidance.");
   assert(reviewTool.description?.includes("aiSuggestedFields"), "Review tool lost model-suggested field provenance guidance.");
   assert(reviewTool.description?.includes("exploratory request"), "Review tool lost the exploratory business-interview behavior.");

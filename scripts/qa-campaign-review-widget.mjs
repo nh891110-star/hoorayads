@@ -298,5 +298,57 @@ if (screenshotPrefix) {
 await oldCardPage.close();
 await newCardPage.close();
 
+const protocolPage = await browser.newPage({ viewport: { width: 860, height: 960 } });
+await protocolPage.setContent('<iframe id="app" style="width:840px;height:900px;border:0"></iframe>');
+await protocolPage.evaluate(({ css, widgetJs, initialState }) => {
+  const iframe = document.getElementById("app");
+  window.__protocolCalls = [];
+  window.__protocolState = initialState;
+  window.addEventListener("message", (event) => {
+    if (event.source !== iframe.contentWindow || event.data?.jsonrpc !== "2.0") return;
+    const message = event.data;
+    if (message.method === "ui/initialize") {
+      event.source.postMessage({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          protocolVersion: "2026-01-26",
+          hostInfo: { name: "qa-mcp-apps-host", version: "1.0.0" },
+          hostCapabilities: { serverTools: {} },
+          hostContext: {}
+        }
+      }, "*");
+      return;
+    }
+    if (message.method === "tools/call") {
+      window.__protocolCalls.push(message.params);
+      const args = message.params.arguments || {};
+      if (message.params.name === "revise_smartplus_campaign_review") {
+        window.__protocolState = {
+          ...window.__protocolState,
+          version: window.__protocolState.version + 1,
+          campaign: { ...window.__protocolState.campaign, ...args, aiSuggestedFields: [] }
+        };
+      }
+      event.source.postMessage({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: { structuredContent: { campaignReviewState: window.__protocolState } }
+      }, "*");
+    }
+  });
+  iframe.srcdoc = `<!doctype html><html><head><style>${css}</style></head><body><div id="campaign-review-root"></div><script>window.__CAMPAIGN_REVIEW_PREVIEW_STATE__=${JSON.stringify(initialState).replaceAll("<", "\\u003c")};<\/script><script type="module">${widgetJs}<\/script></body></html>`;
+}, { css, widgetJs, initialState: baseState });
+
+const protocolFrame = protocolPage.frameLocator("#app");
+await protocolFrame.getByRole("button", { name: "Edit" }).click();
+await protocolFrame.getByLabel("Campaign name").fill("MCP UI QA - Standard Bridge");
+await protocolFrame.getByRole("button", { name: "Apply changes" }).click();
+await protocolFrame.getByText("MCP UI QA - Standard Bridge").waitFor({ timeout: 5000 });
+const protocolCalls = await protocolPage.evaluate(() => window.__protocolCalls);
+assert(protocolCalls.some((call) => call.name === "revise_smartplus_campaign_review"), "The MCP Apps tools/call bridge was not used for an app-only action.");
+assert(protocolCalls.every((call) => call.arguments?.proposalId === "proposal-qa"), "The MCP Apps bridge lost the server proposal identifier.");
+await protocolPage.close();
+
 await browser.close();
-console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error"] }, null, 2));
+console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge"] }, null, 2));

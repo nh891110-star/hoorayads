@@ -27,8 +27,9 @@ import { createCampaignReviewStore } from "./campaign-review.js";
 import type { CampaignReviewState } from "./campaign-review.js";
 import type { TikTokMcpAuthContext } from "./tiktok-mcp.js";
 
-export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v8.html";
+export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v9.html";
 const LEGACY_CAMPAIGN_REVIEW_WIDGET_URIS = [
+  "ui://widget/tiktok-smartplus-campaign-review-v8.html",
   "ui://widget/tiktok-smartplus-campaign-review-v7.html",
   "ui://widget/tiktok-smartplus-campaign-review-v6.html",
   "ui://widget/tiktok-smartplus-campaign-review-v5.html",
@@ -52,8 +53,7 @@ const TOOL_META = {
 } as const;
 
 const APP_TOOL_META = {
-  ui: { resourceUri: CAMPAIGN_REVIEW_WIDGET_URI, visibility: ["app"] },
-  "openai/outputTemplate": CAMPAIGN_REVIEW_WIDGET_URI,
+  ui: { visibility: ["app"] },
   "openai/widgetAccessible": true,
   "openai/toolInvocation/invoking": "Updating Campaign Review...",
   "openai/toolInvocation/invoked": "Campaign Review updated."
@@ -119,12 +119,12 @@ function fallback(state: CampaignReviewState) {
   ].join("\n");
 }
 
-function result(campaignReviewState: CampaignReviewState, message: string) {
+function result(campaignReviewState: CampaignReviewState, message: string, rendersWidget = true) {
   return {
     structuredContent: { campaignReviewState },
     content: [{ type: "text" as const, text: `${message}\n\n${fallback(campaignReviewState)}` }],
     _meta: {
-      ...RESULT_META,
+      ...(rendersWidget ? RESULT_META : {}),
       experienceType: "smartplus_campaign_review",
       dataMode: campaignReviewState.mode,
       campaignScope: "campaign_only",
@@ -164,7 +164,7 @@ function registerResourceAt(
 function registerResource(server: McpServer, resourceMeta: Record<string, unknown>) {
   registerResourceAt(
     server,
-    "tiktok-smartplus-campaign-review-v8",
+    "tiktok-smartplus-campaign-review-v9",
     CAMPAIGN_REVIEW_WIDGET_URI,
     resourceMeta
   );
@@ -214,7 +214,8 @@ function registerLiveTools(server: McpServer, store: ReturnType<typeof createCam
     },
     async ({ proposalId, expectedVersion, ...input }) => result(
       store.revise(proposalId, expectedVersion, input as Omit<CampaignReviewInput, "advertiserId" | "advertiserName">),
-      "Show the latest Campaign Review proposal version."
+      "Show the latest Campaign Review proposal version.",
+      false
     )
   );
 
@@ -232,7 +233,8 @@ function registerLiveTools(server: McpServer, store: ReturnType<typeof createCam
     },
     async ({ proposalId, expectedVersion }) => result(
       await store.getStatus(proposalId, expectedVersion),
-      "Refresh the existing Campaign Review state."
+      "Refresh the existing Campaign Review state.",
+      false
     )
   );
 
@@ -252,7 +254,7 @@ function registerLiveTools(server: McpServer, store: ReturnType<typeof createCam
       const state = await store.create(proposalId, expectedVersion);
       return result(state, state.status === "created"
         ? "Show the verified Campaign creation receipt."
-        : "Show the current Campaign creation status without retrying the write.");
+        : "Show the current Campaign creation status without retrying the write.", false);
     }
   );
 }
@@ -289,7 +291,8 @@ function registerDemoTools(server: McpServer, store: ReturnType<typeof createCam
     },
     async ({ proposalId, expectedVersion, ...input }) => result(
       store.revise(proposalId, expectedVersion, input as Omit<CampaignReviewInput, "advertiserId" | "advertiserName">),
-      "Show the latest interaction-demo proposal version."
+      "Show the latest interaction-demo proposal version.",
+      false
     )
   );
 
@@ -306,7 +309,8 @@ function registerDemoTools(server: McpServer, store: ReturnType<typeof createCam
     },
     async ({ proposalId, expectedVersion }) => result(
       await store.getStatus(proposalId, expectedVersion),
-      "Refresh the interaction-demo Campaign Review state."
+      "Refresh the interaction-demo Campaign Review state.",
+      false
     )
   );
 
@@ -323,7 +327,8 @@ function registerDemoTools(server: McpServer, store: ReturnType<typeof createCam
     },
     async ({ proposalId, expectedVersion }) => result(
       await store.create(proposalId, expectedVersion),
-      "Show the simulated Campaign submission state."
+      "Show the simulated Campaign submission state.",
+      false
     )
   );
 }

@@ -151,11 +151,9 @@ export function registerDelegatedOAuthRoutes(app: Express, options: DelegatedOAu
           token_endpoint_auth_method: "none"
         })
       });
-      const registrationPayload = await upstream.clone().json().catch(() => ({}));
       logOAuth(upstream.ok ? "registration_succeeded" : "registration_failed", {
         correlationId,
-        redirects: redirectUris,
-        upstreamClientId: firstString(registrationPayload?.client_id),
+        redirects: redirectUris.map(redirectSummary),
         upstreamStatus: upstream.status
       });
       await sendUpstream(res, upstream);
@@ -216,12 +214,8 @@ export function registerDelegatedOAuthRoutes(app: Express, options: DelegatedOAu
     authorizationUrl.searchParams.set("resource", tikTokResource);
     logOAuth("authorization_started", {
       correlationId,
-      clientId,
-      redirectUri,
-      state: firstString(req.query.state),
-      codeChallenge,
-      codeChallengeMethod,
-      requestedScope
+      redirect: redirectSummary(redirectUri),
+      requestedResource: requestedResource || resource
     });
     res.redirect(302, authorizationUrl.toString());
   });
