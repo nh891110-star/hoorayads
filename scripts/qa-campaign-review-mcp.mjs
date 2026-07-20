@@ -3,7 +3,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CallToolResultSchema, ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const endpoint = process.env.MCP_ENDPOINT || "http://localhost:3010/mcp/chatgpt";
-const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v2.html";
+const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v3.html";
+const legacyResourceUri = "ui://widget/tiktok-smartplus-campaign-review-v2.html";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -126,6 +127,13 @@ try {
   assert(html.includes("Status after creation"), "Campaign Review status disclosure is missing.");
   assert(html.includes("TikTok verified"), "Campaign Review is missing per-field TikTok read-back provenance.");
   assert(html.includes("TikTok Campaign read-back"), "Campaign Review success receipt is missing its TikTok read-back source.");
+
+  const legacyResource = await client.request(
+    { method: "resources/read", params: { uri: legacyResourceUri } },
+    ReadResourceResultSchema
+  );
+  assert(legacyResource.contents[0]?.mimeType === "text/html;profile=mcp-app", "Legacy Campaign Review resource has the wrong MIME type.");
+  assert((legacyResource.contents[0]?.text || "").includes("TikTok Campaign read-back"), "Legacy Campaign Review resource is not compatible with the current widget.");
 
   const proposed = await client.request(
     {

@@ -27,7 +27,8 @@ import { createCampaignReviewStore } from "./campaign-review.js";
 import type { CampaignReviewState } from "./campaign-review.js";
 import type { TikTokMcpAuthContext } from "./tiktok-mcp.js";
 
-export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v2.html";
+export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v3.html";
+const LEGACY_CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v2.html";
 export const CAMPAIGN_REVIEW_WIDGET_DESCRIPTION =
   "Interactive Campaign-level review and approval card for one TikTok Upgraded Smart+ Campaign. Live confirmation creates one Active Campaign only. It never creates an Ad Group, Ad, creative, delivery, or spend.";
 
@@ -125,11 +126,16 @@ function result(campaignReviewState: CampaignReviewState, message: string) {
   };
 }
 
-function registerResource(server: McpServer, resourceMeta: Record<string, unknown>) {
+function registerResourceAt(
+  server: McpServer,
+  name: string,
+  uri: string,
+  resourceMeta: Record<string, unknown>
+) {
   registerAppResource(
     server,
-    "tiktok-smartplus-campaign-review-v2",
-    CAMPAIGN_REVIEW_WIDGET_URI,
+    name,
+    uri,
     {
       title: "TikTok Smart+ Campaign Review",
       description: CAMPAIGN_REVIEW_WIDGET_DESCRIPTION,
@@ -138,12 +144,27 @@ function registerResource(server: McpServer, resourceMeta: Record<string, unknow
     },
     async () => ({
       contents: [{
-        uri: CAMPAIGN_REVIEW_WIDGET_URI,
+        uri,
         mimeType: RESOURCE_MIME_TYPE,
         text: `<div id="campaign-review-root"></div>\n<style>${widgetCss}</style>\n<script type="module">${widgetJs}</script>`,
         _meta: resourceMeta
       }]
     })
+  );
+}
+
+function registerResource(server: McpServer, resourceMeta: Record<string, unknown>) {
+  registerResourceAt(
+    server,
+    "tiktok-smartplus-campaign-review-v3",
+    CAMPAIGN_REVIEW_WIDGET_URI,
+    resourceMeta
+  );
+  registerResourceAt(
+    server,
+    "tiktok-smartplus-campaign-review-v2",
+    LEGACY_CAMPAIGN_REVIEW_WIDGET_URI,
+    resourceMeta
   );
 }
 
