@@ -23,7 +23,7 @@ UI 优先使用 MCP Apps 标准 `_meta.ui.resourceUri`、`ui/initialize`、`ui/n
 - Hooray Campaign Review MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`
 - Reporting/QA MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/reporting`
 - Claude MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/claude`
-- Legacy Hooray OAuth issuer（新 ChatGPT connector 不使用）：`https://tiktok-ads-agent-poc.onrender.com/oauth`
+- Hooray OAuth façade issuer：`https://tiktok-ads-agent-poc.onrender.com/oauth`
 - Campaign Review OAuth callback：由 TikTok DCR 注册的 `https://chatgpt.com/connector/oauth/{callback_id}`
 - 只读预览：`https://tiktok-ads-agent-poc.onrender.com/report-preview`
 
@@ -138,7 +138,7 @@ CAMPAIGN_REVIEW_WRITE_MODE=campaign_only
 REPORTING_DEFAULT_ADVERTISER_ID=<optional>
 ```
 
-ChatGPT 直接使用 TikTok Flat MCP `/oauth/register` 动态注册 OpenAI 官方 callback。OAuth Client Secret 不进入 ChatGPT 配置或 token exchange；每位用户的 token 由 ChatGPT 保存并作为 bearer 发送。旧 `/callback` 与 `/oauth/tiktok/callback` 仅为 legacy fallback 保留，不属于正式 Hooray ChatGPT 授权链路。
+ChatGPT 使用 Hooray `/oauth/register` 动态注册 OpenAI 官方 callback，Hooray 再无状态地转发给 TikTok Flat MCP。OAuth Client Secret 不进入 ChatGPT 配置或 token exchange；每位用户的 token 由 ChatGPT 保存并作为 bearer 发送。旧 `/callback` 与 `/oauth/tiktok/callback` 不属于正式 Hooray ChatGPT 授权链路。
 
 ## 8. 当前能力与生产边界
 

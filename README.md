@@ -59,7 +59,7 @@ Reporting and demo QA remain isolated on `/mcp/reporting`; see `docs/reporting-l
 
 ## Production configuration
 
-Hooray Campaign Review uses direct TikTok Flat MCP per-user OAuth. ChatGPT dynamically registers its official `https://chatgpt.com/connector/oauth/...` callback with TikTok, stores that member's token, and sends the bearer token to `/mcp/chatgpt`. Hooray forwards the token to TikTok Flat MCP and does not persist it.
+Hooray Campaign Review uses a stateless, same-origin OAuth facade over TikTok Flat MCP. ChatGPT discovers Hooray as both the protected resource and authorization server. Hooray forwards Dynamic Client Registration, authorization, token, and revocation requests to TikTok without changing the official `https://chatgpt.com/connector/oauth/...` callback or PKCE values. ChatGPT stores that member's token and sends it to `/mcp/chatgpt`; Hooray forwards the token to TikTok Flat MCP and does not persist it.
 
 Required Render variables for the ChatGPT path are:
 
@@ -67,6 +67,6 @@ Required Render variables for the ChatGPT path are:
 - `CAMPAIGN_REVIEW_WRITE_MODE=campaign_only`
 - `TIKTOK_FLAT_MCP_URL=https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat`
 
-TikTok's live Flat MCP metadata declares a PKCE public client (`token_endpoint_auth_methods_supported: ["none"]`) and a DCR endpoint. New ChatGPT connections register directly with TikTok, so the TikTok developer App ID, App Secret, and Hooray callback are not part of the active ChatGPT flow. Existing broker routes remain temporarily available only for backward compatibility.
+TikTok's live Flat MCP metadata declares a PKCE public client (`token_endpoint_auth_methods_supported: ["none"]`) and a DCR endpoint. Hooray exposes the same public-client contract on its own origin and transparently proxies it to TikTok. The TikTok developer App ID, App Secret, Render callback, and Cloudflare callback are not part of the active ChatGPT flow.
 
 See [`docs/campaign-review-oauth-setup-zh.md`](docs/campaign-review-oauth-setup-zh.md) for the exact ChatGPT fields and [`docs/campaign-review-brd-qa-matrix.md`](docs/campaign-review-brd-qa-matrix.md) for interaction coverage.

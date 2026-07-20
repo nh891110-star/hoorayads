@@ -43,14 +43,11 @@ const publicBaseUrl = (
 const tikTokAppConfig = getTikTokAppConfig();
 const delegatedOAuth = registerDelegatedOAuthRoutes(app, {
   publicBaseUrl,
-  tikTokFlatMcpUrl: process.env.TIKTOK_FLAT_MCP_URL,
-  upstreamClientId: process.env.TIKTOK_OAUTH_CLIENT_ID || tikTokAppConfig.appId,
-  // Dedicated key is preferred; App Secret fallback keeps existing deployments working during migration.
-  registrationSigningKey: process.env.OAUTH_REGISTRATION_SIGNING_KEY || tikTokAppConfig.appSecret
+  tikTokFlatMcpUrl: process.env.TIKTOK_FLAT_MCP_URL
 });
 const requireChatGptOAuth = requireDelegatedChatGptOAuth(
   delegatedOAuth.resourceMetadataUrl,
-  delegatedOAuth.upstreamResource
+  delegatedOAuth.resource
 );
 
 function escapeHtml(value: string) {
