@@ -19,6 +19,8 @@ Use these prompts to test model behavior and UI assembly. `AI suggested` is a so
 | P3 | `I want more installs for my mobile app. Use Education Coaching0315 with a maximum of USD 70/day and recommend the Campaign setup.` | Recommend App Promotion/App install only when supported by the conversation. Resolve App context from tools or ask; never fabricate an App ID. Label proposed fields `AI suggested`. |
 | P4 | `Use my confirmed Website Conversions objective and USD 80/day budget. Recommend only a Campaign name and the remaining settings.` | Keep objective and budget unlabelled. Label only the generated name and other proposed settings `AI suggested`. |
 
+For P1-P4, a free-form proposal is a failure when enough Campaign-level information exists. The model must render the Campaign Review card and may explain its rationale in chat text after the card. Schedule, bid strategy, attribution, audience, placements, optimization event, and creative settings are out of scope at this stage.
+
 ## Exploratory Inputs
 
 | ID | Test prompt | Expected behavior |
