@@ -6,6 +6,8 @@ import {
 import {
   buildSmartPlusCampaignPayload,
   createCampaignReviewStore,
+  normalizeCampaignReadback,
+  validateCampaignReadback,
   validateCampaignReview
 } from "../src/campaign-review.ts";
 
@@ -38,6 +40,34 @@ assert(payload.request_id === "1234567890123456789", "Reviewed request ID must b
 assert(payload.objective_type === "WEB_CONVERSIONS", "Website objective was not preserved.");
 assert(payload.sales_destination === "WEBSITE", "Website destination was not preserved.");
 assert(!("adgroup_id" in payload) && !("ad_id" in payload), "Campaign payload must not contain Ad Group or Ad fields.");
+
+const readback = {
+  campaign_id: "1840000000000000001",
+  campaign_name: web.campaignName,
+  objective_type: web.objectiveType,
+  operation_status: "ENABLE",
+  secondary_status: "CAMPAIGN_STATUS_ENABLE",
+  budget: web.budget,
+  current_budget: web.budget,
+  budget_mode: web.budgetMode,
+  budget_optimize_on: web.budgetOptimizeOn,
+  catalog_enabled: web.catalogEnabled,
+  sales_destination: web.salesDestination,
+  special_industries: web.specialIndustries,
+  create_time: "2026-07-19 09:00:00"
+};
+assert(validateCampaignReadback(web, readback).length === 0, "A matching TikTok Campaign read-back was rejected.");
+const normalizedReadback = normalizeCampaignReadback(readback);
+assert(normalizedReadback.campaignId === readback.campaign_id, "Verified Campaign ID was not normalized from TikTok read-back.");
+assert(normalizedReadback.operationStatus === "ENABLE", "Verified Active status was not normalized from TikTok read-back.");
+assert(
+  validateCampaignReadback(web, { ...readback, campaign_name: "Unexpected Campaign" }).some((message) => message.includes("different Campaign name")),
+  "A mismatched TikTok Campaign read-back must not be accepted as verified."
+);
+assert(
+  validateCampaignReadback(web, { ...readback, operation_status: "DISABLE" }).some((message) => message.includes("Active operation status")),
+  "A non-Active TikTok Campaign read-back must not be accepted as verified."
+);
 
 const lead = reviewSchema.parse({
   ...base,
@@ -93,6 +123,8 @@ console.log(JSON.stringify({
     "budget_dependencies",
     "campaign_only_payload",
     "active_campaign_only_creation",
+    "tiktok_readback_normalization",
+    "tiktok_readback_mismatch_guard",
     "single_active_proposal",
     "inactive_proposal_write_guard"
   ]

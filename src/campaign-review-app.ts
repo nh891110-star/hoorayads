@@ -58,15 +58,20 @@ const RESULT_META = {
 } as const;
 
 function fallback(state: CampaignReviewState) {
-  const objective = {
+  const verified = state.status === "created" ? state.execution?.verifiedCampaign : undefined;
+  const campaignName = verified?.campaignName ?? state.campaign.campaignName;
+  const objectiveValue = verified?.objectiveType ?? state.campaign.objectiveType;
+  const objective = ({
     WEB_CONVERSIONS: "Website conversions",
     LEAD_GENERATION: "Lead generation",
     APP_PROMOTION: "App promotion"
-  }[state.campaign.objectiveType];
-  const daily = state.campaign.budgetMode.includes("DAILY") || state.campaign.budgetMode === "BUDGET_MODE_DAY";
-  const budget = state.campaign.budget === undefined
+  } as Record<string, string>)[objectiveValue] || objectiveValue;
+  const budgetMode = verified?.budgetMode ?? state.campaign.budgetMode;
+  const budgetValue = verified?.budget ?? state.campaign.budget;
+  const daily = budgetMode.includes("DAILY") || budgetMode === "BUDGET_MODE_DAY";
+  const budget = budgetValue === undefined
     ? "Not set"
-    : `${state.account.currency} ${state.campaign.budget.toFixed(2)}${daily ? "/day" : " total"}`;
+    : `${state.account.currency} ${budgetValue.toFixed(2)}${daily ? "/day" : " total"}`;
   const status = {
     proposed: "Proposed campaign",
     outdated: "Inactive proposal",
@@ -76,19 +81,23 @@ function fallback(state: CampaignReviewState) {
     error: "Needs attention",
     outcome_unknown: "Creation status unconfirmed"
   }[state.status];
+  const accountLabel = state.account.status === "UNKNOWN"
+    ? `Requested advertiser: ${state.account.advertiserName}`
+    : `${state.account.advertiserName} · ${state.account.maskedAdvertiserId}`;
 
   return [
-    `### ${state.campaign.campaignName}`,
+    `### ${campaignName}`,
     "",
-    `**${status}** · ${state.account.advertiserName} · ${state.account.maskedAdvertiserId}`,
+    `**${status}** · ${accountLabel}`,
     "",
     `- Campaign objective: ${objective}`,
     `- Campaign budget: ${budget}`,
-    `- Campaign Budget Optimization: ${state.campaign.budgetOptimizeOn ? "On" : "Off"}`,
-    `- Catalog: ${state.campaign.catalogEnabled ? state.campaign.catalogType || "Used" : "Not used"}`,
-    `- Special ad category: ${state.campaign.specialIndustriesConfirmed ? state.campaign.specialIndustries.join(", ") || "None selected" : "Not confirmed"}`,
-    "- Status after creation: Active",
+    `- Campaign Budget Optimization: ${(verified?.budgetOptimizeOn ?? state.campaign.budgetOptimizeOn) ? "On" : "Off"}`,
+    `- Catalog: ${(verified?.catalogEnabled ?? state.campaign.catalogEnabled) ? verified?.catalogType || state.campaign.catalogType || "Used" : "Not used"}`,
+    `- Special ad category: ${verified?.specialIndustries !== undefined ? verified.specialIndustries.join(", ") || "None selected" : state.campaign.specialIndustriesConfirmed ? state.campaign.specialIndustries.join(", ") || "None selected" : "Not confirmed"}`,
+    `- Status after creation: ${state.status === "outcome_unknown" ? "Unconfirmed" : "Active"}`,
     ...(state.execution?.campaignId ? [`- ${state.mode === "demo" ? "Demo receipt" : "Campaign ID"}: ${state.execution.campaignId}`] : []),
+    ...(verified ? ["- Data source: TikTok Campaign read-back; fields omitted by TikTok remain proposal values."] : []),
     ...(state.validationErrors.length ? ["", `Review required: ${state.validationErrors.join(" ")}`] : []),
     "",
     state.mode === "demo"

@@ -21,6 +21,8 @@ The live flow is:
 4. The server reads the Campaign back through `smart_plus_campaign_get` before showing a verified receipt.
 5. `get_smartplus_campaign_review_status` reconciles an uncertain outcome without retrying the write.
 
+Before creation, Campaign settings are explicitly proposal values; the advertiser account is resolved from TikTok authorization. After creation, the success card prefers only fields returned by `smart_plus_campaign_get` and marks them `TikTok verified`. Fields omitted by TikTok remain marked `Proposal`. A missing or mismatched Campaign ID, name, objective, or Active status produces an unconfirmed state instead of a success receipt.
+
 Supported objectives:
 
 - `WEB_CONVERSIONS`

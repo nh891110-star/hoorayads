@@ -124,6 +124,8 @@ try {
   assert(html.includes('id="campaign-review-root"'), "Campaign Review root is missing.");
   assert(html.includes("Confirm"), "Campaign Review confirm CTA is missing.");
   assert(html.includes("Status after creation"), "Campaign Review status disclosure is missing.");
+  assert(html.includes("TikTok verified"), "Campaign Review is missing per-field TikTok read-back provenance.");
+  assert(html.includes("TikTok Campaign read-back"), "Campaign Review success receipt is missing its TikTok read-back source.");
 
   const proposed = await client.request(
     {

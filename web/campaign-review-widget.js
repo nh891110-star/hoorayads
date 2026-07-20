@@ -232,9 +232,60 @@ function budgetSummary(campaign) {
   return `${formatCurrency(campaign.budget)}${suffix} · ${labelForBudgetMode(campaign.budgetMode)}`;
 }
 
+function verifiedReadback(state = reviewState) {
+  if (state?.mode === "demo" || state?.status !== "created") return null;
+  return state?.execution?.verifiedCampaign || null;
+}
+
+function displayCampaign(state) {
+  const campaign = state.campaign;
+  const verified = verifiedReadback(state);
+  if (!verified) return campaign;
+  return {
+    ...campaign,
+    campaignName: verified.campaignName ?? campaign.campaignName,
+    objectiveType: verified.objectiveType ?? campaign.objectiveType,
+    budget: verified.budget ?? campaign.budget,
+    budgetMode: verified.budgetMode ?? campaign.budgetMode,
+    budgetOptimizeOn: verified.budgetOptimizeOn ?? campaign.budgetOptimizeOn,
+    salesDestination: verified.salesDestination ?? campaign.salesDestination,
+    catalogEnabled: verified.catalogEnabled ?? campaign.catalogEnabled,
+    catalogType: verified.catalogType ?? campaign.catalogType,
+    specialIndustries: verified.specialIndustries ?? campaign.specialIndustries,
+    specialIndustriesConfirmed: verified.specialIndustries !== undefined ? true : campaign.specialIndustriesConfirmed,
+    operationStatus: verified.operationStatus ?? campaign.operationStatus
+  };
+}
+
 function sourceBadge(field) {
+  if (reviewState?.status === "created" && !isDemo()) {
+    const verified = verifiedReadback();
+    const keys = {
+      campaignName: ["campaignName"],
+      objectiveType: ["objectiveType"],
+      budget: ["budget"],
+      budgetMode: ["budgetMode"],
+      budgetOptimizeOn: ["budgetOptimizeOn"],
+      salesDestination: ["salesDestination"],
+      catalogEnabled: ["catalogEnabled", "catalogType"],
+      specialIndustries: ["specialIndustries"],
+      operationStatus: ["operationStatus"]
+    }[field] || [];
+    const isVerified = verified && keys.some((key) => Object.prototype.hasOwnProperty.call(verified, key));
+    return isVerified
+      ? '<span class="source-badge source-badge-verified">TikTok verified</span>'
+      : '<span class="source-badge source-badge-proposal">Proposal</span>';
+  }
   if (!reviewState?.campaign?.aiSuggestedFields?.includes(field)) return "";
   return '<span class="source-badge">AI suggested</span>';
+}
+
+function operationStatusSummary() {
+  if (reviewState?.status === "outcome_unknown") {
+    const returned = reviewState?.execution?.verifiedCampaign?.operationStatus;
+    return `<span class="status-value"><span class="status-dot"></span>Unconfirmed${returned ? ` · TikTok returned ${escapeHtml(returned)}` : ""}</span>`;
+  }
+  return `<span class="status-value"><span class="status-dot status-dot-active"></span>Active${isDemo() ? " · simulated" : ""}</span> ${sourceBadge("operationStatus")}`;
 }
 
 function reviewRows(campaign) {
@@ -246,15 +297,15 @@ function reviewRows(campaign) {
     rows.push(["Sales destination", `${escapeHtml(labelForSalesDestination(campaign.salesDestination))} ${sourceBadge("salesDestination")}`]);
   }
   if (campaign.objectiveType === "APP_PROMOTION") {
-    rows.push(["App promotion type", escapeHtml(labelForAppPromotionType(campaign.appPromotionType || "Not set"))]);
-    if (campaign.appId) rows.push(["App ID", escapeHtml(campaign.appId)]);
-    rows.push(["Campaign type", campaign.campaignType === "IOS14_CAMPAIGN" ? "iOS 14 Dedicated Campaign" : "Regular Campaign"]);
+    rows.push(["App promotion type", `${escapeHtml(labelForAppPromotionType(campaign.appPromotionType || "Not set"))} ${sourceBadge("appPromotionType")}`]);
+    if (campaign.appId) rows.push(["App ID", `${escapeHtml(campaign.appId)} ${sourceBadge("appId")}`]);
+    rows.push(["Campaign type", `${campaign.campaignType === "IOS14_CAMPAIGN" ? "iOS 14 Dedicated Campaign" : "Regular Campaign"} ${sourceBadge("campaignType")}`]);
   }
   rows.push(
-    ["Campaign budget optimization", campaign.budgetOptimizeOn ? "On" : "Off"],
+    ["Campaign budget optimization", `${campaign.budgetOptimizeOn ? "On" : "Off"} ${sourceBadge("budgetOptimizeOn")}`],
     ["Catalog", `${escapeHtml(labelForCatalog(campaign.catalogEnabled, campaign.catalogType))} ${sourceBadge("catalogEnabled")}`],
     ["Special ad category", `${escapeHtml(labelForSpecialIndustries(campaign))} ${sourceBadge("specialIndustries")}`],
-    ["Status after creation", `<span class="status-value"><span class="status-dot status-dot-active"></span>Active${isDemo() ? " · simulated" : ""}</span>`]
+    ["Status after creation", operationStatusSummary()]
   );
   return rows;
 }
@@ -277,6 +328,7 @@ function renderNotice(state) {
       <span><strong>${state.mode === "demo" ? "Demo receipt" : "Campaign ID"}</strong> ${escapeHtml(created.campaignId || "Pending")}</span>
       <span><strong>Status</strong> ${state.mode === "demo" ? "Active · simulated" : "Active"}</span>
       <span><strong>${state.mode === "demo" ? "Completed" : "Verified"}</strong> ${escapeHtml(created.verifiedAt ? new Date(created.verifiedAt).toLocaleString() : "Pending")}</span>
+      <span><strong>Source</strong> ${state.mode === "demo" ? "Simulation" : "TikTok Campaign read-back"}</span>
     </div>`;
   }
   if (["creating", "checking"].includes(state.status)) {
@@ -302,7 +354,7 @@ function renderNotice(state) {
 
 function renderReview() {
   const state = reviewState;
-  const campaign = state.campaign;
+  const campaign = displayCampaign(state);
   const locked = busy || !state.proposalId || !state.isCurrentVersion || ["creating", "checking", "created", "outdated"].includes(state.status);
   const createDisabled = locked || !state.readyToCreate;
   const rows = reviewRows(campaign)
@@ -327,8 +379,8 @@ function renderReview() {
   root.innerHTML = `<article class="campaign-card ${state.status === "outdated" ? "is-outdated" : ""} ${state.status === "created" ? "is-submitted" : ""}">
     <header class="card-header">
       <div>
-        <p class="eyebrow">TIKTOK AD CAMPAIGN · ${escapeHtml(state.account.advertiserName)} · ${escapeHtml(state.account.maskedAdvertiserId)}</p>
-        <h1>${escapeHtml(campaign.campaignName)}</h1>
+        <p class="eyebrow">TIKTOK AD CAMPAIGN · ${state.account.status === "UNKNOWN" ? `Requested advertiser · ${escapeHtml(state.account.advertiserName)}` : `${escapeHtml(state.account.advertiserName)} · ${escapeHtml(state.account.maskedAdvertiserId)}`}</p>
+        <h1>${escapeHtml(campaign.campaignName)} ${sourceBadge("campaignName")}</h1>
       </div>
       ${statusTag(state)}
     </header>

@@ -107,6 +107,10 @@ h1 { margin: 0; font-size: 26px; line-height: 1.2; letter-spacing: -.02em; }
   vertical-align: 1px;
 }
 
+.source-badge-verified { color: #126c35; background: var(--success-soft); }
+.source-badge-proposal { color: #68686d; background: #f0f0f1; }
+.card-header h1 .source-badge { vertical-align: 5px; }
+
 .status-value { display: inline-flex; align-items: center; gap: 7px; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #9a9a9f; display: inline-block; }
 .status-dot-active { background: var(--success); }

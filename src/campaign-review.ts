@@ -54,6 +54,7 @@ type CampaignExecution = {
   secondaryStatus?: string;
   errorCode?: string;
   errorMessage?: string;
+  verifiedCampaign?: VerifiedCampaignReadback;
 };
 
 type CampaignProposalVersion = {
@@ -133,16 +134,35 @@ type SmartPlusCampaignGetResponse = {
     objective_type?: string;
     operation_status?: string;
     secondary_status?: string;
-    budget?: number;
-    current_budget?: number;
-    budget_mode?: string;
-    budget_optimize_on?: boolean;
-    catalog_enabled?: boolean;
-    catalog_type?: string;
-    sales_destination?: string;
-    special_industries?: string[];
-    create_time?: string;
+    budget?: number | null;
+    current_budget?: number | null;
+    budget_mode?: string | null;
+    budget_optimize_on?: boolean | null;
+    catalog_enabled?: boolean | null;
+    catalog_type?: string | null;
+    sales_destination?: string | null;
+    special_industries?: string[] | null;
+    create_time?: string | null;
   }>;
+};
+
+type SmartPlusCampaignGetItem = NonNullable<SmartPlusCampaignGetResponse["list"]>[number];
+
+export type VerifiedCampaignReadback = {
+  campaignId: string;
+  campaignName?: string;
+  objectiveType?: string;
+  operationStatus?: string;
+  secondaryStatus?: string;
+  budget?: number;
+  currentBudget?: number;
+  budgetMode?: string;
+  budgetOptimizeOn?: boolean;
+  catalogEnabled?: boolean;
+  catalogType?: string;
+  salesDestination?: string;
+  specialIndustries?: string[];
+  createTime?: string;
 };
 
 export class CampaignReviewError extends Error {
@@ -275,6 +295,62 @@ export function buildSmartPlusCampaignPayload(campaign: NormalizedCampaignReview
   if (campaign.appId) payload.app_id = campaign.appId;
 
   return payload;
+}
+
+export function normalizeCampaignReadback(item: SmartPlusCampaignGetItem): VerifiedCampaignReadback {
+  return {
+    campaignId: item.campaign_id || "",
+    ...(item.campaign_name !== undefined ? { campaignName: item.campaign_name } : {}),
+    ...(item.objective_type !== undefined ? { objectiveType: item.objective_type } : {}),
+    ...(item.operation_status !== undefined ? { operationStatus: item.operation_status } : {}),
+    ...(item.secondary_status !== undefined ? { secondaryStatus: item.secondary_status } : {}),
+    ...(item.budget != null ? { budget: item.budget } : {}),
+    ...(item.current_budget != null ? { currentBudget: item.current_budget } : {}),
+    ...(item.budget_mode != null ? { budgetMode: item.budget_mode } : {}),
+    ...(item.budget_optimize_on != null ? { budgetOptimizeOn: item.budget_optimize_on } : {}),
+    ...(item.catalog_enabled != null ? { catalogEnabled: item.catalog_enabled } : {}),
+    ...(item.catalog_type != null ? { catalogType: item.catalog_type } : {}),
+    ...(item.sales_destination != null ? { salesDestination: item.sales_destination } : {}),
+    ...(item.special_industries != null ? { specialIndustries: [...item.special_industries] } : {}),
+    ...(item.create_time != null ? { createTime: item.create_time } : {})
+  };
+}
+
+export function validateCampaignReadback(campaign: NormalizedCampaignReview, item: SmartPlusCampaignGetItem) {
+  const errors: string[] = [];
+  if (!item.campaign_id) errors.push("TikTok read-back did not return a Campaign ID.");
+  if (!item.campaign_name) errors.push("TikTok read-back did not return the Campaign name.");
+  else if (item.campaign_name !== campaign.campaignName) errors.push("TikTok read-back returned a different Campaign name.");
+  if (!item.objective_type) errors.push("TikTok read-back did not return the Campaign objective.");
+  else if (item.objective_type !== campaign.objectiveType) errors.push("TikTok read-back returned a different Campaign objective.");
+  if (!item.operation_status) errors.push("TikTok read-back did not return the Campaign operation status.");
+  else if (item.operation_status !== "ENABLE") errors.push("TikTok read-back did not confirm Active operation status.");
+  if (item.budget != null && campaign.budget !== undefined && Math.abs(item.budget - campaign.budget) > 0.01) {
+    errors.push("TikTok read-back returned a different Campaign budget.");
+  }
+  if (item.budget_mode != null && item.budget_mode !== campaign.budgetMode) {
+    errors.push("TikTok read-back returned a different budget type.");
+  }
+  if (item.budget_optimize_on != null && item.budget_optimize_on !== campaign.budgetOptimizeOn) {
+    errors.push("TikTok read-back returned a different Campaign Budget Optimization setting.");
+  }
+  if (item.catalog_enabled != null && item.catalog_enabled !== campaign.catalogEnabled) {
+    errors.push("TikTok read-back returned a different Catalog setting.");
+  }
+  if (item.catalog_type != null && item.catalog_type !== campaign.catalogType) {
+    errors.push("TikTok read-back returned a different Catalog type.");
+  }
+  if (item.sales_destination != null && item.sales_destination !== campaign.salesDestination) {
+    errors.push("TikTok read-back returned a different sales destination.");
+  }
+  if (item.special_industries != null) {
+    const expected = [...campaign.specialIndustries].sort();
+    const returned = [...item.special_industries].sort();
+    if (JSON.stringify(returned) !== JSON.stringify(expected)) {
+      errors.push("TikTok read-back returned different special ad categories.");
+    }
+  }
+  return errors;
 }
 
 async function resolveAdvertiserAccount(
@@ -609,18 +685,33 @@ export function createCampaignReviewStore(
     if (expectedVersion === record.currentVersion && record.execution.status === "outcome_unknown") {
       try {
         const created = await reconcile(record, record.execution.campaignId);
-        if (created?.campaign_id && created.operation_status === "ENABLE") {
-          record.execution = {
-            ...record.execution,
-            status: "created",
-            campaignId: created.campaign_id,
-            createdAt: created.create_time || new Date().toISOString(),
-            verifiedAt: new Date().toISOString(),
-            operationStatus: created.operation_status,
-            secondaryStatus: created.secondary_status,
-            errorCode: undefined,
-            errorMessage: undefined
-          };
+        const campaign = record.versions.get(record.currentVersion)?.campaign;
+        if (created?.campaign_id && campaign) {
+          const readbackErrors = validateCampaignReadback(campaign, created);
+          const verifiedCampaign = normalizeCampaignReadback(created);
+          record.execution = readbackErrors.length === 0
+            ? {
+                ...record.execution,
+                status: "created",
+                campaignId: created.campaign_id,
+                createdAt: created.create_time || new Date().toISOString(),
+                verifiedAt: new Date().toISOString(),
+                operationStatus: created.operation_status,
+                secondaryStatus: created.secondary_status,
+                verifiedCampaign,
+                errorCode: undefined,
+                errorMessage: undefined
+              }
+            : {
+                ...record.execution,
+                status: "outcome_unknown",
+                campaignId: created.campaign_id,
+                operationStatus: created.operation_status,
+                secondaryStatus: created.secondary_status,
+                verifiedCampaign,
+                errorCode: "CAMPAIGN_READBACK_MISMATCH",
+                errorMessage: readbackErrors.join(" ")
+              };
         }
       } catch {
         // Keep outcome_unknown until TikTok can be reconciled without risking a duplicate write.
@@ -730,15 +821,18 @@ export function createCampaignReviewStore(
         };
         return stateFor(record, record.currentVersion, mode);
       }
-      if (created.operation_status !== "ENABLE") {
+      const verifiedCampaign = normalizeCampaignReadback(created);
+      const readbackErrors = validateCampaignReadback(version.campaign, created);
+      if (readbackErrors.length > 0) {
         record.execution = {
           ...record.execution,
           status: "outcome_unknown",
           campaignId: created.campaign_id,
           operationStatus: created.operation_status,
           secondaryStatus: created.secondary_status,
-          errorCode: "CAMPAIGN_STATUS_MISMATCH",
-          errorMessage: "The campaign was created, but TikTok did not return Active status. Review it before taking another action."
+          verifiedCampaign,
+          errorCode: "CAMPAIGN_READBACK_MISMATCH",
+          errorMessage: readbackErrors.join(" ")
         };
         return stateFor(record, record.currentVersion, mode);
       }
@@ -751,6 +845,7 @@ export function createCampaignReviewStore(
         verifiedAt: new Date().toISOString(),
         operationStatus: created.operation_status,
         secondaryStatus: created.secondary_status,
+        verifiedCampaign,
         errorCode: undefined,
         errorMessage: undefined
       };

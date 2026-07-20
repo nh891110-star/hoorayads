@@ -76,7 +76,21 @@ await page.setContent(`
                   status: "created",
                   campaignId: "1840000000000000001",
                   operationStatus: "ENABLE",
-                  verifiedAt: "2026-07-18T08:05:00.000Z"
+                  verifiedAt: "2026-07-18T08:05:00.000Z",
+                  verifiedCampaign: {
+                    campaignId: "1840000000000000001",
+                    campaignName: "MCP UI QA - App Promotion",
+                    objectiveType: "APP_PROMOTION",
+                    operationStatus: "ENABLE",
+                    secondaryStatus: "CAMPAIGN_STATUS_ENABLE",
+                    budget: 50,
+                    currentBudget: 50,
+                    budgetMode: "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+                    budgetOptimizeOn: true,
+                    catalogEnabled: false,
+                    specialIndustries: [],
+                    createTime: "2026-07-18 08:05:00"
+                  }
                 }
               };
             }
@@ -130,8 +144,35 @@ assert(lastCall.name === "create_smartplus_campaign_from_review", "Create campai
 assert(lastCall.args.expectedVersion === 3, "Create campaign must submit only the latest proposal version.");
 assert(await page.getByText("Submitted successfully").isVisible(), "Verified success state was not rendered.");
 assert(await page.getByText("1840000000000000001").isVisible(), "Success receipt is missing Campaign ID.");
+assert(await page.getByText("TikTok Campaign read-back").isVisible(), "Success receipt must disclose its TikTok read-back source.");
+assert((await page.getByText("TikTok verified", { exact: true }).count()) >= 5, "Read-back fields are not marked TikTok verified.");
+assert((await page.getByText("Proposal", { exact: true }).count()) >= 2, "Fields omitted from TikTok read-back must remain marked Proposal.");
 assert((await page.getByRole("button", { name: "Confirm" }).count()) === 0, "Success state must not keep an active confirm button.");
 if (screenshotPrefix) await page.screenshot({ path: `${screenshotPrefix}-success.png`, fullPage: true });
+
+await page.evaluate(() => {
+  window.openai.toolOutput = {
+    structuredContent: {
+      campaignReviewState: {
+        ...window.__state,
+        status: "outcome_unknown",
+        execution: {
+          ...window.__state.execution,
+          operationStatus: "DISABLE",
+          errorCode: "CAMPAIGN_READBACK_MISMATCH",
+          errorMessage: "TikTok read-back did not confirm Active operation status.",
+          verifiedCampaign: {
+            ...window.__state.execution.verifiedCampaign,
+            operationStatus: "DISABLE"
+          }
+        }
+      }
+    }
+  };
+  window.dispatchEvent(new Event("openai:set_globals"));
+});
+assert(await page.getByText("Creation status is not yet confirmed.").isVisible(), "Read-back mismatch must render an unconfirmed status notice.");
+assert(await page.getByText("Unconfirmed · TikTok returned DISABLE").isVisible(), "Read-back mismatch must not be presented as Active.");
 
 await page.evaluate(() => {
   window.openai.toolOutput = {
@@ -173,4 +214,4 @@ assert(await page.getByText("Campaign was not created.").isVisible(), "Error sta
 assert(await page.getByRole("button", { name: "Connect TikTok Ads" }).isVisible(), "OAuth error state must expose a connection action.");
 
 await browser.close();
-console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "inactive", "oauth_error"] }, null, 2));
+console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "readback_mismatch", "inactive", "oauth_error"] }, null, 2));
