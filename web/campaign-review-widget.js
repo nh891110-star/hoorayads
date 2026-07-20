@@ -1,6 +1,8 @@
 const root = document.getElementById("campaign-review-root") || document.getElementById("app-root");
 const APP_INFO = { name: "TikTok Campaign Review", version: "1.0.0" };
 const PROTOCOL_VERSION = "2026-01-26";
+const SUPERSESSION_CHANNEL = "tiktok-campaign-review-supersession-v1";
+const SUPERSESSION_STORAGE_PREFIX = "tiktok-campaign-review-inactive:";
 
 let reviewState = null;
 let hostContext = {};
@@ -13,6 +15,61 @@ let editDraft = null;
 let editConflictNotice = "";
 let statusRefreshTimer = null;
 const pendingRequests = new Map();
+const supersessionChannel = typeof BroadcastChannel === "function"
+  ? new BroadcastChannel(SUPERSESSION_CHANNEL)
+  : null;
+
+function supersessionKey(proposalId) {
+  return `${SUPERSESSION_STORAGE_PREFIX}${proposalId}`;
+}
+
+function rememberSupersededProposal(proposalId) {
+  if (!proposalId) return;
+  try {
+    window.localStorage.setItem(supersessionKey(proposalId), String(Date.now()));
+  } catch {
+    // BroadcastChannel remains the primary cross-card signal when storage is unavailable.
+  }
+  supersessionChannel?.postMessage({ proposalId });
+}
+
+function isRememberedAsSuperseded(proposalId) {
+  if (!proposalId) return false;
+  try {
+    return window.localStorage.getItem(supersessionKey(proposalId)) !== null;
+  } catch {
+    return false;
+  }
+}
+
+function applyLocalSupersession(proposalId) {
+  if (!reviewState || reviewState.proposalId !== proposalId || ["created", "outdated"].includes(reviewState.status)) return false;
+  const unsavedEditWasSuperseded = editMode;
+  reviewState = {
+    ...reviewState,
+    status: "outdated",
+    readyToCreate: false,
+    isCurrentVersion: false,
+    execution: undefined
+  };
+  editMode = false;
+  editDraft = null;
+  editConflictNotice = unsavedEditWasSuperseded
+    ? "Your unsaved edits were not applied because a newer campaign proposal became current. Review the latest proposal before editing again."
+    : "";
+  return true;
+}
+
+function syncLocalSupersession() {
+  if (!isRememberedAsSuperseded(reviewState?.proposalId)) return false;
+  if (!applyLocalSupersession(reviewState.proposalId)) return false;
+  render();
+  return true;
+}
+
+function announceSupersession(state) {
+  if (state?.supersedesProposalId) rememberSupersededProposal(state.supersedesProposalId);
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -162,6 +219,7 @@ function applyState(next, source = "external") {
     ? "Your unsaved edits were not applied because a newer campaign proposal became current. Review the latest proposal before editing again."
     : "";
   reviewState = next;
+  announceSupersession(next);
   editMode = false;
   editDraft = null;
   return true;
@@ -555,6 +613,7 @@ async function invoke(name, args) {
 }
 
 async function refreshStatus() {
+  if (syncLocalSupersession()) return;
   if (!reviewState?.proposalId || busy || ["created", "outdated"].includes(reviewState.status)) return;
   try {
     const result = await callTool(actionTool("status"), {
@@ -687,6 +746,17 @@ window.addEventListener("message", (event) => {
   }
 });
 
+if (supersessionChannel) {
+  supersessionChannel.addEventListener("message", (event) => {
+    if (applyLocalSupersession(event.data?.proposalId)) render();
+  });
+}
+window.addEventListener("storage", (event) => {
+  if (!event.key?.startsWith(SUPERSESSION_STORAGE_PREFIX) || event.newValue === null) return;
+  const proposalId = event.key.slice(SUPERSESSION_STORAGE_PREFIX.length);
+  if (applyLocalSupersession(proposalId)) render();
+});
+
 window.addEventListener("openai:set_globals", () => {
   const next = readChatGptState();
   if (applyState(next)) render();
@@ -697,5 +767,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 reviewState = readChatGptState() || window.__CAMPAIGN_REVIEW_PREVIEW_STATE__ || createPreviewState();
+if (isRememberedAsSuperseded(reviewState.proposalId)) applyLocalSupersession(reviewState.proposalId);
+announceSupersession(reviewState);
 sendInitialize();
 render();

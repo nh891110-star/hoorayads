@@ -260,7 +260,8 @@ await oldCardPage.getByLabel("Campaign name").fill("MCP UI QA - Local Unsaved Na
 
 const newCardState = {
   ...oldCardState,
-  version: 2,
+  proposalId: "proposal-history-new",
+  supersedesProposalId: "proposal-history-qa",
   campaign: { ...oldCardState.campaign, campaignName: "MCP UI QA - Prompt Updated Proposal" }
 };
 const newCardPage = await browser.newPage({ viewport: { width: 860, height: 960 } });
@@ -285,7 +286,12 @@ await newCardPage.setContent(`
 assert(await newCardPage.getByText("MCP UI QA - Prompt Updated Proposal").isVisible(), "The new proposal card did not render as the current version.");
 assert(await newCardPage.getByRole("button", { name: "Confirm" }).isEnabled(), "The new proposal must be the only actionable card.");
 
-await oldCardPage.evaluate(() => { window.__backendCurrentVersion = 2; });
+await oldCardPage.evaluate(() => {
+  window.dispatchEvent(new StorageEvent("storage", {
+    key: "tiktok-campaign-review-inactive:proposal-history-qa",
+    newValue: String(Date.now())
+  }));
+});
 await oldCardPage.getByText("Your unsaved edits were not applied", { exact: false }).waitFor({ timeout: 5000 });
 assert(await oldCardPage.getByText("Inactive").isVisible(), "The old chat-history card did not automatically become Inactive.");
 assert((await oldCardPage.getByRole("button", { name: "Confirm" }).count()) === 0, "The old chat-history card retained an active Confirm action.");

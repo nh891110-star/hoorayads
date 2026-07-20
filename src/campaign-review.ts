@@ -64,6 +64,7 @@ type CampaignProposalVersion = {
 
 type CampaignProposalRecord = {
   proposalId: string;
+  supersedesProposalId?: string;
   currentVersion: number;
   retired: boolean;
   account: AdvertiserAccount;
@@ -85,6 +86,7 @@ export type CampaignReviewState = {
   mode: CampaignReviewMode;
   actionTools: CampaignReviewActionTools;
   proposalId: string;
+  supersedesProposalId?: string;
   version: number;
   status: "proposed" | "outdated" | "creating" | "checking" | "created" | "error" | "outcome_unknown";
   readyToCreate: boolean;
@@ -521,6 +523,7 @@ function stateFor(
     mode,
     actionTools: mode === "demo" ? DEMO_ACTION_TOOLS : LIVE_ACTION_TOOLS,
     proposalId: record.proposalId,
+    ...(record.supersedesProposalId ? { supersedesProposalId: record.supersedesProposalId } : {}),
     version: requestedVersion,
     status,
     readyToCreate: isCurrentVersion && validationErrors.length === 0 && record.execution.status === "idle",
@@ -619,8 +622,13 @@ export function createCampaignReviewStore(
     try {
       const account = mode === "demo" ? demoAccount(input) : await resolveAdvertiserAccount(input, surface, authContext);
       const campaign = normalizeCampaignInput(input, account.advertiserId);
+      const activeProposal = activeProposalId ? proposals.get(activeProposalId) : undefined;
+      const supersedesProposalId = activeProposal && ["idle", "failed"].includes(activeProposal.execution.status)
+        ? activeProposal.proposalId
+        : undefined;
       const record: CampaignProposalRecord = {
         proposalId: randomUUID(),
+        ...(supersedesProposalId ? { supersedesProposalId } : {}),
         currentVersion: 1,
         retired: false,
         account,
@@ -630,7 +638,6 @@ export function createCampaignReviewStore(
           ? { simulationOutcome: (input as CampaignReviewDemoInput).simulationOutcome ?? "SUCCESS" }
           : {})
       };
-      const activeProposal = activeProposalId ? proposals.get(activeProposalId) : undefined;
       if (activeProposal && ["idle", "failed"].includes(activeProposal.execution.status)) {
         activeProposal.retired = true;
       }

@@ -148,6 +148,7 @@ const secondProposal = await reviewStore.prepare({
 });
 const refreshedFirstProposal = await reviewStore.getStatus(firstProposal.proposalId, firstProposal.version);
 assert(secondProposal.status === "proposed", "The latest Campaign proposal must remain active.");
+assert(secondProposal.supersedesProposalId === firstProposal.proposalId, "A new proposal must identify the exact prior card it supersedes.");
 assert(refreshedFirstProposal.status === "outdated", "A previous Campaign proposal must become Inactive after a new proposal is prepared.");
 assert(refreshedFirstProposal.readyToCreate === false, "An inactive Campaign proposal must never remain creatable.");
 const staleSubmit = await reviewStore.create(firstProposal.proposalId, firstProposal.version);
