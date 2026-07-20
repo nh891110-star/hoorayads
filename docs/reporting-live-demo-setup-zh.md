@@ -11,8 +11,7 @@
 - Hooray Campaign Review（ChatGPT）入口：`/mcp/chatgpt`
 - Reporting/QA 入口：`/mcp/reporting`
 - Claude 入口：`/mcp/claude`
-- Progressive MCP：为 Hooray Campaign Review 提供授权账号查询、Campaign 创建与回读
-- Flat MCP：负责 reporting、campaign/ad group/ad metadata 与官方 Ad Diagnosis 查询
+- Flat MCP：为 Hooray Campaign Review 提供逐用户 advertiser 授权、Campaign 创建与回读，并负责 reporting、metadata 与官方 Ad Diagnosis 查询
 
 UI 优先使用 MCP Apps 标准 `_meta.ui.resourceUri`、`ui/initialize`、`ui/notifications/tool-result` 和 `tools/call`。`window.openai` 只作为 ChatGPT 兼容 fallback，所以不按 host 复制代码。
 
@@ -24,7 +23,8 @@ UI 优先使用 MCP Apps 标准 `_meta.ui.resourceUri`、`ui/initialize`、`ui/n
 - Hooray Campaign Review MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`
 - Reporting/QA MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/reporting`
 - Claude MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/claude`
-- OAuth callback：`https://tiktok-ads-agent-poc.onrender.com/callback`
+- Hooray OAuth issuer：`https://tiktok-ads-agent-poc.onrender.com/oauth`
+- Campaign Review OAuth callback：`https://tiktok-ads-agent-poc.onrender.com/oauth/tiktok/callback`
 - 只读预览：`https://tiktok-ads-agent-poc.onrender.com/report-preview`
 
 注意：这些新路径需要先把当前 workspace 版本部署到 Render。部署前，线上服务仍是旧版本。
@@ -39,9 +39,11 @@ ChatGPT custom MCP apps 当前适用于 Business、Enterprise 和 Edu 的 ChatGP
 4. Name 填 `Hooray Campaign Review`。
 5. Description 填 `Review, edit, and confirm one live TikTok Smart+ Campaign before creation.`
 6. MCP server URL 填 `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`。
-7. App authentication 选择无认证；TikTok advertiser 授权由 `review_smartplus_campaign` 的 live flow 单独发起。
-8. 点击 `Scan Tools`，确认模型可见工具只包含 `review_smartplus_campaign`；Edit、Status、Confirm/Create 是 widget-only action tools。确认列表中没有旧 workspace、report 或 demo tools，然后点击 `Create`。
-9. 新 app 会出现在 `Settings > Apps > Enabled Apps`，并带有 `Dev` 标签；在新 chat 的 tools menu 中选择它进行测试。
+7. App authentication 选择 `OAuth`。
+8. OAuth Client ID 填 TikTok developer app 的 App ID；OAuth Client Secret 留空。TikTok Flat MCP 是 PKCE public client，线上 metadata 明确声明 token endpoint authentication method 为 `none`。
+9. 在 TikTok developer portal 将 Advertiser redirect URL 设置为 `https://tiktok-ads-agent-poc.onrender.com/oauth/tiktok/callback`。ChatGPT callback 不直接注册到 TikTok，由 Hooray broker 校验后转发。
+10. 点击 `Scan Tools` 并为当前用户完成 advertiser authorization。确认模型可见工具只包含 `review_smartplus_campaign`；Edit、Status、Confirm/Create 是 widget-only action tools。确认列表中没有旧 workspace、report 或 demo tools，然后点击 `Create`。
+11. 发布前用另一个 workspace member 登录，确认其必须独立授权且只能看到自己的 advertiser accounts。
 
 官方说明：<https://help.openai.com/en/articles/12584461>
 
@@ -125,21 +127,16 @@ Diagnosis 区域调用 `tool_diagnosis_get`，对应 `/open_api/v1.3/tool/diagno
 
 ## 7. 环境变量
 
-Render 必须配置：
+ChatGPT Campaign Review 路径的 Render 必须配置：
 
 ```text
-TIKTOK_APP_ENV=dev
-TIKTOK_APP_ID=<TikTok app id>
-TIKTOK_APP_SECRET=<TikTok app secret>
-TIKTOK_REDIRECT_URI=https://tiktok-ads-agent-poc.onrender.com/callback
-TIKTOK_ADVERTISER_AUTH_URL=<TikTok advertiser authorization URL>
-TIKTOK_MCP_URL=https://ads.tiktok.com/mcp
 TIKTOK_FLAT_MCP_URL=https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat
 PUBLIC_BASE_URL=https://tiktok-ads-agent-poc.onrender.com
+CAMPAIGN_REVIEW_WRITE_MODE=campaign_only
 REPORTING_DEFAULT_ADVERTISER_ID=<optional>
 ```
 
-TikTok developer portal 的 allowlisted redirect URI 必须与 `TIKTOK_REDIRECT_URI` 完全一致。原来的 `https://mcp.hoorayads.org/callback` 当前 DNS 不可用，不应继续作为 demo callback。
+TikTok developer portal 的 Advertiser redirect URL 必须精确等于 `https://tiktok-ads-agent-poc.onrender.com/oauth/tiktok/callback`。App Secret 不进入 Render 或仓库；每位用户的 token 由 ChatGPT 保存并作为 bearer 发送。旧 `/callback` 仅为 Reporting/Claude legacy fallback 保留，不属于正式 Hooray ChatGPT 授权链路。
 
 ## 8. 当前能力与生产边界
 
@@ -155,7 +152,7 @@ TikTok developer portal 的 allowlisted redirect URI 必须与 `TIKTOK_REDIRECT_
 
 公开给大量用户前仍需补：
 
-- Hooray ChatGPT Campaign Review 已使用连接级 delegated OAuth，不读取共享 `.local` token；Reporting/Claude 等仍使用 bridge OAuth 的入口需要把 `.local/*.json` token/state 迁移到按用户隔离的持久化存储
+- Hooray ChatGPT Campaign Review 已使用连接级 delegated OAuth，不读取共享 `.local` token；Reporting/Claude 等 legacy bridge OAuth 不应作为正式多用户入口
 - 把当前进程内 session state 迁移到持久化 session store
 - 为 MCP endpoint 增加调用方认证、rate limiting 和审计日志
 - 明确同步报告超过 20,000 ads 时的分批策略

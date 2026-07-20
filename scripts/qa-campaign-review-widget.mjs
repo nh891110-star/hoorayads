@@ -112,6 +112,12 @@ assert((await page.getByText("Ad Group", { exact: false }).count()) === 1, "Only
 if (screenshotPrefix) await page.screenshot({ path: `${screenshotPrefix}-proposed.png`, fullPage: true });
 
 await page.getByRole("button", { name: "Edit" }).click();
+await page.getByLabel("Campaign name").fill("MCP UI QA - Unsaved Draft");
+await page.getByRole("button", { name: "Cancel" }).click();
+assert(await page.getByText("MCP UI QA - Website Conversions").isVisible(), "Cancel must discard local edits and preserve the current proposal.");
+assert((await page.evaluate(() => window.__calls.length)) === 0, "Cancel must not call a mutation tool.");
+
+await page.getByRole("button", { name: "Edit" }).click();
 assert((await page.getByText("Status after creation").count()) === 0, "Edit state must not show a status-after-creation field.");
 if (screenshotPrefix) await page.screenshot({ path: `${screenshotPrefix}-edit.png`, fullPage: true });
 await page.getByLabel("Campaign objective").selectOption("LEAD_GENERATION");
@@ -131,6 +137,7 @@ await page.getByLabel("Campaign objective").selectOption("APP_PROMOTION");
 assert(await page.getByLabel("App promotion type").isVisible(), "App Promotion edit state must show App promotion type.");
 assert(await page.getByLabel("App ID").isVisible(), "App Promotion edit state must show App ID.");
 assert(await page.getByLabel("Campaign type").isVisible(), "App Promotion edit state must show Campaign type.");
+assert((await page.getByLabel("Catalog").count()) === 0, "App Promotion edit state must omit the non-submitted Catalog field.");
 await page.getByLabel("Campaign name").fill("MCP UI QA - App Promotion");
 await page.getByLabel("App ID").fill("1234567890123456789");
 await page.getByRole("button", { name: "Apply changes" }).click();
@@ -140,6 +147,7 @@ assert(lastCall.name === "revise_smartplus_campaign_review", "App Promotion chan
 assert(lastCall.args.expectedVersion === 2, "App Promotion revision must use compare-and-swap version 2.");
 assert(lastCall.args.objectiveType === "APP_PROMOTION", "App Promotion objective was not submitted.");
 assert(lastCall.args.appId === "1234567890123456789", "App Promotion App ID was not submitted.");
+assert((await page.getByText("Catalog", { exact: true }).count()) === 0, "App Promotion review card must omit Catalog.");
 
 await page.getByRole("button", { name: "Confirm" }).click();
 lastCall = await page.evaluate(() => window.__calls.at(-1));
@@ -217,5 +225,78 @@ await page.evaluate(() => {
 assert(await page.getByText("Campaign was not created.").isVisible(), "Error state must explain that no campaign was created.");
 assert(await page.getByRole("button", { name: "Connect advertiser account" }).isVisible(), "OAuth error state must expose a connection action.");
 
+const oldCardState = {
+  ...baseState,
+  proposalId: "proposal-history-qa",
+  campaign: { ...baseState.campaign, campaignName: "MCP UI QA - Original Proposal" }
+};
+const oldCardPage = await browser.newPage({ viewport: { width: 860, height: 960 } });
+await oldCardPage.setContent(`
+  <!doctype html>
+  <html>
+    <head><style>${css}</style></head>
+    <body>
+      <div id="campaign-review-root"></div>
+      <script>
+        window.__state = ${JSON.stringify(oldCardState)};
+        window.__backendCurrentVersion = 1;
+        window.__CAMPAIGN_REVIEW_PREVIEW_STATE__ = window.__state;
+        window.openai = {
+          callTool: async (name, args) => {
+            if (name === "get_smartplus_campaign_review_status" && args.expectedVersion < window.__backendCurrentVersion) {
+              window.__state = { ...window.__state, status: "outdated", readyToCreate: false, isCurrentVersion: false };
+            }
+            return { structuredContent: { campaignReviewState: window.__state } };
+          },
+          notifyIntrinsicHeight: () => {}
+        };
+      </script>
+      <script type="module">${widgetJs}</script>
+    </body>
+  </html>
+`);
+await oldCardPage.getByRole("button", { name: "Edit" }).click();
+await oldCardPage.getByLabel("Campaign name").fill("MCP UI QA - Local Unsaved Name");
+
+const newCardState = {
+  ...oldCardState,
+  version: 2,
+  campaign: { ...oldCardState.campaign, campaignName: "MCP UI QA - Prompt Updated Proposal" }
+};
+const newCardPage = await browser.newPage({ viewport: { width: 860, height: 960 } });
+await newCardPage.setContent(`
+  <!doctype html>
+  <html>
+    <head><style>${css}</style></head>
+    <body>
+      <div id="campaign-review-root"></div>
+      <script>
+        window.__state = ${JSON.stringify(newCardState)};
+        window.__CAMPAIGN_REVIEW_PREVIEW_STATE__ = window.__state;
+        window.openai = {
+          callTool: async () => ({ structuredContent: { campaignReviewState: window.__state } }),
+          notifyIntrinsicHeight: () => {}
+        };
+      </script>
+      <script type="module">${widgetJs}</script>
+    </body>
+  </html>
+`);
+assert(await newCardPage.getByText("MCP UI QA - Prompt Updated Proposal").isVisible(), "The new proposal card did not render as the current version.");
+assert(await newCardPage.getByRole("button", { name: "Confirm" }).isEnabled(), "The new proposal must be the only actionable card.");
+
+await oldCardPage.evaluate(() => { window.__backendCurrentVersion = 2; });
+await oldCardPage.getByText("Your unsaved edits were not applied", { exact: false }).waitFor({ timeout: 5000 });
+assert(await oldCardPage.getByText("Inactive").isVisible(), "The old chat-history card did not automatically become Inactive.");
+assert((await oldCardPage.getByRole("button", { name: "Confirm" }).count()) === 0, "The old chat-history card retained an active Confirm action.");
+assert((await oldCardPage.getByRole("button", { name: "Edit" }).count()) === 0, "The old chat-history card retained an active Edit action.");
+assert(await oldCardPage.locator(".campaign-card.is-outdated").isVisible(), "The old chat-history card did not receive the full inactive visual state.");
+if (screenshotPrefix) {
+  await oldCardPage.screenshot({ path: `${screenshotPrefix}-history-inactive.png`, fullPage: true });
+  await newCardPage.screenshot({ path: `${screenshotPrefix}-history-current.png`, fullPage: true });
+}
+await oldCardPage.close();
+await newCardPage.close();
+
 await browser.close();
-console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "readback_mismatch", "inactive", "oauth_error"] }, null, 2));
+console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error"] }, null, 2));

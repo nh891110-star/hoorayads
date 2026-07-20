@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 import {
-  campaignReviewFields
+  campaignReviewFields,
+  reviewSmartPlusCampaignInput
 } from "../src/campaign-review-contract.ts";
 import {
   buildSmartPlusCampaignPayload,
@@ -17,6 +18,7 @@ function assert(condition, message) {
 }
 
 const reviewSchema = z.object(campaignReviewFields);
+const liveReviewSchema = z.object(reviewSmartPlusCampaignInput).strict();
 const base = {
   advertiserId: "7481826080479870993",
   campaignName: "MCP UI QA - Website Conversions",
@@ -40,7 +42,12 @@ assert(payload.operation_status === "ENABLE", "Campaign Review must create the a
 assert(payload.request_id === "1234567890123456789", "Reviewed request ID must be preserved.");
 assert(payload.objective_type === "WEB_CONVERSIONS", "Website objective was not preserved.");
 assert(payload.sales_destination === "WEBSITE", "Website destination was not preserved.");
+assert(!("campaign_type" in payload), "Web payload must omit the App-only Campaign type field.");
+assert(!("special_industries" in payload), "No special ad category must serialize by omitting special_industries.");
 assert(!("adgroup_id" in payload) && !("ad_id" in payload), "Campaign payload must not contain Ad Group or Ad fields.");
+assert(!liveReviewSchema.safeParse({ ...base, industry: "EDUCATION" }).success, "Unsupported industry must be rejected by the live tool schema.");
+assert(!liveReviewSchema.safeParse({ ...base, specialIndustriesConfirmed: undefined }).success, "The live tool must require explicit special-ad-category confirmation before rendering.");
+assert(!liveReviewSchema.safeParse({ ...base, specialIndustriesConfirmed: false }).success, "The live tool must not render an initial card with unconfirmed special-ad-category status.");
 
 const normalizedDefaults = normalizeCampaignInput({
   advertiserId: base.advertiserId,
@@ -104,6 +111,25 @@ assert(validateCampaignReview(app, { country: "US", status: "STATUS_ENABLE" }).l
 const appPayload = buildSmartPlusCampaignPayload(app, "1234567890123456790");
 assert(appPayload.app_id === "1234567890123456789", "App Promotion App ID was not preserved in the API payload.");
 assert(appPayload.app_promotion_type === "APP_INSTALL", "App Promotion type was not preserved in the API payload.");
+assert(appPayload.campaign_type === "REGULAR_CAMPAIGN", "App Promotion Campaign type was not preserved in the API payload.");
+assert(!("catalog_enabled" in appPayload) && !("catalog_type" in appPayload), "App Promotion payload must omit Catalog fields.");
+assert(!("sales_destination" in appPayload), "App Promotion payload must omit Sales destination.");
+
+const specialCategoryPayload = buildSmartPlusCampaignPayload({ ...web, specialIndustries: ["HOUSING"] }, "1234567890123456791");
+assert(JSON.stringify(specialCategoryPayload.special_industries) === JSON.stringify(["HOUSING"]), "Confirmed special ad category was not serialized to the API enum.");
+
+assert(
+  validateCampaignReview({ ...web, catalogEnabled: false, catalogType: "ECOMMERCE" }).some((message) => message.includes("Catalog type must be omitted")),
+  "A stale Catalog type must be rejected when Catalog is not used."
+);
+assert(
+  validateCampaignReview({ ...web, appId: "1234567890123456789" }).some((message) => message.includes("App ID is available only")),
+  "A Web Campaign must reject the App-only App ID field."
+);
+assert(
+  validateCampaignReview({ ...web, campaignType: "IOS14_CAMPAIGN", appId: "1234567890123456789" }).some((message) => message.includes("iOS 14 Dedicated Campaign")),
+  "A Web Campaign must reject the App-only iOS 14 Campaign type."
+);
 
 const unsupported = reviewSchema.safeParse({ ...base, objectiveType: "REACH" });
 assert(!unsupported.success, "Brand/Reach must be rejected by the Smart+ Campaign Review schema.");
@@ -135,7 +161,10 @@ console.log(JSON.stringify({
     "app_promotion",
     "brand_negative_routing",
     "special_industry_confirmation",
+    "special_industry_pre_card_schema_guard",
+    "unsupported_industry_rejection",
     "budget_dependencies",
+    "objective_specific_field_omission",
     "ai_suggested_default_provenance",
     "campaign_only_payload",
     "active_campaign_only_creation",

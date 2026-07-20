@@ -52,7 +52,9 @@ export const campaignReviewFields = {
 };
 
 export const reviewSmartPlusCampaignInput = {
-  ...campaignReviewFields
+  ...campaignReviewFields,
+  // The live card is an approval boundary, not a place to collect this legal declaration.
+  specialIndustriesConfirmed: z.literal(true)
 };
 
 export const reviewSmartPlusCampaignOutput = {

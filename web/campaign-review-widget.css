@@ -171,8 +171,16 @@ h1 { margin: 0; font-size: 26px; line-height: 1.2; letter-spacing: -.02em; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.is-outdated .review-grid, .is-outdated .card-footer { color: #747478; background: #fafafa; }
+.campaign-card.is-outdated { border-color: #e8e8ea; background: #fafafa; }
+.is-outdated .card-header,
+.is-outdated .review-grid,
+.is-outdated .card-footer { color: #8d8d91; background: #fafafa; }
+.is-outdated .card-header h1,
+.is-outdated .eyebrow,
+.is-outdated .review-row dt,
+.is-outdated .card-footer p { color: #9a9a9e; }
 .is-outdated .review-row dd { color: #747478; }
+.is-outdated .source-badge { filter: grayscale(1); opacity: .65; }
 .is-submitted .card-header h1,
 .is-submitted .review-grid,
 .is-submitted .card-footer { color: #a0a0a4; }

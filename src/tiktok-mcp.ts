@@ -100,6 +100,14 @@ export type TikTokToolResponse<T> =
     }
   | TikTokAuthStatus;
 
+function isUnauthorizedTransportError(error: unknown) {
+  if (error instanceof UnauthorizedError) return true;
+  if (!error || typeof error !== "object") return false;
+  const status = "code" in error ? Number((error as { code?: unknown }).code) : NaN;
+  const message = error instanceof Error ? error.message : String(error);
+  return status === 401 || /\b(?:401|unauthorized|invalid[_ -]?token)\b/i.test(message);
+}
+
 export type CreateSmartPlusCampaignInput = {
   advertiserId: string;
   productUrl: string;
@@ -343,7 +351,7 @@ async function connectTikTokClient(
   const delegatedAuthorization = authContext.authorization?.trim();
   if (authContext.requireDelegatedAuthorization && !delegatedAuthorization) {
     return {
-      message: "Reconnect TikTok Ads so this ChatGPT session can use its own authorized advertiser accounts.",
+      message: "Reconnect a TikTok advertiser account so this ChatGPT session can use its authorized advertiser accounts.",
       status: "misconfigured"
     };
   }
@@ -396,7 +404,7 @@ async function connectTikTokClient(
   } catch (error) {
     await transport.close().catch(() => undefined);
 
-    if (error instanceof UnauthorizedError && !delegatedAuthorization) {
+    if (isUnauthorizedTransportError(error) && !delegatedAuthorization) {
       const nextState = loadAuthState(surface);
       return {
         authorizationUrl: nextState.authorizationUrl || config.advertiserAuthUrl,
@@ -405,7 +413,7 @@ async function connectTikTokClient(
       };
     }
 
-    if (error instanceof UnauthorizedError) {
+    if (isUnauthorizedTransportError(error)) {
       return {
         message: "The TikTok authorization for this ChatGPT session is missing or expired. Reconnect the app and try again.",
         status: "misconfigured"

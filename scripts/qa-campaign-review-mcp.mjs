@@ -26,7 +26,11 @@ const client = new Client(
     }
   }
 );
-const transport = new StreamableHTTPClientTransport(new URL(endpoint));
+const transport = new StreamableHTTPClientTransport(new URL(endpoint), {
+  requestInit: {
+    headers: { Authorization: `Bearer ${process.env.MCP_TEST_BEARER || "qa-delegated-token"}` }
+  }
+});
 await client.connect(transport);
 
 try {

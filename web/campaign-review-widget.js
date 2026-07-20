@@ -10,6 +10,7 @@ let requestCounter = 0;
 let busy = false;
 let editMode = false;
 let editDraft = null;
+let editConflictNotice = "";
 let statusRefreshTimer = null;
 const pendingRequests = new Map();
 
@@ -147,8 +148,18 @@ function isSameReviewState(next) {
   );
 }
 
-function applyState(next) {
+function applyState(next, source = "external") {
   if (!next || isSameReviewState(next)) return false;
+  const unsavedEditWasSuperseded =
+    editMode &&
+    source !== "revision" &&
+    (next.proposalId !== reviewState?.proposalId ||
+      next.version !== reviewState?.version ||
+      next.status === "outdated" ||
+      !next.isCurrentVersion);
+  editConflictNotice = unsavedEditWasSuperseded
+    ? "Your unsaved edits were not applied because a newer campaign proposal became current. Review the latest proposal before editing again."
+    : "";
   reviewState = next;
   editMode = false;
   editDraft = null;
@@ -303,10 +314,12 @@ function reviewRows(campaign) {
     rows.push(["Campaign type", `${campaign.campaignType === "IOS14_CAMPAIGN" ? "iOS 14 Dedicated Campaign" : "Regular Campaign"} ${sourceBadge("campaignType")}`]);
   }
   rows.push(
-    ["Campaign budget optimization", `${campaign.budgetOptimizeOn ? "On" : "Off"} ${sourceBadge("budgetOptimizeOn")}`],
-    ["Catalog", catalogReviewValue(campaign)],
-    ["Special ad category", `${escapeHtml(labelForSpecialIndustries(campaign))} ${sourceBadge("specialIndustries")}`]
+    ["Campaign budget optimization", `${campaign.budgetOptimizeOn ? "On" : "Off"} ${sourceBadge("budgetOptimizeOn")}`]
   );
+  if (["WEB_CONVERSIONS", "LEAD_GENERATION"].includes(campaign.objectiveType)) {
+    rows.push(["Catalog", catalogReviewValue(campaign)]);
+  }
+  rows.push(["Special ad category", `${escapeHtml(labelForSpecialIndustries(campaign))} ${sourceBadge("specialIndustries")}`]);
   return rows;
 }
 
@@ -320,7 +333,8 @@ function statusTag(state) {
 
 function renderNotice(state) {
   if (state.status === "outdated") {
-    return '<div class="notice notice-neutral" role="status">A newer version of this campaign is available below. This proposal can no longer be used.</div>';
+    const message = editConflictNotice || "A newer version of this campaign is available below. This proposal can no longer be used.";
+    return `<div class="notice notice-neutral" role="status">${escapeHtml(message)}</div>`;
   }
   if (state.status === "created") {
     const created = state.execution || {};
@@ -423,7 +437,8 @@ function renderEdit() {
           ${option("IOS14_CAMPAIGN", "iOS 14 Dedicated Campaign", campaign.campaignType)}
         </select></label>`
       : "";
-  const catalogType = campaign.catalogEnabled
+  const catalogSupported = ["WEB_CONVERSIONS", "LEAD_GENERATION"].includes(campaign.objectiveType);
+  const catalogType = catalogSupported && campaign.catalogEnabled
     ? `<label class="field"><span>Catalog type</span><select data-field="catalogType">
         ${option("ECOMMERCE", "E-commerce", campaign.catalogType)}
         ${option("TRAVEL_ENTERTAINMENT", "Travel and entertainment", campaign.catalogType)}
@@ -462,11 +477,10 @@ function renderEdit() {
       </select></label>
       <label class="field"><span>Campaign budget (${escapeHtml(reviewState.account.currency)})</span><input data-field="budget" type="number" min="0.01" step="0.01" value="${campaign.budget ?? ""}" ${budgetRequired ? "required" : "disabled"}></label>
       ${objectiveFields}
-      <label class="field"><span>Catalog</span><select data-field="catalogEnabled" data-rerender>
+      ${catalogSupported ? `<label class="field"><span>Catalog</span><select data-field="catalogEnabled" data-rerender>
         ${option("false", "Not used", String(campaign.catalogEnabled))}
         ${option("true", "Used", String(campaign.catalogEnabled))}
-      </select></label>
-      ${catalogType}
+      </select></label>${catalogType}` : ""}
       <label class="field"><span>Special ad category</span><select data-field="specialIndustry">
         ${option("NOT_CONFIRMED", "Not confirmed", specialValue)}
         ${option("NONE", "None selected", specialValue)}
@@ -497,8 +511,12 @@ function collectEditDraft() {
     budgetMode: value("budgetMode"),
     budgetOptimizeOn: value("budgetOptimizeOn") === "true",
     salesDestination: value("objectiveType") === "WEB_CONVERSIONS" ? value("salesDestination") : undefined,
-    catalogEnabled: value("catalogEnabled") === "true",
-    catalogType: value("catalogEnabled") === "true" ? value("catalogType") : undefined,
+    catalogEnabled: ["WEB_CONVERSIONS", "LEAD_GENERATION"].includes(value("objectiveType"))
+      ? value("catalogEnabled") === "true"
+      : false,
+    catalogType: ["WEB_CONVERSIONS", "LEAD_GENERATION"].includes(value("objectiveType")) && value("catalogEnabled") === "true"
+      ? value("catalogType")
+      : undefined,
     specialIndustries: specialIndustry && !["NONE", "NOT_CONFIRMED"].includes(specialIndustry) ? [specialIndustry] : [],
     specialIndustriesConfirmed: specialIndustry !== "NOT_CONFIRMED",
     appPromotionType: value("objectiveType") === "APP_PROMOTION" ? value("appPromotionType") : undefined,
@@ -515,7 +533,7 @@ async function invoke(name, args) {
     const result = await callTool(name, args);
     const next = extractReviewState(result);
     if (!next) throw new Error("Campaign Review returned no state.");
-    applyState(next);
+    applyState(next, name === actionTool("revise") ? "revision" : "action");
   } catch (error) {
     reviewState = {
       ...reviewState,
@@ -536,7 +554,7 @@ async function invoke(name, args) {
 }
 
 async function refreshStatus() {
-  if (!reviewState?.proposalId || busy || editMode || ["created", "outdated"].includes(reviewState.status)) return;
+  if (!reviewState?.proposalId || busy || ["created", "outdated"].includes(reviewState.status)) return;
   try {
     const result = await callTool(actionTool("status"), {
       proposalId: reviewState.proposalId,
@@ -544,7 +562,7 @@ async function refreshStatus() {
     });
     const next = extractReviewState(result);
     if (next && JSON.stringify(next) !== JSON.stringify(reviewState)) {
-      applyState(next);
+      applyState(next, "status");
       render();
     }
   } catch {
@@ -569,12 +587,14 @@ function scheduleStatusRefresh() {
 
 function bindInteractions() {
   root.querySelector('[data-action="edit"]')?.addEventListener("click", () => {
+    editConflictNotice = "";
     editMode = true;
     editDraft = { ...reviewState.campaign };
     render();
     root.querySelector('[data-field="campaignName"]')?.focus();
   });
   root.querySelector('[data-action="cancel"]')?.addEventListener("click", () => {
+    editConflictNotice = "";
     editMode = false;
     editDraft = null;
     render();

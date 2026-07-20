@@ -18,6 +18,7 @@ import {
   createCampaignUpdateReviewDemo,
   createCreativePerformanceDemo
 } from "./decision-demo.js";
+import { registerDelegatedOAuthRoutes, requireDelegatedChatGptOAuth } from "./delegated-oauth.js";
 
 const port = process.env.PORT
   ? Number.parseInt(process.env.PORT, 10)
@@ -29,6 +30,21 @@ const reportingWidgetJs = readFileSync(join(currentDir, "../web/reporting-widget
 const reportingWidgetCss = readFileSync(join(currentDir, "../web/reporting-widget.css"), "utf8");
 const app = express();
 app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: false }));
+app.use(
+  cors({
+    exposedHeaders: ["WWW-Authenticate", "Mcp-Session-Id", "Last-Event-Id", "Mcp-Protocol-Version"],
+    origin: "*"
+  })
+);
+const publicBaseUrl = (
+  process.env.PUBLIC_BASE_URL || process.env.HOORAY_PUBLIC_BASE_URL || "https://tiktok-ads-agent-poc.onrender.com"
+).replace(/\/$/, "");
+const delegatedOAuth = registerDelegatedOAuthRoutes(app, {
+  publicBaseUrl,
+  tikTokFlatMcpUrl: process.env.TIKTOK_FLAT_MCP_URL
+});
+const requireChatGptOAuth = requireDelegatedChatGptOAuth(delegatedOAuth.resourceMetadataUrl);
 
 function escapeHtml(value: string) {
   return value
@@ -38,13 +54,6 @@ function escapeHtml(value: string) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-
-app.use(
-  cors({
-    exposedHeaders: ["WWW-Authenticate", "Mcp-Session-Id", "Last-Event-Id", "Mcp-Protocol-Version"],
-    origin: "*"
-  })
-);
 
 type SessionTransport = StreamableHTTPServerTransport;
 const transports: Record<string, SessionTransport> = {};
@@ -207,9 +216,9 @@ async function handleDelete(req: Request, res: Response) {
 }
 
 const mcpEndpoints = ["/mcp", "/mcp-v2", "/mcp/chatgpt", "/mcp/claude", "/mcp/reporting"];
-app.post(mcpEndpoints, handlePost);
-app.get(mcpEndpoints, handleGet);
-app.delete(mcpEndpoints, handleDelete);
+app.post(mcpEndpoints, (req, res, next) => req.path === "/mcp/chatgpt" ? requireChatGptOAuth(req, res, next) : next(), handlePost);
+app.get(mcpEndpoints, (req, res, next) => req.path === "/mcp/chatgpt" ? requireChatGptOAuth(req, res, next) : next(), handleGet);
+app.delete(mcpEndpoints, (req, res, next) => req.path === "/mcp/chatgpt" ? requireChatGptOAuth(req, res, next) : next(), handleDelete);
 app.get("/report-preview", (req: Request, res: Response) => {
   const preview = typeof req.query.card === "string" ? req.query.card : "";
   const decisionState = preview === "creative"
@@ -258,6 +267,12 @@ app.get("/health", (_req: Request, res: Response) => {
     chatGptMcpEndpoint: "/mcp/chatgpt",
     claudeMcpEndpoint: "/mcp/claude",
     reportingMcpEndpoint: "/mcp/reporting",
+    chatGptOAuth: {
+      mode: "delegated_per_user",
+      issuer: delegatedOAuth.issuer,
+      resourceMetadataUrl: delegatedOAuth.resourceMetadataUrl,
+      upstreamRedirectUri: delegatedOAuth.upstreamRedirectUri
+    },
     claudeTransportMode: "stateless",
     reportPreview: "/report-preview",
     sessions: Object.keys(transports).length,

@@ -198,7 +198,9 @@ export function normalizeCampaignInput(input: CampaignReviewInput, advertiserId:
   // Defaults are proposed settings too; never present them as if the user supplied them.
   if (input.budgetMode === undefined) aiSuggestedFields.add("budgetMode");
   if (input.budgetOptimizeOn === undefined) aiSuggestedFields.add("budgetOptimizeOn");
-  if (input.catalogEnabled === undefined) aiSuggestedFields.add("catalogEnabled");
+  if (["WEB_CONVERSIONS", "LEAD_GENERATION"].includes(input.objectiveType) && input.catalogEnabled === undefined) {
+    aiSuggestedFields.add("catalogEnabled");
+  }
   if (input.objectiveType === "APP_PROMOTION" && input.campaignType === undefined) {
     aiSuggestedFields.add("campaignType");
   }
@@ -256,6 +258,12 @@ export function validateCampaignReview(
   if (campaign.objectiveType !== "APP_PROMOTION" && campaign.appPromotionType) {
     errors.push("App promotion type is available only for App Promotion.");
   }
+  if (campaign.objectiveType !== "APP_PROMOTION" && campaign.appId) {
+    errors.push("App ID is available only for App Promotion.");
+  }
+  if (campaign.objectiveType !== "APP_PROMOTION" && campaign.campaignType === "IOS14_CAMPAIGN") {
+    errors.push("An iOS 14 Dedicated Campaign is available only for App Promotion.");
+  }
   if (campaign.campaignType === "IOS14_CAMPAIGN" && !campaign.appId) {
     errors.push("App ID is required for an iOS 14 Dedicated Campaign.");
   }
@@ -264,6 +272,9 @@ export function validateCampaignReview(
   }
   if (campaign.objectiveType === "WEB_CONVERSIONS" && campaign.catalogEnabled && !campaign.catalogType) {
     errors.push("Catalog type is required when Catalog is enabled for Website Conversions.");
+  }
+  if (!campaign.catalogEnabled && campaign.catalogType) {
+    errors.push("Catalog type must be omitted when Catalog is not used.");
   }
   if (campaign.salesDestination === "APP" && (!campaign.catalogEnabled || !campaign.catalogType)) {
     errors.push("App sales destination requires Catalog and a supported Catalog type.");
@@ -289,8 +300,7 @@ export function buildSmartPlusCampaignPayload(campaign: NormalizedCampaignReview
     objective_type: campaign.objectiveType,
     operation_status: "ENABLE",
     budget_optimize_on: campaign.budgetOptimizeOn,
-    budget_mode: campaign.budgetMode,
-    campaign_type: campaign.campaignType
+    budget_mode: campaign.budgetMode
   };
 
   if (campaign.budget !== undefined) payload.budget = campaign.budget;
@@ -300,8 +310,11 @@ export function buildSmartPlusCampaignPayload(campaign: NormalizedCampaignReview
   }
   if (campaign.catalogEnabled && campaign.catalogType) payload.catalog_type = campaign.catalogType;
   if (campaign.specialIndustries.length > 0) payload.special_industries = campaign.specialIndustries;
-  if (campaign.appPromotionType) payload.app_promotion_type = campaign.appPromotionType;
-  if (campaign.appId) payload.app_id = campaign.appId;
+  if (campaign.objectiveType === "APP_PROMOTION") {
+    payload.campaign_type = campaign.campaignType;
+    if (campaign.appPromotionType) payload.app_promotion_type = campaign.appPromotionType;
+    if (campaign.appId) payload.app_id = campaign.appId;
+  }
 
   return payload;
 }
@@ -763,7 +776,12 @@ export function createCampaignReviewStore(
     if (!record) return createErrorState(new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found."), mode);
     if (record.retired) return stateFor(record, expectedVersion, mode);
     if (expectedVersion !== record.currentVersion) return stateFor(record, expectedVersion, mode);
-    if (record.execution.status === "created" || record.execution.status === "creating" || record.execution.status === "checking") {
+    if (
+      record.execution.status === "created" ||
+      record.execution.status === "creating" ||
+      record.execution.status === "checking" ||
+      record.execution.status === "outcome_unknown"
+    ) {
       return stateFor(record, record.currentVersion, mode);
     }
 

@@ -37,6 +37,8 @@ Set `CAMPAIGN_REVIEW_WRITE_MODE=campaign_only` in production. There is no advert
 
 The suite covers the three BRD starting states: complete input, partial input with model recommendations, and exploratory input that requires a business interview. See [`docs/campaign-review-golden-prompts.md`](docs/campaign-review-golden-prompts.md) for the full matrix.
 
+The exact UI-to-Flat-MCP field, enum, conditional, and omission rules are documented in [`docs/campaign-review-api-field-mapping.md`](docs/campaign-review-api-field-mapping.md). A generic `industry` field is intentionally unsupported and must not be displayed or submitted.
+
 - Complete: `Prepare a Website Conversions Smart+ Campaign review for Education Coaching0315. Name it QA Hooray Web, use USD 50 dynamic daily budget, Campaign Budget Optimization on, Website destination, no catalog, and confirm no special ad category. Show the card and do not create until I confirm.` No visible field should be labeled `AI suggested`.
 - Partial: `I sell premium running shoes through my website. Use Education Coaching0315 and recommend the missing Smart+ Campaign settings for a USD 50/day test. Show me the proposal before creating anything.` Every model-proposed visible setting must be labeled `AI suggested`.
 - Exploratory: `I want to advertise my new product on TikTok, but I am not sure how to set it up.` The model must ask a concise business interview and must not show an actionable card yet.
@@ -57,10 +59,18 @@ Reporting and demo QA remain isolated on `/mcp/reporting`; see `docs/reporting-l
 
 ## Production configuration
 
-Required Render variables include the existing TikTok app credentials and:
+Hooray Campaign Review uses delegated per-user OAuth. Each ChatGPT member connects their own TikTok advertiser account, and ChatGPT sends that member's bearer token to `/mcp/chatgpt`. The Hooray service does not persist those tokens.
+
+Required Render variables for the ChatGPT path are:
 
 - `PUBLIC_BASE_URL=https://tiktok-ads-agent-poc.onrender.com`
 - `CAMPAIGN_REVIEW_WRITE_MODE=campaign_only`
-- `TIKTOK_REDIRECT_URI=https://tiktok-ads-agent-poc.onrender.com/callback`
+- `TIKTOK_FLAT_MCP_URL=https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat`
 
-The server forwards a delegated ChatGPT bearer token when supplied. It also retains the existing Flat OAuth callback as a fallback. For multi-user production, use delegated per-user authorization or persistent per-user token storage; do not rely on ephemeral global `.local` auth files.
+TikTok's live Flat MCP metadata declares a PKCE public client (`token_endpoint_auth_methods_supported: ["none"]`). Therefore the ChatGPT connection uses the TikTok App ID as OAuth Client ID and leaves OAuth Client Secret empty. Do not store the TikTok App Secret in source code or Render for this delegated ChatGPT flow.
+
+Register this exact advertiser redirect URL in the TikTok developer app:
+
+- `https://tiktok-ads-agent-poc.onrender.com/oauth/tiktok/callback`
+
+See [`docs/campaign-review-oauth-setup-zh.md`](docs/campaign-review-oauth-setup-zh.md) for the exact ChatGPT fields and [`docs/campaign-review-brd-qa-matrix.md`](docs/campaign-review-brd-qa-matrix.md) for interaction coverage.

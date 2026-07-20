@@ -14,6 +14,7 @@
     "qa:decision-cards": "node scripts/qa-decision-cards.mjs",
     "qa:campaign-review-contract": "node --import tsx scripts/qa-campaign-review-contract.mjs",
     "qa:campaign-review-mcp": "node scripts/qa-campaign-review-mcp.mjs",
+    "qa:campaign-review-oauth": "node --import tsx scripts/qa-campaign-review-oauth.mjs",
     "qa:campaign-review-demo": "node scripts/qa-campaign-review-demo.mjs",
     "qa:campaign-review-demo-widget": "node scripts/qa-campaign-review-demo-widget.mjs",
     "qa:campaign-review-widget": "node scripts/qa-campaign-review-widget.mjs",

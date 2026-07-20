@@ -72,8 +72,7 @@ export function createTikTokAdsPocServer(
 
   const authContext: TikTokMcpAuthContext = {
     authorization: options.tikTokAuthorization,
-    // Prefer ChatGPT's delegated bearer token; keep the existing Flat callback as a fallback.
-    requireDelegatedAuthorization: false
+    requireDelegatedAuthorization: hostSurface === "chatgpt"
   };
 
   registerCampaignReviewApp(server, {

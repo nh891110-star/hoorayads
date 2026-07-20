@@ -84,6 +84,12 @@ try {
     confirmed: true
   });
   assert(submitting.structuredContent?.campaignReviewState?.status === "creating", "Demo did not expose the submitting state.");
+  const duplicateWhileSubmitting = await call("submit_smartplus_campaign_review_demo", {
+    proposalId: revisedState.proposalId,
+    expectedVersion: revisedState.version,
+    confirmed: true
+  });
+  assert(duplicateWhileSubmitting.structuredContent?.campaignReviewState?.status === "creating", "A duplicate submission must reuse the in-flight operation.");
   await wait(1000);
   const completed = await call("get_smartplus_campaign_review_demo_status", {
     proposalId: revisedState.proposalId,
@@ -93,6 +99,15 @@ try {
   assert(completedState?.status === "created", "Demo submission did not complete.");
   assert(completedState?.execution?.campaignId?.startsWith("demo-"), "Demo receipt resembles a real TikTok Campaign ID.");
   assert(completed._meta?.mutationOccurred === false, "Demo result incorrectly claims a TikTok mutation.");
+  const duplicateAfterCompletion = await call("submit_smartplus_campaign_review_demo", {
+    proposalId: revisedState.proposalId,
+    expectedVersion: revisedState.version,
+    confirmed: true
+  });
+  assert(
+    duplicateAfterCompletion.structuredContent?.campaignReviewState?.execution?.campaignId === completedState.execution.campaignId,
+    "A duplicate approval after completion must return the original receipt."
+  );
 
   const app = await call("review_smartplus_campaign_demo", {
     ...base,
@@ -125,6 +140,35 @@ try {
   });
   assert(failedStatus.structuredContent?.campaignReviewState?.status === "error", "Simulated submission error did not render an error state.");
 
+  const unknown = await call("review_smartplus_campaign_demo", {
+    ...base,
+    campaignName: "Demo QA - Outcome unknown",
+    objectiveType: "WEB_CONVERSIONS",
+    salesDestination: "WEBSITE",
+    simulationOutcome: "OUTCOME_UNKNOWN"
+  });
+  const unknownState = unknown.structuredContent?.campaignReviewState;
+  await call("submit_smartplus_campaign_review_demo", {
+    proposalId: unknownState.proposalId,
+    expectedVersion: unknownState.version,
+    confirmed: true
+  });
+  await wait(1000);
+  const unknownStatus = await call("get_smartplus_campaign_review_demo_status", {
+    proposalId: unknownState.proposalId,
+    expectedVersion: unknownState.version
+  });
+  assert(unknownStatus.structuredContent?.campaignReviewState?.status === "outcome_unknown", "An unconfirmed result must remain in the reconciliation state.");
+  const blockedUnknownRetry = await call("submit_smartplus_campaign_review_demo", {
+    proposalId: unknownState.proposalId,
+    expectedVersion: unknownState.version,
+    confirmed: true
+  });
+  assert(
+    blockedUnknownRetry.structuredContent?.campaignReviewState?.status === "outcome_unknown",
+    "An unconfirmed create outcome must block a second create request."
+  );
+
   console.log(JSON.stringify({
     ok: true,
     checked: [
@@ -133,9 +177,11 @@ try {
       "lead_generation_revision",
       "app_promotion",
       "immutable_versions",
+      "duplicate_approval_idempotency",
       "submitting",
       "demo_receipt",
       "submission_error",
+      "outcome_unknown_reconciliation_lock",
       "no_tiktok_mutation"
     ]
   }, null, 2));
