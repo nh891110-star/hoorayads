@@ -214,12 +214,6 @@ export function registerDelegatedOAuthRoutes(app: Express, options: DelegatedOAu
     authorizationUrl.searchParams.set("resource", tikTokResource);
     logOAuth("authorization_started", {
       correlationId,
-      clientId,
-      redirectUri,
-      state: firstString(req.query.state),
-      codeChallenge,
-      codeChallengeMethod,
-      requestedScope,
       redirect: redirectSummary(redirectUri),
       requestedResource: requestedResource || resource
     });
