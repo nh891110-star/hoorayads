@@ -200,8 +200,10 @@ export function registerDelegatedOAuthRoutes(app: Express, options: DelegatedOAu
     scopes_supported: [OAUTH_SCOPE]
   };
   const protectedResourceMetadata = {
-    resource,
-    authorization_servers: [issuer],
+    // ChatGPT must register directly with TikTok so TikTok sees the official
+    // OpenAI connector callback instead of a localhost or intermediary URL.
+    resource: tikTokResource,
+    authorization_servers: [tikTokAuthorizationServer],
     bearer_methods_supported: ["header"],
     scopes_supported: [OAUTH_SCOPE],
     resource_name: "Hooray TikTok Campaign Review"
@@ -212,7 +214,7 @@ export function registerDelegatedOAuthRoutes(app: Express, options: DelegatedOAu
     res.json(authorizationServerMetadata);
   });
   app.get("/.well-known/oauth-protected-resource/mcp/chatgpt", (_req, res) => {
-    res.setHeader("Cache-Control", "public, max-age=300");
+    res.setHeader("Cache-Control", "no-store");
     res.json(protectedResourceMetadata);
   });
 
@@ -526,6 +528,8 @@ export function registerDelegatedOAuthRoutes(app: Express, options: DelegatedOAu
   return {
     issuer,
     resource,
+    upstreamAuthorizationServer: tikTokAuthorizationServer,
+    upstreamResource: tikTokResource,
     resourceMetadataUrl,
     registrationEnabled,
     registrationEndpoint: `${issuer}/register`,
@@ -534,7 +538,7 @@ export function registerDelegatedOAuthRoutes(app: Express, options: DelegatedOAu
   };
 }
 
-export function requireDelegatedChatGptOAuth(resourceMetadataUrl: string) {
+export function requireDelegatedChatGptOAuth(resourceMetadataUrl: string, tokenResource?: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     const authorization = req.headers.authorization?.trim() || "";
     if (/^Bearer\s+\S+$/i.test(authorization)) {
@@ -543,7 +547,7 @@ export function requireDelegatedChatGptOAuth(resourceMetadataUrl: string) {
     }
     res.setHeader(
       "WWW-Authenticate",
-      `Bearer error="invalid_token", error_description="TikTok advertiser authorization is required", scope="${OAUTH_SCOPE}", resource_metadata="${resourceMetadataUrl}"`
+      `Bearer error="invalid_token", error_description="TikTok advertiser authorization is required", scope="${OAUTH_SCOPE}", resource="${tokenResource || ""}", resource_metadata="${resourceMetadataUrl}"`
     );
     res.status(401).json({ error: "invalid_token", error_description: "Connect a TikTok advertiser account to use Hooray TikTok Ads." });
   };

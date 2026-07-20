@@ -48,7 +48,10 @@ const delegatedOAuth = registerDelegatedOAuthRoutes(app, {
   // Dedicated key is preferred; App Secret fallback keeps existing deployments working during migration.
   registrationSigningKey: process.env.OAUTH_REGISTRATION_SIGNING_KEY || tikTokAppConfig.appSecret
 });
-const requireChatGptOAuth = requireDelegatedChatGptOAuth(delegatedOAuth.resourceMetadataUrl);
+const requireChatGptOAuth = requireDelegatedChatGptOAuth(
+  delegatedOAuth.resourceMetadataUrl,
+  delegatedOAuth.upstreamResource
+);
 
 function escapeHtml(value: string) {
   return value
@@ -272,12 +275,11 @@ app.get("/health", (_req: Request, res: Response) => {
     claudeMcpEndpoint: "/mcp/claude",
     reportingMcpEndpoint: "/mcp/reporting",
     chatGptOAuth: {
-      mode: "delegated_per_user",
-      issuer: delegatedOAuth.issuer,
-      dynamicClientRegistration: delegatedOAuth.registrationEnabled,
-      registrationEndpoint: delegatedOAuth.registrationEnabled ? delegatedOAuth.registrationEndpoint : null,
+      mode: "direct_tiktok_per_user",
+      authorizationServer: delegatedOAuth.upstreamAuthorizationServer,
+      tokenResource: delegatedOAuth.upstreamResource,
       resourceMetadataUrl: delegatedOAuth.resourceMetadataUrl,
-      upstreamRedirectUri: delegatedOAuth.upstreamRedirectUri
+      expectedClientRedirect: "https://chatgpt.com/connector/oauth/{connector-id}"
     },
     claudeTransportMode: "stateless",
     reportPreview: "/report-preview",

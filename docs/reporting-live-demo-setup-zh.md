@@ -23,8 +23,8 @@ UI 优先使用 MCP Apps 标准 `_meta.ui.resourceUri`、`ui/initialize`、`ui/n
 - Hooray Campaign Review MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`
 - Reporting/QA MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/reporting`
 - Claude MCP：`https://tiktok-ads-agent-poc.onrender.com/mcp/claude`
-- Hooray OAuth issuer：`https://tiktok-ads-agent-poc.onrender.com/oauth`
-- Campaign Review OAuth callback：`https://tiktok-ads-agent-poc.onrender.com/oauth/tiktok/callback`
+- Legacy Hooray OAuth issuer（新 ChatGPT connector 不使用）：`https://tiktok-ads-agent-poc.onrender.com/oauth`
+- Campaign Review OAuth callback：由 TikTok DCR 注册的 `https://chatgpt.com/connector/oauth/{callback_id}`
 - 只读预览：`https://tiktok-ads-agent-poc.onrender.com/report-preview`
 
 注意：这些新路径需要先把当前 workspace 版本部署到 Render。部署前，线上服务仍是旧版本。
@@ -40,8 +40,8 @@ ChatGPT custom MCP apps 当前适用于 Business、Enterprise 和 Edu 的 ChatGP
 5. Description 填 `Review, edit, and confirm one live TikTok Smart+ Campaign before creation.`
 6. MCP server URL 填 `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`。
 7. App authentication 选择 `OAuth`。
-8. OAuth Client ID 填 TikTok developer app 的 App ID；OAuth Client Secret 留空。TikTok Flat MCP 是 PKCE public client，线上 metadata 明确声明 token endpoint authentication method 为 `none`。
-9. 在 TikTok developer portal 将 Advertiser redirect URL 设置为 `https://tiktok-ads-agent-poc.onrender.com/oauth/tiktok/callback`。ChatGPT callback 不直接注册到 TikTok，由 Hooray broker 校验后转发。
+8. 不填写 TikTok developer app 的 App ID 或 App Secret。TikTok Flat MCP 会通过 DCR 生成 public client，并使用 PKCE。
+9. Connect 后确认 `redirect_uri` 是 `https://chatgpt.com/connector/oauth/{callback_id}`；不再使用 Hooray、Render 或 Cloudflare callback。
 10. 点击 `Scan Tools` 并为当前用户完成 advertiser authorization。确认模型可见工具只包含 `review_smartplus_campaign`；Edit、Status、Confirm/Create 是 widget-only action tools。确认列表中没有旧 workspace、report 或 demo tools，然后点击 `Create`。
 11. 发布前用另一个 workspace member 登录，确认其必须独立授权且只能看到自己的 advertiser accounts。
 
@@ -138,7 +138,7 @@ CAMPAIGN_REVIEW_WRITE_MODE=campaign_only
 REPORTING_DEFAULT_ADVERTISER_ID=<optional>
 ```
 
-TikTok developer portal 的 Advertiser redirect URL 必须精确等于 `https://tiktok-ads-agent-poc.onrender.com/oauth/tiktok/callback`。ChatGPT 使用 Hooray `/oauth/register` 动态注册它自己的 callback；ChatGPT callback 不直接登记到 TikTok。OAuth Client Secret 不进入 ChatGPT 配置或 token exchange；每位用户的 token 由 ChatGPT 保存并作为 bearer 发送。旧 `/callback` 仅为 Reporting/Claude legacy fallback 保留，不属于正式 Hooray ChatGPT 授权链路。
+ChatGPT 直接使用 TikTok Flat MCP `/oauth/register` 动态注册 OpenAI 官方 callback。OAuth Client Secret 不进入 ChatGPT 配置或 token exchange；每位用户的 token 由 ChatGPT 保存并作为 bearer 发送。旧 `/callback` 与 `/oauth/tiktok/callback` 仅为 legacy fallback 保留，不属于正式 Hooray ChatGPT 授权链路。
 
 ## 8. 当前能力与生产边界
 

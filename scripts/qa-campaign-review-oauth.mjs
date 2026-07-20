@@ -35,7 +35,7 @@ const oauth = registerDelegatedOAuthRoutes(app, {
   registrationSigningKey: "qa-registration-signing-key-with-sufficient-entropy",
   upstreamClientId
 });
-app.get("/protected", requireDelegatedChatGptOAuth(oauth.resourceMetadataUrl), (_req, res) => res.json({ ok: true }));
+app.get("/protected", requireDelegatedChatGptOAuth(oauth.resourceMetadataUrl, oauth.upstreamResource), (_req, res) => res.json({ ok: true }));
 
 const server = createServer(app);
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -82,12 +82,16 @@ try {
 
   const protectedMetadata = await fetch(`${localBase}/.well-known/oauth-protected-resource/mcp/chatgpt`);
   const protectedBody = await protectedMetadata.json();
-  assert(protectedBody.resource === resource, "Protected resource metadata is incorrect.");
-  assert(protectedBody.authorization_servers[0] === `${publicBaseUrl}/oauth`, "Protected resource issuer is incorrect.");
+  assert(protectedBody.resource === oauth.upstreamResource, "Protected resource must request a TikTok-scoped token.");
+  assert(
+    protectedBody.authorization_servers[0] === oauth.upstreamAuthorizationServer,
+    "ChatGPT must register directly with the TikTok authorization server."
+  );
 
   const missingBearer = await fetch(`${localBase}/protected`);
   assert(missingBearer.status === 401, "Protected MCP request without bearer token was not rejected.");
   assert(missingBearer.headers.get("www-authenticate")?.includes(oauth.resourceMetadataUrl), "OAuth discovery header is missing resource metadata.");
+  assert(missingBearer.headers.get("www-authenticate")?.includes(oauth.upstreamResource), "OAuth challenge is missing the TikTok token resource.");
   const delegatedBearer = await fetch(`${localBase}/protected`, { headers: { Authorization: "Bearer per-user-token" } });
   assert(delegatedBearer.status === 200, "Protected MCP request with bearer token was rejected.");
 
@@ -299,6 +303,8 @@ try {
     checked: [
       "oauth_discovery",
       "protected_resource_metadata",
+      "direct_tiktok_authorization_server",
+      "official_chatgpt_callback_passthrough",
       "cors",
       "bearer_gate",
       "chatgpt_redirect_allowlist",

@@ -59,22 +59,14 @@ Reporting and demo QA remain isolated on `/mcp/reporting`; see `docs/reporting-l
 
 ## Production configuration
 
-Hooray Campaign Review uses delegated per-user OAuth. Each ChatGPT member connects their own TikTok advertiser account, and ChatGPT sends that member's bearer token to `/mcp/chatgpt`. The Hooray service does not persist those tokens.
+Hooray Campaign Review uses direct TikTok Flat MCP per-user OAuth. ChatGPT dynamically registers its official `https://chatgpt.com/connector/oauth/...` callback with TikTok, stores that member's token, and sends the bearer token to `/mcp/chatgpt`. Hooray forwards the token to TikTok Flat MCP and does not persist it.
 
 Required Render variables for the ChatGPT path are:
 
 - `PUBLIC_BASE_URL=https://tiktok-ads-agent-poc.onrender.com`
 - `CAMPAIGN_REVIEW_WRITE_MODE=campaign_only`
 - `TIKTOK_FLAT_MCP_URL=https://business-api.tiktok.com/open_mcp/tt-ads-mcp-flat`
-- `TIKTOK_APP_ID=<approved TikTok app ID>`
-- `OAUTH_REGISTRATION_SIGNING_KEY=<dedicated random secret>`
 
-TikTok's live Flat MCP metadata declares a PKCE public client (`token_endpoint_auth_methods_supported: ["none"]`). New ChatGPT connections should use Hooray's restricted Dynamic Client Registration endpoint at `/oauth/register`; ChatGPT receives a signed public client ID bound to its exact callback, while Hooray uses the approved TikTok App ID upstream. OAuth Client Secret remains empty and is never forwarded to TikTok.
-
-The static TikTok App ID client path remains available for existing connectors. DCR rejects localhost, dynamic ports, raw IPs, EC2 dynamic hosts, non-HTTPS callbacks, and redirect URIs not included in the original registration.
-
-Register this exact advertiser redirect URL in the TikTok developer app:
-
-- `https://tiktok-ads-agent-poc.onrender.com/oauth/tiktok/callback`
+TikTok's live Flat MCP metadata declares a PKCE public client (`token_endpoint_auth_methods_supported: ["none"]`) and a DCR endpoint. New ChatGPT connections register directly with TikTok, so the TikTok developer App ID, App Secret, and Hooray callback are not part of the active ChatGPT flow. Existing broker routes remain temporarily available only for backward compatibility.
 
 See [`docs/campaign-review-oauth-setup-zh.md`](docs/campaign-review-oauth-setup-zh.md) for the exact ChatGPT fields and [`docs/campaign-review-brd-qa-matrix.md`](docs/campaign-review-brd-qa-matrix.md) for interaction coverage.
