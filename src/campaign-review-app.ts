@@ -32,8 +32,9 @@ import {
 import type { CampaignReviewState } from "./campaign-review.js";
 import type { TikTokMcpAuthContext } from "./tiktok-mcp.js";
 
-export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v16.html";
+export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v17.html";
 const LEGACY_CAMPAIGN_REVIEW_WIDGET_URIS = [
+  "ui://widget/tiktok-smartplus-campaign-review-v16.html",
   "ui://widget/tiktok-smartplus-campaign-review-v15.html",
   "ui://widget/tiktok-smartplus-campaign-review-v14.html",
   "ui://widget/tiktok-smartplus-campaign-review-v13.html",
@@ -179,7 +180,7 @@ function registerResourceAt(
 function registerResource(server: McpServer, resourceMeta: Record<string, unknown>) {
   registerResourceAt(
     server,
-    "tiktok-smartplus-campaign-review-v16",
+    "tiktok-smartplus-campaign-review-v17",
     CAMPAIGN_REVIEW_WIDGET_URI,
     resourceMeta
   );

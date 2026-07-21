@@ -426,5 +426,57 @@ assert(protocolCalls.some((call) => call.name === "revise_smartplus_campaign_rev
 assert(protocolCalls.every((call) => call.arguments?.proposalId === "proposal-qa"), "The MCP Apps bridge lost the server proposal identifier.");
 await protocolPage.close();
 
+const staleNativeStatusBridgePage = await browser.newPage({ viewport: { width: 860, height: 960 } });
+await staleNativeStatusBridgePage.setContent('<iframe id="app" style="width:840px;height:900px;border:0"></iframe>');
+await staleNativeStatusBridgePage.evaluate(({ css, widgetJs, initialState }) => {
+  const iframe = document.getElementById("app");
+  window.addEventListener("message", (event) => {
+    if (event.source !== iframe.contentWindow || event.data?.jsonrpc !== "2.0") return;
+    const message = event.data;
+    if (message.method === "ui/initialize") {
+      event.source.postMessage({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          protocolVersion: "2026-01-26",
+          hostInfo: { name: "qa-chatgpt-host", version: "1.0.0" },
+          hostCapabilities: { serverTools: {} },
+          hostContext: {}
+        }
+      }, "*");
+      return;
+    }
+    if (message.method === "tools/call") {
+      event.source.postMessage({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: { _meta: { campaignReviewState: event.source.__serverState } }
+      }, "*");
+    }
+  });
+  const escapedState = JSON.stringify(initialState).replaceAll("<", "\\u003c");
+  iframe.srcdoc = `<!doctype html><html><head><style>${css}</style></head><body><div id="campaign-review-root"></div><script>
+    window.__originalState=${escapedState};
+    window.__serverState=window.__originalState;
+    window.__CAMPAIGN_REVIEW_PREVIEW_STATE__=window.__originalState;
+    window.openai={
+      callTool:async(name)=>{
+        if(name==="create_smartplus_campaign_from_review"){
+          window.__serverState={...window.__serverState,status:"error",readyToCreate:false,execution:{status:"failed",errorCode:"TIKTOK_API_40002",errorMessage:"Complete payment to continue."}};
+        }
+        return {structuredContent:{campaignReviewState:window.__originalState}};
+      },
+      notifyIntrinsicHeight:()=>{}
+    };
+  <\/script><script type="module">${widgetJs}<\/script></body></html>`;
+}, { css, widgetJs, initialState: baseState });
+
+const staleNativeStatusBridgeFrame = staleNativeStatusBridgePage.frameLocator("#app");
+await staleNativeStatusBridgeFrame.getByRole("button", { name: "Confirm" }).click();
+await staleNativeStatusBridgeFrame.getByText("Campaign was not created.").waitFor({ timeout: 5000 });
+assert(await staleNativeStatusBridgeFrame.getByText("Complete payment to continue.").isVisible(), "The status bridge did not surface the confirmed TikTok rejection after a stale native action result.");
+assert(await staleNativeStatusBridgeFrame.getByRole("button", { name: "Confirm" }).isDisabled(), "A confirmed TikTok rejection must not leave Confirm actionable.");
+await staleNativeStatusBridgePage.close();
+
 await browser.close();
-console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "stale_action_result_reconciliation", "state_regression_guard", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge_metadata_fallback"] }, null, 2));
+console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "stale_action_result_reconciliation", "stale_native_submit_status_bridge", "state_regression_guard", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge_metadata_fallback"] }, null, 2));

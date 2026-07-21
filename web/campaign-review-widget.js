@@ -200,6 +200,21 @@ async function callTool(name, args) {
   throw new Error("This host does not support interactive Campaign Review actions.");
 }
 
+async function callStatusTool(name, args) {
+  // ChatGPT can execute a write while returning the original message tool
+  // output to the widget. Status reads are safe to repeat, so prefer the
+  // standard MCP Apps bridge here to obtain the server-owned result instead
+  // of reading the native action cache again.
+  if (initialized) {
+    try {
+      return await rpc("tools/call", { name, arguments: args });
+    } catch {
+      // Fall back for hosts that initialize MCP Apps without serverTools.
+    }
+  }
+  return callTool(name, args);
+}
+
 function isSameReviewState(next) {
   if (!reviewState || !next) return false;
   return (
@@ -604,13 +619,26 @@ function collectEditDraft() {
 }
 
 async function invoke(name, args) {
+  const isRevision = name === actionTool("revise");
+  const isSubmission = name === actionTool("submit");
   busy = true;
+  if (isSubmission) {
+    reviewState = {
+      ...reviewState,
+      status: "creating",
+      readyToCreate: false,
+      execution: {
+        ...(reviewState.execution || {}),
+        status: "creating"
+      }
+    };
+  }
   render();
   try {
-    const result = await callTool(name, args);
+    const result = name === actionTool("status")
+      ? await callStatusTool(name, args)
+      : await callTool(name, args);
     let next = extractReviewState(result);
-    const isRevision = name === actionTool("revise");
-    const isSubmission = name === actionTool("submit");
     const resultIsCurrent = next && next.proposalId === args.proposalId && (
       isRevision
         ? next.version > args.expectedVersion
@@ -622,7 +650,7 @@ async function invoke(name, args) {
     // so edits and submission receipts cannot be hidden by that stale result.
     if (!resultIsCurrent && (isRevision || isSubmission)) {
       const statusVersion = isRevision ? args.expectedVersion + 1 : args.expectedVersion;
-      const statusResult = await callTool(actionTool("status"), {
+      const statusResult = await callStatusTool(actionTool("status"), {
         proposalId: args.proposalId,
         expectedVersion: statusVersion
       });
@@ -659,7 +687,7 @@ async function refreshStatus() {
   if (syncLocalSupersession()) return;
   if (!reviewState?.proposalId || busy || ["created", "outdated"].includes(reviewState.status)) return;
   try {
-    const result = await callTool(actionTool("status"), {
+    const result = await callStatusTool(actionTool("status"), {
       proposalId: reviewState.proposalId,
       expectedVersion: reviewState.version
     });
