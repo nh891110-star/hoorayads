@@ -13,7 +13,7 @@ import type {
   CampaignSpecialIndustry,
   CampaignType
 } from "./campaign-review-contract.js";
-import { callTikTokMcpTool, listTikTokAdvertiserAccounts } from "./tiktok-mcp.js";
+import { callTikTokMcpTool, listTikTokAdvertiserAccounts, TikTokToolCallError } from "./tiktok-mcp.js";
 import type { TikTokMcpAuthContext, TikTokMcpSurface } from "./tiktok-mcp.js";
 
 type AdvertiserAccount = {
@@ -175,6 +175,19 @@ export class CampaignReviewError extends Error {
   ) {
     super(message);
   }
+}
+
+export function classifyCampaignCreateError(error: unknown) {
+  const confirmedFailure = error instanceof CampaignReviewError || error instanceof TikTokToolCallError;
+  const reviewError = error instanceof CampaignReviewError
+    ? error
+    : error instanceof TikTokToolCallError
+      ? new CampaignReviewError(`TIKTOK_API_${error.apiCode}`, error.message)
+      : new CampaignReviewError(
+          "TIKTOK_CAMPAIGN_CREATE_STATUS_UNKNOWN",
+          error instanceof Error ? error.message : "Campaign creation status is unknown."
+        );
+  return { confirmedFailure, reviewError };
 }
 
 function numericRequestId() {
@@ -910,14 +923,14 @@ export function createCampaignReviewStore(
       };
       return stateFor(record, record.currentVersion, mode);
     } catch (error) {
-      const reviewError = error instanceof CampaignReviewError ? error : new CampaignReviewError("TIKTOK_CAMPAIGN_CREATE_STATUS_UNKNOWN", error instanceof Error ? error.message : "Campaign creation status is unknown.");
+      const { confirmedFailure, reviewError } = classifyCampaignCreateError(error);
       record.execution = {
         ...record.execution,
-        status: error instanceof CampaignReviewError ? "failed" : "outcome_unknown",
+        status: confirmedFailure ? "failed" : "outcome_unknown",
         authorizationUrl: reviewError.authorizationUrl,
         errorCode: reviewError.code,
         errorMessage:
-          error instanceof CampaignReviewError
+          confirmedFailure
             ? reviewError.message
             : "The create request may have reached TikTok, but its result was not returned. The app will check status before allowing another write."
       };

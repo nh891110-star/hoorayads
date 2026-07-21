@@ -93,6 +93,18 @@ type TikTokToolPayload = {
   request_id?: string;
 };
 
+export class TikTokToolCallError extends Error {
+  constructor(
+    public readonly toolName: string,
+    public readonly apiCode: number,
+    message: string,
+    public readonly requestId?: string
+  ) {
+    super(message);
+    this.name = "TikTokToolCallError";
+  }
+}
+
 export type TikTokToolResponse<T> =
   | {
       data: T;
@@ -453,7 +465,12 @@ async function callTikTokTool<T>(
   }
 
   if (payload.code && payload.code !== 0) {
-    throw new Error(payload.message || `TikTok MCP tool ${name} failed.`);
+    throw new TikTokToolCallError(
+      name,
+      payload.code,
+      payload.message || `TikTok MCP tool ${name} failed.`,
+      payload.request_id
+    );
   }
 
   return (payload.data ?? payload) as T;

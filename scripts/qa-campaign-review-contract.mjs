@@ -6,6 +6,7 @@ import {
 } from "../src/campaign-review-contract.ts";
 import {
   buildSmartPlusCampaignPayload,
+  classifyCampaignCreateError,
   createCampaignReviewStore,
   findExplicitAdvertiserSelection,
   getCampaignReviewStoreForProposal,
@@ -17,6 +18,7 @@ import {
   validateCampaignReadback,
   validateCampaignReview
 } from "../src/campaign-review.ts";
+import { TikTokToolCallError } from "../src/tiktok-mcp.ts";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -228,6 +230,16 @@ const rotatedTokenOldStatus = await rotatedTokenStoreA.getStatus(
 assert(rotatedTokenOldStatus.status === "outdated", "A proposal stayed active after an OAuth token rotation and replacement card.");
 resetSharedCampaignReviewStoresForTests();
 
+const confirmedApiFailure = classifyCampaignCreateError(
+  new TikTokToolCallError("smart_plus_campaign_create", 40002, "Complete payment to continue.", "qa-request")
+);
+assert(confirmedApiFailure.confirmedFailure, "A TikTok API rejection was treated as an unknown write outcome.");
+assert(confirmedApiFailure.reviewError.code === "TIKTOK_API_40002", "TikTok API error code was not preserved.");
+assert(confirmedApiFailure.reviewError.message === "Complete payment to continue.", "TikTok API error message was not preserved.");
+const unknownTransportFailure = classifyCampaignCreateError(new Error("connection reset"));
+assert(!unknownTransportFailure.confirmedFailure, "An ambiguous transport failure was incorrectly marked safe to retry.");
+assert(unknownTransportFailure.reviewError.code === "TIKTOK_CAMPAIGN_CREATE_STATUS_UNKNOWN", "Unknown write outcome lost its safety classification.");
+
 console.log(JSON.stringify({
   ok: true,
   checked: [
@@ -250,6 +262,8 @@ console.log(JSON.stringify({
     "inactive_proposal_write_guard",
     "cross_server_proposal_state",
     "oauth_user_store_isolation",
-    "oauth_token_rotation_proposal_routing"
+    "oauth_token_rotation_proposal_routing",
+    "tiktok_api_rejection_classification",
+    "unknown_transport_outcome_classification"
   ]
 }, null, 2));
