@@ -381,10 +381,6 @@ export function validateCampaignReview(
   if (campaign.specialIndustries.length > 0 && account && !["US", "CA"].includes(account.country)) {
     errors.push("Special ad categories are supported only for eligible US or Canada advertisers.");
   }
-  if (account?.status && account.status !== "STATUS_ENABLE") {
-    errors.push("The selected advertiser account is not enabled.");
-  }
-
   return errors;
 }
 

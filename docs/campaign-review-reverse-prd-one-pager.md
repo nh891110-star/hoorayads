@@ -16,13 +16,28 @@
 
 ## 2. End-to-end user flow
 
-1. **Explore:** If the request lacks consequential information, the model asks a short business-language interview. No actionable card is rendered.
-2. **Propose:** When enough Campaign-level information exists, the model calls `review_smartplus_campaign`. User-confirmed values are preserved; model-proposed values are labeled `AI suggested`.
-3. **Review:** The user reviews one deterministic Campaign card. Nothing has been created yet.
-4. **Edit:** Card edits update the current card in place. Chat edits create a new card and make the old card `Inactive`.
-5. **Approve:** The user either selects **Confirm** or gives an unambiguous later chat instruction to create the current proposal.
-6. **Create and verify:** The server revalidates the account and proposal, creates one Active Campaign with an idempotent request ID, and calls TikTok read-back.
-7. **Receipt or recovery:** Only verified creation shows a Campaign ID. Confirmed API rejection shows `Needs attention`; ambiguous transport outcomes are locked for reconciliation and are not retried blindly.
+1. **Discover advertiser accounts:** When the user asks what is connected, the model returns the real authorized advertiser list and waits. It never selects an account automatically.
+2. **Explore:** If the request lacks consequential information, the model asks a short business-language interview. No actionable card is rendered.
+3. **Propose:** When enough Campaign-level information exists and the user has explicitly selected an advertiser, the model calls `review_smartplus_campaign`. User-confirmed values are preserved; model-proposed values are labeled `AI suggested`.
+4. **Review:** The user reviews one deterministic Campaign card. Nothing has been created yet.
+5. **Edit:** Card edits update the current card in place. Chat edits create a new card and make the old card `Inactive`.
+6. **Switch advertiser:** A chat request to use another authorized advertiser creates a replacement card with the new advertiser and unchanged Campaign settings. The old card becomes `Inactive`; the replacement remains editable and confirmable.
+7. **Approve:** The user either selects **Confirm** or gives an unambiguous later chat instruction to create the current proposal.
+8. **Create and verify:** The server revalidates authorization and proposal version, creates one Active Campaign with an idempotent request ID, and calls TikTok read-back.
+9. **Receipt or recovery:** Only verified creation shows a Campaign ID. Confirmed API rejection shows `Needs attention`; ambiguous transport outcomes are locked for reconciliation and are not retried blindly.
+
+### Advertiser-switch acceptance contract
+
+| Event | Required product behavior |
+| --- | --- |
+| User asks which accounts are available | Call the read-only account-list tool. Show exact account names and IDs. Do not select, revise, or create. |
+| User explicitly selects another authorized account | Call `review_smartplus_campaign` with the selected advertiser and the complete current Campaign settings. Do not use the in-card revise action to change advertiser. |
+| Replacement card renders | Show the selected advertiser, preserve all other reviewed settings, and keep **Edit** and **Confirm** available. |
+| Prior card reconciles | Display `Inactive`, remove Edit/Confirm, and reject any stale write request. |
+| Account metadata reports a non-enabled status | Treat it as informational in Campaign Review. Do not pre-disable Edit or Confirm. TikTok's create response is the authoritative permission/readiness result. |
+| User edits the replacement card | Apply changes to that card in place; do not create another card. |
+| User edits through chat after the switch | Render another replacement card and make the previous card `Inactive`. |
+| User confirms | Revalidate that the advertiser is still authorized, submit exactly one Campaign, and show only a TikTok-verified ID as success. |
 
 ## 3. MCP tools
 
@@ -43,7 +58,7 @@
 | --- | --- |
 | `smart_plus_campaign_create` | Creates the approved Campaign-only payload. |
 | `smart_plus_campaign_get` | Reads the created Campaign back and verifies ID, name, objective, Active status, and any returned settings. |
-| Advertiser account discovery/info tools | Validate that the user's explicitly selected account is authorized, enabled, and supplies currency/country/timezone metadata. |
+| Advertiser account discovery/info tools | Validate that the user's explicitly selected account is authorized and supplies currency/country/timezone/status metadata. Advertiser status is informational in Campaign Review; TikTok Campaign creation remains the authoritative write check. |
 
 ### Demo tools
 
@@ -129,5 +144,6 @@ The model may still choose tools probabilistically, so critical safety cannot re
 ## 8. Current release status
 
 - UI, revision, inactive-card, approval routing, idempotency, and TikTok error handling are implemented and tested.
+- Live advertiser discovery and prompt-driven account switching are implemented. A replacement card remains editable and confirmable even when account status metadata is not `STATUS_ENABLE`.
 - Real creation reaches TikTok, but `Education Coaching0315` currently returns `40002: Complete payment to continue.`
-- Release completion requires one successful create plus `smart_plus_campaign_get` read-back of a real Campaign ID after advertiser billing readiness is resolved.
+- Other authorized advertisers may be used for QA after explicit user selection. Release completion still requires one successful create plus `smart_plus_campaign_get` read-back of a real Campaign ID.

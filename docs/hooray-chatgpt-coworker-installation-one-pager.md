@@ -4,7 +4,46 @@
 
 Give each teammate the same Campaign Review experience while keeping advertiser authorization isolated per user. Teammates must connect their own TikTok account; they do not share the app owner's advertiser access token.
 
-## Recommended rollout: publish once, connect per user
+## Choose the correct test rollout
+
+This app is still under development. Publishing a draft to a company workspace is **not** the same as publishing to the public ChatGPT/App Directory, but it can still freeze or broaden access to a tool snapshot. Use one of these two modes:
+
+| Mode | Recommended when | Setup |
+| --- | --- | --- |
+| Private Developer Mode testing | Tools and schemas are still changing frequently; only a few colleagues need access. | Give the selected colleagues Developer Mode permission. Each tester creates their own `Dev` app from the same MCP URL and connects their own TikTok account. Refresh/recreate after tool changes. |
+| Restricted workspace pilot | The tool contract is stable enough for a controlled internal pilot. | Admin publishes the draft internally, then limits User access to a test group or role and keeps write-action confirmation enabled. This is not a public directory release. |
+
+For the current stage, use **Private Developer Mode testing**. Move to a restricted workspace pilot only after advertiser switching and successful Campaign creation/read-back pass acceptance.
+
+## Release recommendation
+
+| Stage | Audience | Publish action | Exit gate |
+| --- | --- | --- | --- |
+| Development now | Named PM, Design, and Engineering testers | Do not publish publicly. Give named testers Developer Mode access; each creates a private Dev app from the MCP URL. | Tool scan, OAuth, account discovery, review/edit/switch, and stale-card QA pass. |
+| Restricted internal pilot | A controlled company test group | Publish the draft internally and restrict User access to the pilot group. Keep all write confirmations enabled. | At least one real Campaign create/read-back succeeds; multi-user OAuth isolation passes. |
+| Broader internal release | Approved workspace users | Expand the internal app access group. | Security/privacy review, operational support, monitoring, and rollback plan are approved. |
+| Public directory | External customers | Separate launch decision; not part of this development rollout. | TikTok and OpenAI production-review requirements are complete. |
+
+Do not move directly from a changing Dev app to broad workspace or public availability.
+
+## Option A: private Developer Mode testing now
+
+### Workspace admin
+
+1. Enable Developer Mode / custom MCP connectors in workspace permissions.
+2. For Enterprise/Edu, grant Developer Mode through RBAC only to the named testers.
+3. Do not publish the draft to all workspace members.
+
+### Each authorized tester
+
+1. Enable Developer Mode for their own account under **Settings > Apps > Advanced Settings** when the workspace requires it.
+2. Open **Settings > Apps > Create**.
+3. Create a `Dev` app using the App configuration and OAuth values below.
+4. Select **Scan tools**, complete their own TikTok OAuth, then select **Create**.
+5. The app appears under **Settings > Apps > Enabled Apps** with a `Dev` label.
+6. After a server tool/schema update, select **Refresh**. If the OAuth/tool snapshot remains stale, delete and recreate the Dev app.
+
+## Option B: restricted workspace pilot later
 
 ### Workspace admin or owner
 
@@ -12,8 +51,9 @@ Give each teammate the same Campaign Review experience while keeping advertiser 
 2. Enter the configuration below and select **Scan tools**.
 3. Complete OAuth once for owner QA.
 4. Confirm that the scan includes the Campaign Review tools listed below.
-5. Create the draft, review write-action permissions, and publish it to the intended workspace members or groups.
-6. If the workspace supports it, enable **Self-service setup** so each teammate can connect independently from **Settings > Apps**.
+5. Create the draft and review write-action permissions.
+6. Publish it **internally** and limit User access to the designated test group or role. Do not expose it workspace-wide.
+7. If the workspace supports it, enable **Self-service setup** so each allowed tester can connect independently from **Settings > Apps**.
 
 ### Each teammate
 
@@ -25,7 +65,7 @@ Give each teammate the same Campaign Review experience while keeping advertiser 
 
 ChatGPT's current custom-app flow is documented in [Developer mode and MCP apps in ChatGPT](https://help.openai.com/en/articles/12584461-developer-mode-apps-and-full-mcp-connectors-in-chatgpt-beta) and [Apps in ChatGPT](https://help.openai.com/en/articles/11487775-connectors-in).
 
-## App configuration
+## Shared app configuration
 
 | ChatGPT field | Value |
 | --- | --- |
@@ -127,6 +167,7 @@ Select **Confirm** only on a designated QA advertiser that has billing and Campa
 | No advertiser accounts appear | Confirm the teammate authorized the correct TikTok user and that the user has access to advertiser assets. Reconnect if the grant is stale. |
 | Account is listed but review fails | The account may be disabled or not authorized for the selected TikTok connection. Use another explicitly selected account or fix its permissions. |
 | Confirm returns `Complete payment to continue` | Campaign creation reached TikTok, but the selected advertiser's billing readiness blocks creation. Resolve billing or select another ready advertiser. |
+| A selected advertiser reports a non-enabled status | The replacement proposal must still allow Edit and Confirm. Treat account status as informational; display the real TikTok create error if submission is rejected. |
 
 ## Security and ownership
 
@@ -134,4 +175,3 @@ Select **Confirm** only on a designated QA advertiser that has billing and Campa
 - Hooray forwards the user's bearer token to TikTok Flat MCP and does not share the owner's token.
 - Credentials must not be placed in GitHub, Lark, screenshots, prompts, or this app configuration.
 - Revoke a teammate's access through workspace app controls and TikTok authorization controls when needed.
-

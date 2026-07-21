@@ -72,6 +72,11 @@ assert(advertiserSelectedById.selected === authorizedAccounts[0], "An explicitly
 const web = reviewSchema.parse(base);
 const webErrors = validateCampaignReview(web, { country: "US", status: "STATUS_ENABLE" });
 assert(webErrors.length === 0, `Valid Website Conversions review failed: ${webErrors.join(" ")}`);
+const disabledAdvertiserErrors = validateCampaignReview(web, { country: "US", status: "STATUS_DISABLE" });
+assert(
+  disabledAdvertiserErrors.length === 0,
+  "Advertiser delivery status must not disable Campaign Review confirmation; TikTok create is authoritative."
+);
 const payload = buildSmartPlusCampaignPayload(web, "1234567890123456789");
 assert(payload.operation_status === "ENABLE", "Campaign Review must create the approved Campaign as Active.");
 assert(payload.request_id === "1234567890123456789", "Reviewed request ID must be preserved.");
@@ -190,6 +195,7 @@ assert(refreshedFirstProposal.status === "outdated", "A previous Campaign propos
 assert(refreshedFirstProposal.readyToCreate === false, "An inactive Campaign proposal must never remain creatable.");
 assert(secondProposal.account.advertiserId === "7555000000000000002", "A prompt-driven advertiser switch did not use the explicitly selected account.");
 assert(secondProposal.account.advertiserName === "Second Authorized Advertiser", "A prompt-driven advertiser switch lost the selected account name.");
+assert(secondProposal.readyToCreate === true, "The replacement card must remain editable and confirmable after an advertiser switch.");
 const staleSubmit = await reviewStore.create(firstProposal.proposalId, firstProposal.version);
 assert(staleSubmit.status === "outdated", "The server must reject submission from an inactive Campaign proposal.");
 

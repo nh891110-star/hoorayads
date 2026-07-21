@@ -16,6 +16,9 @@ The complete Campaign Review interaction flow is working in the signed-in ChatGP
 - A change requested in chat produces a new card and makes the previous card visibly `Inactive`.
 - Approval from the card and approval from chat both reach the real TikTok Campaign-only write path.
 - A combined change-and-create request is split into a revised review card followed by a separate approval, preventing an unreviewed write.
+- The live advertiser-account discovery tool returns the current user's authorized accounts without selecting one.
+- A prompt-driven advertiser switch renders a replacement card for the selected account and makes the prior account's card `Inactive`.
+- Advertiser status metadata does not disable Edit or Confirm on the replacement card; TikTok Campaign creation is the authoritative write check.
 - Website Conversions and Lead Generation were exercised through the live card flow. App Promotion passed UI and contract QA without inventing an App ID.
 
 TikTok rejected every real creation attempt for this advertiser with official API error `40002: Complete payment to continue.` The UI correctly showed `Needs attention` and `Campaign was not created`. Therefore, the product interaction and write routing pass, but a real Campaign ID and TikTok read-back remain blocked by advertiser billing readiness. No Campaign ID was fabricated.
@@ -36,6 +39,9 @@ TikTok rejected every real creation attempt for this advertiser with official AP
 | CR-10 | Objective-dependent fields | Ensure each objective displays only API-backed Campaign-level fields. | Lead Generation omitted Sales destination. Website Conversions showed Website destination. App Promotion showed App install and Campaign type without Web-only fields. | PASS |
 | CR-11 | Single actionable proposal | Ensure only the latest proposal in the conversation can be edited or approved. | After both in-card and chat revisions, only the latest card retained actions; prior cards were visibly inactive. | PASS |
 | CR-12 | Successful real creation and read-back | Return a real TikTok Campaign ID and verify it with TikTok data. | TikTok rejected creation before an object was created because advertiser payment setup is incomplete. | BLOCKED BY ACCOUNT |
+| CR-13 | Authorized advertiser discovery | Show real accounts available to this OAuth connection without auto-selecting one. | ChatGPT returned five exact TikTok advertiser names and IDs and explicitly stated that no account, proposal, or Campaign was selected or changed. | PASS |
+| CR-14 | Prompt-driven advertiser switch | Replace an Education Coaching proposal with a user-selected Little Shop H proposal while preserving Campaign settings. | A new `Little Shop H` card rendered with the same name, objective, destination, budget, CBO, Catalog, and special-category values. The `Education Coaching0315` card became `Inactive` and lost its actions. | PASS |
+| CR-15 | Replacement-card actions | Keep the selected replacement card editable and confirmable; do not use advertiser status metadata as a client-side write gate. | P0 regression was identified and fixed: `STATUS_DISABLE` is informational in Campaign Review. Contract and widget QA now require the replacement card to remain ready for Edit/Confirm. TikTok create remains authoritative. | PASS IN CODE; PRODUCTION RECHECK AFTER DEPLOY |
 
 ## Exact signed-in ChatGPT prompts
 
@@ -98,10 +104,33 @@ Change this current proposal's budget from USD 30/day to USD 40/day and create i
 
 This was run in the App Promotion conversation. ChatGPT rendered the revised proposal but did not write without a separate approval.
 
+### CR-13: List authorized advertisers
+
+```text
+Use Hooray TikTok Ads Campaign Review v10. Show all TikTok advertiser accounts authorized for this connection, including each exact account name and advertiser ID. Do not select an account, do not change any proposal, and do not create anything.
+```
+
+### CR-14: Switch advertiser by prompt
+
+Baseline card:
+
+```text
+Use Hooray TikTok Ads Campaign Review v10. I explicitly select advertiser account Education Coaching0315, advertiser ID 7481826080479870993. Prepare a proposed Smart+ Website Conversions campaign review card only; do not submit it. Campaign name: Account Switch QA Baseline. Daily budget: USD 55. Use Website as the sales destination, campaign budget optimization on, no catalog, and no special ad category.
+```
+
+Switch request:
+
+```text
+Switch this proposal to the authorized advertiser account Little Shop H, advertiser ID 7636300171701239824. Keep every other campaign setting unchanged, render a replacement review card, mark the previous review card inactive, and do not submit or create anything.
+```
+
+Conversation: `https://chatgpt.com/c/6a5f222e-7c10-83e8-b647-117c4b2d9f25`
+
 ## Data and write integrity
 
 - The card contains Campaign-level fields accepted by the current Upgraded Smart+ Campaign contract. It does not display or send audience, schedule, bid, placement, attribution, Ad Group, Ad, or creative fields.
 - The advertiser account is accepted only after explicit user selection and authorization validation. The server does not auto-select the only authorized account.
+- Advertiser status returned by the account-info endpoint is displayed/retained as metadata but does not disable Campaign Review actions. A real write is attempted only after explicit confirmation, and TikTok's create response is authoritative.
 - Special ad category must be explicitly confirmed by the user. The model does not infer it.
 - The Campaign create payload uses `operation_status=ENABLE`; the card does not expose a separate status-after-creation field.
 - Objective-specific fields are omitted rather than filled with invented placeholders.
@@ -140,4 +169,3 @@ For approval entered as a chat prompt, ChatGPT may render a new terminal result 
 3. Require `Submitted successfully`, one real TikTok Campaign ID, and matching TikTok Campaign read-back.
 4. Confirm retry/idempotency behavior using that successful Campaign ID.
 5. Only after Website Conversions succeeds, repeat live creation for Lead Generation. Test App Promotion live only with a real user-selected App ID when the chosen Campaign type requires it.
-
