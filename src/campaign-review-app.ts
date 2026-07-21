@@ -75,13 +75,6 @@ const APP_TOOL_META = {
   "openai/toolInvocation/invoked": "Campaign Review updated."
 } as const;
 
-const APPROVAL_TOOL_META = {
-  ui: { visibility: ["model", "app"] },
-  "openai/widgetAccessible": true,
-  "openai/toolInvocation/invoking": "Creating approved Campaign...",
-  "openai/toolInvocation/invoked": "Campaign creation checked."
-} as const;
-
 const RESULT_META = {
   [RESOURCE_URI_META_KEY]: CAMPAIGN_REVIEW_WIDGET_URI,
   ui: { resourceUri: CAMPAIGN_REVIEW_WIDGET_URI },
@@ -226,6 +219,10 @@ function registerLiveTools(
       : undefined;
     return result(state, message, rendersWidget, campaignReviewAction);
   };
+  const createApprovedCampaign = async (proposalId: string, expectedVersion: number) => {
+    const proposalStore = getCampaignReviewStoreForProposal(proposalId, store);
+    return proposalStore.create(proposalId, expectedVersion, authContext);
+  };
   registerAppTool(
     server,
     "review_smartplus_campaign",
@@ -300,18 +297,45 @@ function registerLiveTools(
     {
       title: "Create approved Smart+ Campaign",
       description:
-        "Destructive approval action for exactly one current Campaign Review proposal. Call it only after the user explicitly approves creation either by selecting Confirm in the card or by an unambiguous chat instruction such as 'create this campaign now', 'approve and create this proposal', or 'submit this campaign'. Use the exact proposalId and version returned by the latest review state, set confirmed=true, and never infer approval from 'yes' when more than one proposal could be referenced. If the same user turn changes any Campaign setting, create a new review proposal first and wait for a separate approval; never modify and create in one step. The action creates exactly one Active TikTok Upgraded Smart+ Campaign, rechecks advertiser authorization, uses an idempotent request ID, and performs TikTok read-back. It never creates an Ad Group, Ad, creative, delivery, or spend. It returns state for the existing card to reconcile and must not render a duplicate approval card.",
+        "App-only destructive action called by the Campaign Review card after the user selects Confirm. It creates exactly one Active TikTok Upgraded Smart+ Campaign from the current proposal, rechecks advertiser authorization, uses an idempotent request ID, and performs TikTok read-back. It never creates an Ad Group, Ad, creative, delivery, or spend.",
       inputSchema: createSmartPlusCampaignFromReviewInput,
       outputSchema: createSmartPlusCampaignFromReviewOutput,
-      _meta: APPROVAL_TOOL_META,
+      _meta: APP_TOOL_META,
       annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true, idempotentHint: true }
     },
     async ({ proposalId, expectedVersion }) => {
-      const proposalStore = getCampaignReviewStoreForProposal(proposalId, store);
-      const state = await proposalStore.create(proposalId, expectedVersion, authContext);
+      const state = await createApprovedCampaign(proposalId, expectedVersion);
       return liveResult(state, state.status === "created"
         ? "Show the verified Campaign creation receipt."
         : "Show the current Campaign creation status without retrying the write.", false);
+    }
+  );
+
+  server.registerTool(
+    "approve_smartplus_campaign_review_from_chat",
+    {
+      title: "Approve current Smart+ Campaign from chat",
+      description:
+        "Destructive chat-approval action for exactly one current Campaign Review proposal. Call it only after an unambiguous later user instruction such as 'create this campaign now', 'approve and create this proposal', or 'submit this campaign'. Use the exact proposalId and expectedVersion returned by the latest review state, set confirmed=true, and never infer approval from 'yes' when more than one proposal could be referenced. If the same turn changes any Campaign setting, render a new review proposal first and wait for a separate approval; never modify and create in one step. This tool has no UI template: the existing Campaign Review card polls the server and transitions to the final status without rendering a duplicate card. It creates exactly one Active TikTok Upgraded Smart+ Campaign, rechecks advertiser authorization, uses an idempotent request ID, and performs TikTok read-back. It never creates an Ad Group, Ad, creative, delivery, or spend.",
+      inputSchema: createSmartPlusCampaignFromReviewInput,
+      outputSchema: createSmartPlusCampaignFromReviewOutput,
+      annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true, idempotentHint: true }
+    },
+    async ({ proposalId, expectedVersion }) => {
+      const state = await createApprovedCampaign(proposalId, expectedVersion);
+      return {
+        structuredContent: { campaignReviewState: state },
+        content: [{
+          type: "text" as const,
+          text: state.status === "created"
+            ? `Campaign created and verified. Campaign ID: ${state.execution?.campaignId || "Unavailable"}.`
+            : `Campaign creation status: ${state.status}. ${state.execution?.errorMessage || "Do not retry without checking the current proposal status."}`
+        }],
+        _meta: {
+          experienceType: "smartplus_campaign_review_chat_approval",
+          mutationOccurred: state.status === "created"
+        }
+      };
     }
   );
 }
