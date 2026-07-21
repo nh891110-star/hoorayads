@@ -1,4 +1,4 @@
-import { createHash, randomInt, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 
 import type {
   CampaignAppPromotionType,
@@ -7,6 +7,7 @@ import type {
   CampaignObjective,
   CampaignReviewDemoInput,
   CampaignReviewDemoOutcome,
+  CampaignReviewHttpAction,
   CampaignReviewInput,
   CampaignSalesDestination,
   CampaignSourceField,
@@ -961,6 +962,7 @@ const SHARED_STORE_LIMIT = 500;
 const sharedLiveStores = new Map<string, SharedCampaignReviewStore>();
 const proposalOwners = new Map<string, SharedCampaignReviewStore>();
 const activeProposalByAdvertiser = new Map<string, string>();
+const proposalActionTokens = new Map<string, { token: string; expiresAt: number }>();
 
 function pruneSharedLiveStores(now: number) {
   for (const [key, entry] of sharedLiveStores) {
@@ -1009,6 +1011,7 @@ function pruneProposalOwners(now: number) {
   for (const [proposalId, entry] of proposalOwners) {
     if (now - entry.lastAccessedAt <= SHARED_STORE_TTL_MS) continue;
     proposalOwners.delete(proposalId);
+    proposalActionTokens.delete(proposalId);
     for (const [advertiserId, activeProposalId] of activeProposalByAdvertiser) {
       if (activeProposalId === proposalId) activeProposalByAdvertiser.delete(advertiserId);
     }
@@ -1018,7 +1021,10 @@ function pruneProposalOwners(now: number) {
   const oldest = [...proposalOwners.entries()]
     .sort(([, left], [, right]) => left.lastAccessedAt - right.lastAccessedAt)
     .slice(0, proposalOwners.size - SHARED_STORE_LIMIT);
-  for (const [proposalId] of oldest) proposalOwners.delete(proposalId);
+  for (const [proposalId] of oldest) {
+    proposalOwners.delete(proposalId);
+    proposalActionTokens.delete(proposalId);
+  }
 }
 
 export function registerCampaignReviewProposal(
@@ -1054,8 +1060,53 @@ export function getCampaignReviewStoreForProposal(
   return owner.store;
 }
 
+export function getCampaignReviewActionToken(proposalId: string) {
+  const owner = proposalOwners.get(proposalId);
+  if (!owner) throw new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found.");
+  const now = Date.now();
+  const existing = proposalActionTokens.get(proposalId);
+  if (existing && existing.expiresAt > now) return existing.token;
+  const token = `${randomUUID()}${randomUUID()}`.replaceAll("-", "");
+  proposalActionTokens.set(proposalId, { token, expiresAt: now + SHARED_STORE_TTL_MS });
+  return token;
+}
+
+function verifyCampaignReviewActionToken(proposalId: string, token: string) {
+  const stored = proposalActionTokens.get(proposalId);
+  if (!stored || stored.expiresAt <= Date.now()) return false;
+  const providedBuffer = Buffer.from(token);
+  const storedBuffer = Buffer.from(stored.token);
+  return providedBuffer.length === storedBuffer.length && timingSafeEqual(providedBuffer, storedBuffer);
+}
+
+export async function executeCampaignReviewHttpAction(
+  action: CampaignReviewHttpAction,
+  token: string
+) {
+  if (!verifyCampaignReviewActionToken(action.proposalId, token)) {
+    throw new CampaignReviewError("INVALID_ACTION_TOKEN", "This Campaign Review action has expired. Generate a new review card.");
+  }
+  const owner = proposalOwners.get(action.proposalId);
+  if (!owner) throw new CampaignReviewError("PROPOSAL_NOT_FOUND", "Campaign proposal could not be found.");
+  owner.lastAccessedAt = Date.now();
+
+  if (action.action === "status") {
+    return owner.store.getStatus(action.proposalId, action.expectedVersion);
+  }
+  if (action.action === "submit") {
+    return owner.store.create(action.proposalId, action.expectedVersion);
+  }
+  const { action: _action, proposalId, expectedVersion, ...input } = action;
+  return owner.store.revise(
+    proposalId,
+    expectedVersion,
+    input as Omit<CampaignReviewInput, "advertiserId" | "advertiserName">
+  );
+}
+
 export function resetSharedCampaignReviewStoresForTests() {
   sharedLiveStores.clear();
   proposalOwners.clear();
   activeProposalByAdvertiser.clear();
+  proposalActionTokens.clear();
 }

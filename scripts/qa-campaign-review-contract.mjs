@@ -8,7 +8,9 @@ import {
   buildSmartPlusCampaignPayload,
   classifyCampaignCreateError,
   createCampaignReviewStore,
+  executeCampaignReviewHttpAction,
   findExplicitAdvertiserSelection,
+  getCampaignReviewActionToken,
   getCampaignReviewStoreForProposal,
   getSharedCampaignReviewStore,
   normalizeCampaignInput,
@@ -230,6 +232,46 @@ const rotatedTokenOldStatus = await rotatedTokenStoreA.getStatus(
 assert(rotatedTokenOldStatus.status === "outdated", "A proposal stayed active after an OAuth token rotation and replacement card.");
 resetSharedCampaignReviewStoresForTests();
 
+const httpActionStore = createCampaignReviewStore({ mode: "demo" });
+const httpActionProposal = registerCampaignReviewProposal(httpActionStore, await httpActionStore.prepare(web));
+const httpActionToken = getCampaignReviewActionToken(httpActionProposal.proposalId);
+const httpActionRevised = await executeCampaignReviewHttpAction({
+  action: "revise",
+  proposalId: httpActionProposal.proposalId,
+  expectedVersion: httpActionProposal.version,
+  campaignName: httpActionProposal.campaign.campaignName,
+  objectiveType: httpActionProposal.campaign.objectiveType,
+  budget: 85,
+  budgetMode: httpActionProposal.campaign.budgetMode,
+  budgetOptimizeOn: httpActionProposal.campaign.budgetOptimizeOn,
+  salesDestination: httpActionProposal.campaign.salesDestination,
+  catalogEnabled: httpActionProposal.campaign.catalogEnabled,
+  specialIndustries: httpActionProposal.campaign.specialIndustries,
+  specialIndustriesConfirmed: httpActionProposal.campaign.specialIndustriesConfirmed,
+  campaignType: httpActionProposal.campaign.campaignType,
+  aiSuggestedFields: []
+}, httpActionToken);
+assert(httpActionRevised.version === 2 && httpActionRevised.campaign.budget === 85, "The token-protected HTTP action did not persist a revision.");
+const httpActionSubmitting = await executeCampaignReviewHttpAction({
+  action: "submit",
+  proposalId: httpActionProposal.proposalId,
+  expectedVersion: httpActionRevised.version,
+  confirmed: true
+}, httpActionToken);
+assert(httpActionSubmitting.status === "creating", "The token-protected HTTP action did not start the approved submission.");
+let invalidActionTokenRejected = false;
+try {
+  await executeCampaignReviewHttpAction({
+    action: "status",
+    proposalId: httpActionProposal.proposalId,
+    expectedVersion: httpActionRevised.version
+  }, "invalid-token");
+} catch {
+  invalidActionTokenRejected = true;
+}
+assert(invalidActionTokenRejected, "An invalid Campaign Review action token was accepted.");
+resetSharedCampaignReviewStoresForTests();
+
 const confirmedApiFailure = classifyCampaignCreateError(
   new TikTokToolCallError("smart_plus_campaign_create", 40002, "Complete payment to continue.", "qa-request")
 );
@@ -263,6 +305,7 @@ console.log(JSON.stringify({
     "cross_server_proposal_state",
     "oauth_user_store_isolation",
     "oauth_token_rotation_proposal_routing",
+    "token_protected_http_action_bridge",
     "tiktok_api_rejection_classification",
     "unknown_transport_outcome_classification"
   ]

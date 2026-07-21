@@ -25,6 +25,7 @@ import {
 import type { CampaignReviewDemoInput, CampaignReviewInput } from "./campaign-review-contract.js";
 import {
   createCampaignReviewStore,
+  getCampaignReviewActionToken,
   getCampaignReviewStoreForProposal,
   getSharedCampaignReviewStore,
   registerCampaignReviewProposal
@@ -32,8 +33,9 @@ import {
 import type { CampaignReviewState } from "./campaign-review.js";
 import type { TikTokMcpAuthContext } from "./tiktok-mcp.js";
 
-export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v17.html";
+export const CAMPAIGN_REVIEW_WIDGET_URI = "ui://widget/tiktok-smartplus-campaign-review-v18.html";
 const LEGACY_CAMPAIGN_REVIEW_WIDGET_URIS = [
+  "ui://widget/tiktok-smartplus-campaign-review-v17.html",
   "ui://widget/tiktok-smartplus-campaign-review-v16.html",
   "ui://widget/tiktok-smartplus-campaign-review-v15.html",
   "ui://widget/tiktok-smartplus-campaign-review-v14.html",
@@ -132,7 +134,12 @@ function fallback(state: CampaignReviewState) {
   ].join("\n");
 }
 
-function result(campaignReviewState: CampaignReviewState, message: string, rendersWidget = true) {
+function result(
+  campaignReviewState: CampaignReviewState,
+  message: string,
+  rendersWidget = true,
+  campaignReviewAction?: { endpoint: string; token: string }
+) {
   return {
     structuredContent: { campaignReviewState },
     content: [{ type: "text" as const, text: `${message}\n\n${fallback(campaignReviewState)}` }],
@@ -141,6 +148,7 @@ function result(campaignReviewState: CampaignReviewState, message: string, rende
       // Some hosts expose app-initiated tool results through response metadata
       // instead of preserving arbitrary structuredContent keys.
       campaignReviewState,
+      ...(campaignReviewAction ? { campaignReviewAction } : {}),
       experienceType: "smartplus_campaign_review",
       dataMode: campaignReviewState.mode,
       campaignScope: "campaign_only",
@@ -180,7 +188,7 @@ function registerResourceAt(
 function registerResource(server: McpServer, resourceMeta: Record<string, unknown>) {
   registerResourceAt(
     server,
-    "tiktok-smartplus-campaign-review-v17",
+    "tiktok-smartplus-campaign-review-v18",
     CAMPAIGN_REVIEW_WIDGET_URI,
     resourceMeta
   );
@@ -198,8 +206,18 @@ function registerResource(server: McpServer, resourceMeta: Record<string, unknow
 function registerLiveTools(
   server: McpServer,
   store: ReturnType<typeof createCampaignReviewStore>,
+  publicBaseUrl: string,
   authContext: TikTokMcpAuthContext = {}
 ) {
+  const liveResult = (state: CampaignReviewState, message: string, rendersWidget = true) => {
+    const campaignReviewAction = state.proposalId
+      ? {
+          endpoint: `${publicBaseUrl}/campaign-review/action`,
+          token: getCampaignReviewActionToken(state.proposalId)
+        }
+      : undefined;
+    return result(state, message, rendersWidget, campaignReviewAction);
+  };
   registerAppTool(
     server,
     "review_smartplus_campaign",
@@ -214,7 +232,7 @@ function registerLiveTools(
     },
     async (input: CampaignReviewInput) => {
       const state = registerCampaignReviewProposal(store, await store.prepare(input));
-      return result(state, state.status === "error"
+      return liveResult(state, state.status === "error"
         ? "Show the Campaign Review connection or validation state."
         : "Show the Campaign Review card and wait for the user's action.");
     }
@@ -242,7 +260,7 @@ function registerLiveTools(
           input as Omit<CampaignReviewInput, "advertiserId" | "advertiserName">
         )
       );
-      return result(state, "Show the latest Campaign Review proposal version.", false);
+      return liveResult(state, "Show the latest Campaign Review proposal version.", false);
     }
   );
 
@@ -260,7 +278,7 @@ function registerLiveTools(
     },
     async ({ proposalId, expectedVersion }) => {
       const proposalStore = getCampaignReviewStoreForProposal(proposalId, store);
-      return result(
+      return liveResult(
         await proposalStore.getStatus(proposalId, expectedVersion, authContext),
         "Refresh the existing Campaign Review state.",
         false
@@ -283,7 +301,7 @@ function registerLiveTools(
     async ({ proposalId, expectedVersion }) => {
       const proposalStore = getCampaignReviewStoreForProposal(proposalId, store);
       const state = await proposalStore.create(proposalId, expectedVersion, authContext);
-      return result(state, state.status === "created"
+      return liveResult(state, state.status === "created"
         ? "Show the verified Campaign creation receipt."
         : "Show the current Campaign creation status without retrying the write.", false);
     }
@@ -369,6 +387,7 @@ export function registerCampaignReviewApp(
   options: {
     authContext?: TikTokMcpAuthContext;
     includeDemo?: boolean;
+    publicBaseUrl: string;
     resourceMeta: Record<string, unknown>;
   }
 ) {
@@ -376,6 +395,7 @@ export function registerCampaignReviewApp(
   registerLiveTools(
     server,
     getSharedCampaignReviewStore(options.authContext, "flat"),
+    options.publicBaseUrl,
     options.authContext
   );
   if (options.includeDemo) {

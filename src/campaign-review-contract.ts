@@ -112,6 +112,21 @@ export const createSmartPlusCampaignFromReviewOutput = {
   campaignReviewState: z.record(z.any())
 };
 
+export const campaignReviewHttpActionSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("revise"),
+    ...reviseSmartPlusCampaignReviewInput
+  }).strict(),
+  z.object({
+    action: z.literal("status"),
+    ...getSmartPlusCampaignReviewStatusInput
+  }).strict(),
+  z.object({
+    action: z.literal("submit"),
+    ...createSmartPlusCampaignFromReviewInput
+  }).strict()
+]);
+
 export type CampaignObjective = z.infer<typeof campaignObjectiveSchema>;
 export type CampaignBudgetMode = z.infer<typeof campaignBudgetModeSchema>;
 export type CampaignSalesDestination = z.infer<typeof campaignSalesDestinationSchema>;
@@ -144,3 +159,5 @@ export type CampaignReviewInput = {
 export type CampaignReviewDemoInput = CampaignReviewInput & {
   simulationOutcome?: CampaignReviewDemoOutcome;
 };
+
+export type CampaignReviewHttpAction = z.infer<typeof campaignReviewHttpActionSchema>;

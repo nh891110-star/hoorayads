@@ -41,7 +41,7 @@ function appResourceMeta(hostSurface: HostSurface, description: string) {
     ui: {
       prefersBorder: true,
       ...(hostSurface === "claude" ? { domain } : {}),
-      csp: { connectDomains: [], resourceDomains: [] }
+      csp: { connectDomains: [PUBLIC_BASE_URL], resourceDomains: [] }
     },
     ...(hostSurface === "claude"
       ? {}
@@ -49,7 +49,7 @@ function appResourceMeta(hostSurface: HostSurface, description: string) {
           "openai/widgetDescription": description,
           "openai/widgetPrefersBorder": true,
           "openai/widgetCSP": {
-            connect_domains: [],
+            connect_domains: [PUBLIC_BASE_URL],
             resource_domains: [],
             redirect_domains: [PUBLIC_BASE_URL, "https://ads.tiktok.com", "https://business-api.tiktok.com"]
           }
@@ -78,6 +78,7 @@ export function createTikTokAdsPocServer(
   registerCampaignReviewApp(server, {
     authContext,
     includeDemo: reporting,
+    publicBaseUrl: PUBLIC_BASE_URL,
     resourceMeta: appResourceMeta(hostSurface, CAMPAIGN_REVIEW_WIDGET_DESCRIPTION)
   });
 

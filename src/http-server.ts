@@ -18,6 +18,8 @@ import {
   createCampaignUpdateReviewDemo,
   createCreativePerformanceDemo
 } from "./decision-demo.js";
+import { campaignReviewHttpActionSchema } from "./campaign-review-contract.js";
+import { CampaignReviewError, executeCampaignReviewHttpAction } from "./campaign-review.js";
 import { registerDelegatedOAuthRoutes, requireDelegatedChatGptOAuth } from "./delegated-oauth.js";
 
 const port = process.env.PORT
@@ -220,6 +222,33 @@ async function handleDelete(req: Request, res: Response) {
 }
 
 const mcpEndpoints = ["/mcp", "/mcp-v2", "/mcp/chatgpt", "/mcp/claude", "/mcp/reporting"];
+app.post("/campaign-review/action", async (req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "private, no-store");
+  const parsed = campaignReviewHttpActionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "INVALID_ACTION", message: "The Campaign Review action is invalid." });
+    return;
+  }
+  const authorization = req.headers.authorization?.trim() || "";
+  const token = authorization.replace(/^Bearer\s+/i, "");
+  if (!token || token === authorization) {
+    res.status(401).json({ error: "ACTION_TOKEN_REQUIRED", message: "Generate a new Campaign Review card and try again." });
+    return;
+  }
+  try {
+    const campaignReviewState = await executeCampaignReviewHttpAction(parsed.data, token);
+    res.json({
+      structuredContent: { campaignReviewState },
+      _meta: { campaignReviewState }
+    });
+  } catch (error) {
+    const status = error instanceof CampaignReviewError && error.code === "INVALID_ACTION_TOKEN" ? 401 : 409;
+    res.status(status).json({
+      error: error instanceof CampaignReviewError ? error.code : "CAMPAIGN_REVIEW_ACTION_FAILED",
+      message: error instanceof Error ? error.message : "Campaign Review action failed."
+    });
+  }
+});
 app.post(mcpEndpoints, (req, res, next) => req.path === "/mcp/chatgpt" ? requireChatGptOAuth(req, res, next) : next(), handlePost);
 app.get(mcpEndpoints, (req, res, next) => req.path === "/mcp/chatgpt" ? requireChatGptOAuth(req, res, next) : next(), handleGet);
 app.delete(mcpEndpoints, (req, res, next) => req.path === "/mcp/chatgpt" ? requireChatGptOAuth(req, res, next) : next(), handleDelete);

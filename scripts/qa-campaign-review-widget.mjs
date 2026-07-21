@@ -478,5 +478,76 @@ assert(await staleNativeStatusBridgeFrame.getByText("Complete payment to continu
 assert(await staleNativeStatusBridgeFrame.getByRole("button", { name: "Confirm" }).isDisabled(), "A confirmed TikTok rejection must not leave Confirm actionable.");
 await staleNativeStatusBridgePage.close();
 
+const directHttpActionPage = await browser.newPage({ viewport: { width: 860, height: 960 } });
+await directHttpActionPage.setContent(`
+  <!doctype html>
+  <html>
+    <head><style>${css}</style></head>
+    <body>
+      <div id="campaign-review-root"></div>
+      <script>
+        window.__httpCalls = [];
+        window.__originalHttpState = ${JSON.stringify(baseState)};
+        window.__httpState = window.__originalHttpState;
+        window.__CAMPAIGN_REVIEW_PREVIEW_STATE__ = window.__originalHttpState;
+        window.openai = {
+          toolResponseMetadata: {
+            campaignReviewAction: {
+              endpoint: "https://campaign-review.test/action",
+              token: "qa-action-token"
+            }
+          },
+          toolOutput: { structuredContent: { campaignReviewState: window.__originalHttpState } },
+          notifyIntrinsicHeight: () => {}
+        };
+        window.fetch = async (url, options) => {
+          const body = JSON.parse(options.body);
+          window.__httpCalls.push({ url, authorization: options.headers.Authorization, body });
+          if (body.action === "revise") {
+            window.__httpState = {
+              ...window.__httpState,
+              version: window.__httpState.version + 1,
+              campaign: { ...window.__httpState.campaign, ...body, aiSuggestedFields: [] }
+            };
+          }
+          if (body.action === "submit") {
+            window.__httpState = {
+              ...window.__httpState,
+              status: "error",
+              readyToCreate: false,
+              execution: {
+                status: "failed",
+                errorCode: "TIKTOK_API_40002",
+                errorMessage: "Complete payment to continue."
+              }
+            };
+          }
+          return new Response(JSON.stringify({ structuredContent: { campaignReviewState: window.__httpState } }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        };
+      </script>
+      <script type="module">${widgetJs}</script>
+    </body>
+  </html>
+`);
+await directHttpActionPage.getByRole("button", { name: "Edit" }).click();
+await directHttpActionPage.getByLabel("Campaign budget (USD)").fill("65");
+await directHttpActionPage.getByRole("button", { name: "Apply changes" }).click();
+await directHttpActionPage.getByText("$65.00/day", { exact: false }).waitFor({ timeout: 5000 });
+assert(await directHttpActionPage.getByText("$65.00/day", { exact: false }).isVisible(), "The direct action endpoint did not persist an edited budget.");
+await directHttpActionPage.getByRole("button", { name: "Confirm" }).click();
+await directHttpActionPage.getByText("Campaign was not created.").waitFor({ timeout: 5000 });
+assert(await directHttpActionPage.getByText("Campaign was not created.").isVisible(), "The direct action endpoint did not preserve the final submission result.");
+assert(await directHttpActionPage.getByText("Complete payment to continue.").isVisible(), "The direct action endpoint hid TikTok's official error.");
+const directHttpCalls = await directHttpActionPage.evaluate(() => window.__httpCalls);
+assert(directHttpCalls.length === 2, "Campaign Review did not use the direct action endpoint for both Edit and Confirm.");
+assert(directHttpCalls.every((call) => call.authorization === "Bearer qa-action-token"), "Campaign Review omitted the proposal-scoped action token.");
+assert(directHttpCalls[0].body.action === "revise" && directHttpCalls[1].body.action === "submit", "Campaign Review sent an incorrect direct action type.");
+await directHttpActionPage.evaluate(() => window.dispatchEvent(new Event("openai:set_globals")));
+assert(await directHttpActionPage.getByText("Campaign was not created.").isVisible(), "A host remount regressed a direct submission result to Proposed.");
+await directHttpActionPage.close();
+
 await browser.close();
-console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "stale_action_result_reconciliation", "stale_native_submit_status_bridge", "state_regression_guard", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge_metadata_fallback"] }, null, 2));
+console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "stale_action_result_reconciliation", "stale_native_submit_status_bridge", "direct_http_action_bridge", "state_regression_guard", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge_metadata_fallback"] }, null, 2));

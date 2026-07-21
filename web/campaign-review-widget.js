@@ -14,6 +14,7 @@ let editMode = false;
 let editDraft = null;
 let editConflictNotice = "";
 let statusRefreshTimer = null;
+let campaignReviewAction = null;
 const pendingRequests = new Map();
 const supersessionChannel = typeof BroadcastChannel === "function"
   ? new BroadcastChannel(SUPERSESSION_CHANNEL)
@@ -136,8 +137,21 @@ function extractReviewState(value) {
   );
 }
 
+function captureCampaignReviewAction(value) {
+  const next =
+    value?._meta?.campaignReviewAction ||
+    value?.result?._meta?.campaignReviewAction ||
+    value?.mcp_tool_result?._meta?.campaignReviewAction ||
+    value?.toolResult?._meta?.campaignReviewAction ||
+    value?.campaignReviewAction;
+  if (next?.endpoint && next?.token) campaignReviewAction = next;
+}
+
 function readChatGptState() {
   const host = window.openai || {};
+  captureCampaignReviewAction(host.toolOutput);
+  captureCampaignReviewAction(host.toolResponseMetadata);
+  captureCampaignReviewAction(host.widgetState);
   return (
     extractReviewState(host.toolOutput) ||
     extractReviewState(host.toolResponseMetadata) ||
@@ -191,7 +205,35 @@ function notifySize() {
   }
 }
 
+function httpActionName(name) {
+  if (name === actionTool("revise")) return "revise";
+  if (name === actionTool("status")) return "status";
+  if (name === actionTool("submit")) return "submit";
+  return null;
+}
+
+async function callCampaignReviewAction(name, args) {
+  const action = httpActionName(name);
+  if (!action || !campaignReviewAction?.endpoint || !campaignReviewAction?.token || isDemo()) return null;
+  const response = await fetch(campaignReviewAction.endpoint, {
+    method: "POST",
+    mode: "cors",
+    credentials: "omit",
+    cache: "no-store",
+    headers: {
+      "Authorization": `Bearer ${campaignReviewAction.token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ action, ...args })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body?.message || "Campaign Review action failed.");
+  return body;
+}
+
 async function callTool(name, args) {
+  const actionResult = await callCampaignReviewAction(name, args);
+  if (actionResult) return actionResult;
   // ChatGPT's native Apps SDK owns user-approved app tool calls. Some hosts
   // also initialize the standard MCP Apps bridge, so prefer the native API
   // when both are present and use the bridge as the cross-host fallback.
@@ -201,6 +243,8 @@ async function callTool(name, args) {
 }
 
 async function callStatusTool(name, args) {
+  const actionResult = await callCampaignReviewAction(name, args);
+  if (actionResult) return actionResult;
   // ChatGPT can execute a write while returning the original message tool
   // output to the widget. Status reads are safe to repeat, so prefer the
   // standard MCP Apps bridge here to obtain the server-owned result instead
@@ -801,6 +845,7 @@ window.addEventListener("message", (event) => {
   }
 
   if (message.method === "ui/notifications/tool-result") {
+    captureCampaignReviewAction(message.params);
     const next = extractReviewState(message.params);
     if (applyState(next)) render();
     return;
