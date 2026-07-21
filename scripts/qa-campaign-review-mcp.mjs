@@ -71,6 +71,7 @@ try {
   assert(reviewTool.description?.includes("three starting states"), "Review tool lost the BRD complete/partial/exploratory routing guidance.");
   assert(reviewTool.description?.includes("aiSuggestedFields"), "Review tool lost model-suggested field provenance guidance.");
   assert(reviewTool.description?.includes("exploratory request"), "Review tool lost the exploratory business-interview behavior.");
+  assert(reviewTool.description?.includes("Do NOT call this tool for an approval-only follow-up"), "Review tool lost the no-replacement-card approval routing rule.");
   assert(reviewTool.description?.includes("MUST call this tool"), "Review tool no longer prevents free-form proposals when the card should render.");
   assert(reviewTool.description?.includes("Campaign-level only"), "Review tool lost the Campaign-only field boundary.");
   assert(createTool.annotations?.destructiveHint === true, "Real Campaign creation must be marked destructive.");
