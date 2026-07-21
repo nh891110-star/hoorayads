@@ -212,8 +212,20 @@ function isSameReviewState(next) {
   );
 }
 
+function isStateRegression(next) {
+  if (!reviewState || !next || reviewState.proposalId !== next.proposalId) return false;
+  if (next.version < reviewState.version) return true;
+  if (next.version > reviewState.version) return false;
+
+  if (reviewState.status === "outdated" && next.status !== "outdated") return true;
+  if (reviewState.status === "created" && ["proposed", "creating", "checking"].includes(next.status)) return true;
+  if (["creating", "checking"].includes(reviewState.status) && next.status === "proposed") return true;
+  if (reviewState.execution?.errorCode === "HOST_TOOL_CALL_FAILED" && next.status === "proposed") return true;
+  return false;
+}
+
 function applyState(next, source = "external") {
-  if (!next || isSameReviewState(next)) return false;
+  if (!next || isSameReviewState(next) || isStateRegression(next)) return false;
   const unsavedEditWasSuperseded =
     editMode &&
     source !== "revision" &&
@@ -596,9 +608,34 @@ async function invoke(name, args) {
   render();
   try {
     const result = await callTool(name, args);
-    const next = extractReviewState(result);
+    let next = extractReviewState(result);
+    const isRevision = name === actionTool("revise");
+    const isSubmission = name === actionTool("submit");
+    const resultIsCurrent = next && next.proposalId === args.proposalId && (
+      isRevision
+        ? next.version > args.expectedVersion
+        : !isSubmission || next.version >= args.expectedVersion && next.status !== "proposed"
+    );
+
+    // ChatGPT may complete an app-only action while returning the original
+    // tool output to the iframe. Read the server-owned state after the action
+    // so edits and submission receipts cannot be hidden by that stale result.
+    if (!resultIsCurrent && (isRevision || isSubmission)) {
+      const statusVersion = isRevision ? args.expectedVersion + 1 : args.expectedVersion;
+      const statusResult = await callTool(actionTool("status"), {
+        proposalId: args.proposalId,
+        expectedVersion: statusVersion
+      });
+      next = extractReviewState(statusResult);
+    }
     if (!next) throw new Error("Campaign Review returned no state.");
-    applyState(next, name === actionTool("revise") ? "revision" : "action");
+    if (isRevision && (next.proposalId !== args.proposalId || next.version <= args.expectedVersion)) {
+      throw new Error("The revised campaign proposal was not returned. Please try Apply changes again.");
+    }
+    if (isSubmission && next.proposalId === args.proposalId && next.version === args.expectedVersion && next.status === "proposed") {
+      throw new Error("Campaign submission did not start. Please select Confirm again.");
+    }
+    applyState(next, isRevision ? "revision" : "action");
   } catch (error) {
     reviewState = {
       ...reviewState,

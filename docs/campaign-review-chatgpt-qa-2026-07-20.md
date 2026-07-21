@@ -4,7 +4,7 @@
 **Environment:** ChatGPT, Hooray TikTok Ads production connector  
 **Endpoint:** `https://tiktok-ads-agent-poc.onrender.com/mcp/chatgpt`  
 **Authorized advertiser used when explicitly selected:** `Education Coaching0315`  
-**Widget:** Campaign Review `v14` with legacy aliases for cached connector versions
+**Widget:** Campaign Review `v15` with legacy aliases for cached connector versions
 
 ## Result summary
 
@@ -12,7 +12,7 @@
 - Natural-language replacement produced a new proposal and made the prior card `Inactive`.
 - TypeScript, Campaign contract, and headless widget interaction suites passed.
 - The contract now proves that the server does not auto-select an advertiser even when authorization returns exactly one account.
-- Widget `v14` prefers ChatGPT's native app-tool API for Confirm and shows `Submitting…` immediately; the standard MCP Apps bridge remains the cross-host fallback.
+- Widget `v15` prefers ChatGPT's native app-tool API, reconciles every Edit or Confirm action against server-owned state when ChatGPT returns stale tool output, and shows `Submitting…` immediately; the standard MCP Apps bridge remains the cross-host fallback.
 - A real TikTok Campaign ID is **not yet verified**. The safe live proposal remained `Proposed campaign`; browser automation did not complete the nested-card Confirm action. Card rendering is not counted as Campaign creation.
 
 ## Prompt and behavior matrix
@@ -46,6 +46,6 @@
 
 ## Release gates still open
 
-1. Repeat **EDIT-01** in a fresh ChatGPT conversation that loads widget `v14`, and visually confirm the revised values remain visible.
+1. Repeat **EDIT-01** in a fresh ChatGPT conversation that loads widget `v15`, and visually confirm the revised values remain visible.
 2. Manually select **Confirm** on one safe Campaign-only proposal, then require `Submitted successfully`, a TikTok Campaign ID, and matching `campaign_get` read-back before marking live creation complete.
 3. Run the live Confirm/read-back once per supported objective only after the first Web write is verified. App Promotion must use a real user-selected App ID whenever its selected Campaign type requires one.

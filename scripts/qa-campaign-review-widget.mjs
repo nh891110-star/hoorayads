@@ -162,6 +162,76 @@ assert((await page.getByText("Proposal", { exact: true }).count()) >= 2, "Fields
 assert((await page.getByRole("button", { name: "Confirm" }).count()) === 0, "Success state must not keep an active confirm button.");
 if (screenshotPrefix) await page.screenshot({ path: `${screenshotPrefix}-success.png`, fullPage: true });
 
+const staleActionPage = await browser.newPage({ viewport: { width: 860, height: 960 } });
+await staleActionPage.setContent(`
+  <!doctype html>
+  <html>
+    <head><style>${css}</style></head>
+    <body>
+      <div id="campaign-review-root"></div>
+      <script>
+        window.__originalState = ${JSON.stringify(baseState)};
+        window.__serverState = window.__originalState;
+        window.__CAMPAIGN_REVIEW_PREVIEW_STATE__ = window.__originalState;
+        window.openai = {
+          callTool: async (name, args) => {
+            if (name === "revise_smartplus_campaign_review") {
+              window.__serverState = {
+                ...window.__serverState,
+                version: 2,
+                campaign: { ...window.__serverState.campaign, ...args, aiSuggestedFields: [] }
+              };
+              return { structuredContent: { campaignReviewState: window.__originalState } };
+            }
+            if (name === "create_smartplus_campaign_from_review") {
+              const staleProposal = window.__serverState;
+              window.__serverState = {
+                ...window.__serverState,
+                status: "created",
+                readyToCreate: false,
+                execution: {
+                  status: "created",
+                  campaignId: "1840000000000000099",
+                  operationStatus: "ENABLE",
+                  verifiedAt: "2026-07-20T23:30:00.000Z",
+                  verifiedCampaign: {
+                    campaignId: "1840000000000000099",
+                    campaignName: window.__serverState.campaign.campaignName,
+                    objectiveType: window.__serverState.campaign.objectiveType,
+                    operationStatus: "ENABLE",
+                    budget: window.__serverState.campaign.budget,
+                    budgetMode: window.__serverState.campaign.budgetMode,
+                    budgetOptimizeOn: window.__serverState.campaign.budgetOptimizeOn,
+                    catalogEnabled: false,
+                    specialIndustries: []
+                  }
+                }
+              };
+              return { structuredContent: { campaignReviewState: staleProposal } };
+            }
+            return { structuredContent: { campaignReviewState: window.__serverState } };
+          },
+          notifyIntrinsicHeight: () => {}
+        };
+      </script>
+      <script type="module">${widgetJs}</script>
+    </body>
+  </html>
+`);
+await staleActionPage.getByRole("button", { name: "Edit" }).click();
+await staleActionPage.getByLabel("Campaign budget (USD)").fill("75");
+await staleActionPage.getByRole("button", { name: "Apply changes" }).click();
+assert(await staleActionPage.getByText("$75.00/day", { exact: false }).isVisible(), "A stale ChatGPT action result hid the revised server proposal.");
+await staleActionPage.evaluate(() => {
+  window.openai.toolOutput = { structuredContent: { campaignReviewState: window.__originalState } };
+  window.dispatchEvent(new Event("openai:set_globals"));
+});
+assert(await staleActionPage.getByText("$75.00/day", { exact: false }).isVisible(), "Original ChatGPT tool output regressed the visible proposal version.");
+await staleActionPage.getByRole("button", { name: "Confirm" }).click();
+assert(await staleActionPage.getByText("Submitted successfully", { exact: true }).isVisible(), "A stale ChatGPT Confirm result hid the verified receipt.");
+assert(await staleActionPage.getByText("1840000000000000099").isVisible(), "Reconciled Confirm state is missing the Campaign ID.");
+await staleActionPage.close();
+
 await page.evaluate(() => {
   window.openai.toolOutput = {
     structuredContent: {
@@ -357,4 +427,4 @@ assert(protocolCalls.every((call) => call.arguments?.proposalId === "proposal-qa
 await protocolPage.close();
 
 await browser.close();
-console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge_metadata_fallback"] }, null, 2));
+console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "stale_action_result_reconciliation", "state_regression_guard", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge_metadata_fallback"] }, null, 2));
