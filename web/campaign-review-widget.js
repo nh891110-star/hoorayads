@@ -192,9 +192,11 @@ function notifySize() {
 }
 
 async function callTool(name, args) {
-  if (initialized) return rpc("tools/call", { name, arguments: args });
-  // Legacy fallback for hosts that have not implemented the MCP Apps bridge.
+  // ChatGPT's native Apps SDK owns user-approved app tool calls. Some hosts
+  // also initialize the standard MCP Apps bridge, so prefer the native API
+  // when both are present and use the bridge as the cross-host fallback.
   if (window.openai?.callTool) return window.openai.callTool(name, args);
+  if (initialized) return rpc("tools/call", { name, arguments: args });
   throw new Error("This host does not support interactive Campaign Review actions.");
 }
 
@@ -443,7 +445,7 @@ function renderReview() {
       ? `<div class="actions"><button class="button button-primary" data-action="check-status" ${busy ? "disabled" : ""}>Check status</button></div>`
     : `<div class="actions">
         <button class="button button-secondary" data-action="edit" ${locked ? "disabled" : ""}>Edit</button>
-        <button class="button button-primary" data-action="create" ${createDisabled ? "disabled" : ""}>Confirm</button>
+        <button class="button button-primary" data-action="create" ${createDisabled ? "disabled" : ""}>${busy ? "Submitting…" : "Confirm"}</button>
       </div>`;
   const consequence = state.status === "created"
     ? isDemo()

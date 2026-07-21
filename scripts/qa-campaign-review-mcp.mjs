@@ -3,8 +3,9 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CallToolResultSchema, ReadResourceResultSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const endpoint = process.env.MCP_ENDPOINT || "http://localhost:3010/mcp/chatgpt";
-const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v13.html";
+const resourceUri = "ui://widget/tiktok-smartplus-campaign-review-v14.html";
 const legacyResourceUris = [
+  "ui://widget/tiktok-smartplus-campaign-review-v13.html",
   "ui://widget/tiktok-smartplus-campaign-review-v12.html",
   "ui://widget/tiktok-smartplus-campaign-review-v11.html",
   "ui://widget/tiktok-smartplus-campaign-review-v10.html",
@@ -150,6 +151,11 @@ try {
   assert(resource.contents[0]?.mimeType === "text/html;profile=mcp-app", "Campaign Review resource has the wrong MIME type.");
   assert(html.includes('id="campaign-review-root"'), "Campaign Review root is missing.");
   assert(html.includes("Confirm"), "Campaign Review confirm CTA is missing.");
+  assert(html.includes("Submitting…"), "Campaign Review does not provide immediate Confirm progress feedback.");
+  assert(
+    html.indexOf("if (window.openai?.callTool)") < html.indexOf('if (initialized) return rpc("tools/call"'),
+    "ChatGPT native callTool must be preferred over the standard MCP Apps bridge."
+  );
   assert(html.includes("AI suggested"), "Campaign Review is missing the model-suggestion source label.");
   assert(!html.includes("Status after creation"), "Campaign Review must not show a pre-creation status field.");
   assert(html.includes("After a successful submission"), "Campaign Review next-step disclosure is missing.");
