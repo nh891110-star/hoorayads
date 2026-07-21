@@ -17,7 +17,7 @@ import type {
 import { callTikTokMcpTool, listTikTokAdvertiserAccounts, TikTokToolCallError } from "./tiktok-mcp.js";
 import type { TikTokMcpAuthContext, TikTokMcpSurface } from "./tiktok-mcp.js";
 
-type AdvertiserAccount = {
+export type AdvertiserAccount = {
   advertiserId: string;
   advertiserName: string;
   country: string;
@@ -25,6 +25,86 @@ type AdvertiserAccount = {
   status: string;
   timezone: string;
 };
+
+export async function listAuthorizedAdvertiserAccounts(
+  surface: TikTokMcpSurface,
+  authContext: TikTokMcpAuthContext
+) {
+  if (surface === "progressive") {
+    const result = await listTikTokAdvertiserAccounts(surface, authContext);
+    if (result.status === "needs_authorization") {
+      throw new CampaignReviewError(
+        "TIKTOK_AUTH_REQUIRED",
+        "Connect a TikTok advertiser account before listing authorized accounts.",
+        result.authorizationUrl
+      );
+    }
+    if (result.status === "misconfigured") {
+      throw new CampaignReviewError("TIKTOK_MCP_MISCONFIGURED", result.message);
+    }
+    return result.data.accounts.map((account) => ({
+      advertiserId: account.advertiserId,
+      advertiserName: account.advertiserName,
+      country: account.country,
+      currency: account.currency,
+      status: account.status,
+      timezone: account.timezone
+    } satisfies AdvertiserAccount));
+  }
+
+  const authResult = await callTikTokMcpTool<AuthAdvertiserResponse>("flat", "auth_advertiser_get", {}, authContext);
+  if (authResult.status === "needs_authorization") {
+    throw new CampaignReviewError(
+      "TIKTOK_AUTH_REQUIRED",
+      "Connect a TikTok advertiser account before listing authorized accounts.",
+      authResult.authorizationUrl
+    );
+  }
+  if (authResult.status === "misconfigured") {
+    throw new CampaignReviewError("TIKTOK_MCP_MISCONFIGURED", authResult.message);
+  }
+
+  const authorized = (authResult.data.list ?? []).filter((account) => Boolean(account.advertiser_id));
+  if (authorized.length === 0) return [];
+  const advertiserIds = authorized.map((account) => account.advertiser_id as string);
+  const infoResult = await callTikTokMcpTool<AdvertiserInfoResponse>(
+    "flat",
+    "advertiser_info_get",
+    {
+      advertiser_ids: advertiserIds,
+      fields: ["advertiser_id", "name", "country", "currency", "status", "timezone"]
+    },
+    authContext
+  );
+  if (infoResult.status === "needs_authorization") {
+    throw new CampaignReviewError(
+      "TIKTOK_AUTH_REQUIRED",
+      "Reconnect the TikTok advertiser account before listing authorized accounts.",
+      infoResult.authorizationUrl
+    );
+  }
+  if (infoResult.status === "misconfigured") {
+    throw new CampaignReviewError("TIKTOK_MCP_MISCONFIGURED", infoResult.message);
+  }
+
+  const infoById = new Map(
+    (infoResult.data.list ?? [])
+      .filter((account) => Boolean(account.advertiser_id))
+      .map((account) => [account.advertiser_id as string, account])
+  );
+  return authorized.map((account) => {
+    const advertiserId = account.advertiser_id as string;
+    const info = infoById.get(advertiserId);
+    return {
+      advertiserId,
+      advertiserName: info?.name || account.advertiser_name || `Advertiser ${advertiserId.slice(-6)}`,
+      country: info?.country || "--",
+      currency: info?.currency || "--",
+      status: info?.status || "UNKNOWN",
+      timezone: info?.timezone || "--"
+    } satisfies AdvertiserAccount;
+  });
+}
 
 export type NormalizedCampaignReview = {
   advertiserId: string;

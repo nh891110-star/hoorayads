@@ -15,6 +15,8 @@ import {
   createSmartPlusCampaignFromReviewOutput,
   getSmartPlusCampaignReviewStatusInput,
   getSmartPlusCampaignReviewStatusOutput,
+  listAuthorizedTikTokAdvertiserAccountsInput,
+  listAuthorizedTikTokAdvertiserAccountsOutput,
   reviewSmartPlusCampaignDemoInput,
   reviewSmartPlusCampaignDemoOutput,
   reviewSmartPlusCampaignInput,
@@ -28,6 +30,7 @@ import {
   getCampaignReviewActionToken,
   getCampaignReviewStoreForProposal,
   getSharedCampaignReviewStore,
+  listAuthorizedAdvertiserAccounts,
   registerCampaignReviewProposal
 } from "./campaign-review.js";
 import type { CampaignReviewState } from "./campaign-review.js";
@@ -223,13 +226,40 @@ function registerLiveTools(
     const proposalStore = getCampaignReviewStoreForProposal(proposalId, store);
     return proposalStore.create(proposalId, expectedVersion, authContext);
   };
+  server.registerTool(
+    "list_authorized_tiktok_advertiser_accounts",
+    {
+      title: "List authorized TikTok advertiser accounts",
+      description:
+        "Read-only account discovery. Call when the user asks which TikTok advertiser accounts are connected or available, or wants to switch the current Campaign proposal without naming an exact authorized account. Return the real authorized account names and IDs, then wait for the user to explicitly select one; never choose an account for the user. After selection, create a replacement card by calling review_smartplus_campaign with the selected advertiser and the complete current Campaign settings. Do not use the in-card revise tool to change advertiser accounts. The replacement card makes the prior card Inactive.",
+      inputSchema: listAuthorizedTikTokAdvertiserAccountsInput,
+      outputSchema: listAuthorizedTikTokAdvertiserAccountsOutput,
+      annotations: { readOnlyHint: true, openWorldHint: true, destructiveHint: false, idempotentHint: true }
+    },
+    async () => {
+      const accounts = await listAuthorizedAdvertiserAccounts("flat", authContext);
+      const text = accounts.length === 0
+        ? "No authorized TikTok advertiser accounts are available for this connection."
+        : [
+            "Authorized TikTok advertiser accounts:",
+            ...accounts.map((account) =>
+              `- ${account.advertiserName} (ID: ${account.advertiserId}; ${account.currency}; ${account.status})`
+            ),
+            "Ask the user to select one account by name or ID before creating a Campaign Review card."
+          ].join("\n");
+      return {
+        structuredContent: { accounts, count: accounts.length },
+        content: [{ type: "text" as const, text }]
+      };
+    }
+  );
   registerAppTool(
     server,
     "review_smartplus_campaign",
     {
       title: "Review Smart+ Campaign",
       description:
-        "MUST call this tool instead of returning a free-form proposal when the user asks to prepare, propose, recommend, or review exactly one supported Smart+ Campaign and no current reviewed proposal is already awaiting approval. An initial request that says create still uses this review tool before any write. Do NOT call this tool for an approval-only follow-up that refers to the current Campaign Review card; call approve_smartplus_campaign_review_from_chat instead so the existing card changes status without creating a replacement card. Support three starting states: (1) for complete user inputs, preserve confirmed values and do not include them in aiSuggestedFields; (2) for partial inputs, preserve confirmed values, propose only missing Campaign settings supported by conversation or retrieved business context, list every model-proposed field in aiSuggestedFields, and call this tool; (3) for an exploratory request, first ask a concise business-language interview about outcome, website/app/lead destination, advertiser account, and budget comfort, and do not call until enough information exists. specialIndustriesConfirmed is required and must be true: ask the user whether Housing, Employment, Credit, or none applies before calling; never infer the answer. The advertiser account must come from the user's explicit selection, even when only one account is authorized. Pass the selected advertiser ID or exact account name; never choose an account for the user and never invent an advertiser ID or App ID. Submit only fields present in this tool schema. Catalog is available only for Website Conversions or Lead Generation in this experience; App Promotion uses App promotion type, optional App ID, and Campaign type instead. This is Campaign-level only: do not add industry, schedule, bid strategy, attribution, audience, placements, optimization event, or creative settings. Explain recommendation rationale in chat text after rendering the card. The card creates nothing until the user explicitly confirms.",
+        "MUST call this tool instead of returning a free-form proposal when the user asks to prepare, propose, recommend, or review exactly one supported Smart+ Campaign and no current reviewed proposal is already awaiting approval. An initial request that says create still uses this review tool before any write. Do NOT call this tool for an approval-only follow-up that refers to the current Campaign Review card; call approve_smartplus_campaign_review_from_chat instead so the existing card changes status without creating a replacement card. Support three starting states: (1) for complete user inputs, preserve confirmed values and do not include them in aiSuggestedFields; (2) for partial inputs, preserve confirmed values, propose only missing Campaign settings supported by conversation or retrieved business context, list every model-proposed field in aiSuggestedFields, and call this tool; (3) for an exploratory request, first ask a concise business-language interview about outcome, website/app/lead destination, advertiser account, and budget comfort, and do not call until enough information exists. specialIndustriesConfirmed is required and must be true: ask the user whether Housing, Employment, Credit, or none applies before calling; never infer the answer. The advertiser account must come from the user's explicit selection, even when only one account is authorized. Pass the selected advertiser ID or exact account name; never choose an account for the user and never invent an advertiser ID or App ID. If the user asks which accounts are available, call list_authorized_tiktok_advertiser_accounts and wait for an explicit selection. If the user explicitly switches the advertiser for a current proposal, call this review tool with the selected advertiser and the complete current Campaign settings; this creates a replacement card and makes the prior card Inactive. Do not use the app-only revise tool to change advertiser accounts. Submit only fields present in this tool schema. Catalog is available only for Website Conversions or Lead Generation in this experience; App Promotion uses App promotion type, optional App ID, and Campaign type instead. This is Campaign-level only: do not add industry, schedule, bid strategy, attribution, audience, placements, optimization event, or creative settings. Explain recommendation rationale in chat text after rendering the card. The card creates nothing until the user explicitly confirms.",
       inputSchema: reviewSmartPlusCampaignInput,
       outputSchema: reviewSmartPlusCampaignOutput,
       _meta: TOOL_META,

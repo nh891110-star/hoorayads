@@ -179,6 +179,8 @@ const reviewStore = createCampaignReviewStore({ mode: "demo" });
 const firstProposal = await reviewStore.prepare(web);
 const secondProposal = await reviewStore.prepare({
   ...lead,
+  advertiserId: "7555000000000000002",
+  advertiserName: "Second Authorized Advertiser",
   campaignName: "MCP UI QA - New Active Proposal"
 });
 const refreshedFirstProposal = await reviewStore.getStatus(firstProposal.proposalId, firstProposal.version);
@@ -186,6 +188,8 @@ assert(secondProposal.status === "proposed", "The latest Campaign proposal must 
 assert(secondProposal.supersedesProposalId === firstProposal.proposalId, "A new proposal must identify the exact prior card it supersedes.");
 assert(refreshedFirstProposal.status === "outdated", "A previous Campaign proposal must become Inactive after a new proposal is prepared.");
 assert(refreshedFirstProposal.readyToCreate === false, "An inactive Campaign proposal must never remain creatable.");
+assert(secondProposal.account.advertiserId === "7555000000000000002", "A prompt-driven advertiser switch did not use the explicitly selected account.");
+assert(secondProposal.account.advertiserName === "Second Authorized Advertiser", "A prompt-driven advertiser switch lost the selected account name.");
 const staleSubmit = await reviewStore.create(firstProposal.proposalId, firstProposal.version);
 assert(staleSubmit.status === "outdated", "The server must reject submission from an inactive Campaign proposal.");
 
@@ -301,6 +305,7 @@ console.log(JSON.stringify({
     "tiktok_readback_normalization",
     "tiktok_readback_mismatch_guard",
     "single_active_proposal",
+    "prompt_advertiser_switch",
     "inactive_proposal_write_guard",
     "cross_server_proposal_state",
     "oauth_user_store_isolation",

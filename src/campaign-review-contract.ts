@@ -112,6 +112,20 @@ export const createSmartPlusCampaignFromReviewOutput = {
   campaignReviewState: z.record(z.any())
 };
 
+export const listAuthorizedTikTokAdvertiserAccountsInput = {};
+
+export const listAuthorizedTikTokAdvertiserAccountsOutput = {
+  accounts: z.array(z.object({
+    advertiserId: z.string(),
+    advertiserName: z.string(),
+    country: z.string(),
+    currency: z.string(),
+    status: z.string(),
+    timezone: z.string()
+  })),
+  count: z.number().int().nonnegative()
+};
+
 export const campaignReviewHttpActionSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("revise"),

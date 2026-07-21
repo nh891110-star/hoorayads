@@ -58,7 +58,8 @@ try {
   const statusTool = tools.tools.find((tool) => tool.name === "get_smartplus_campaign_review_status");
   const createTool = tools.tools.find((tool) => tool.name === "create_smartplus_campaign_from_review");
   const chatApprovalTool = tools.tools.find((tool) => tool.name === "approve_smartplus_campaign_review_from_chat");
-  assert(reviewTool && reviseTool && statusTool && createTool && chatApprovalTool, "One or more Campaign Review tools are missing.");
+  const advertiserListTool = tools.tools.find((tool) => tool.name === "list_authorized_tiktok_advertiser_accounts");
+  assert(reviewTool && reviseTool && statusTool && createTool && chatApprovalTool && advertiserListTool, "One or more Campaign Review tools are missing.");
   assert(reviewTool._meta?.ui?.resourceUri === resourceUri, "Review tool has the wrong resource URI.");
   for (const appTool of [reviseTool, statusTool, createTool]) {
     assert(appTool._meta?.ui?.visibility?.length === 1 && appTool._meta.ui.visibility[0] === "app", `${appTool.name} must remain app-only.`);
@@ -68,12 +69,19 @@ try {
   assert(!chatApprovalTool._meta?.ui?.resourceUri, "Chat approval must not render a duplicate Campaign Review card.");
   assert(!chatApprovalTool._meta?.["openai/outputTemplate"], "Chat approval must not declare an output template.");
   assert(!chatApprovalTool.outputSchema, "Chat approval must not return Campaign Review structured content that can trigger a duplicate widget.");
+  assert(!advertiserListTool._meta?.ui?.resourceUri, "Advertiser discovery must not render a Campaign Review card.");
+  assert(advertiserListTool.annotations?.readOnlyHint === true, "Advertiser discovery must remain read-only.");
+  assert(advertiserListTool.annotations?.destructiveHint === false, "Advertiser discovery must not be destructive.");
+  assert(advertiserListTool.description?.includes("wait for the user to explicitly select one"), "Advertiser discovery lost explicit-selection guidance.");
+  assert(advertiserListTool.description?.includes("prior card Inactive"), "Advertiser discovery lost replacement-card guidance.");
   assert(reviewTool.description?.includes("three starting states"), "Review tool lost the BRD complete/partial/exploratory routing guidance.");
   assert(reviewTool.description?.includes("aiSuggestedFields"), "Review tool lost model-suggested field provenance guidance.");
   assert(reviewTool.description?.includes("exploratory request"), "Review tool lost the exploratory business-interview behavior.");
   assert(reviewTool.description?.includes("Do NOT call this tool for an approval-only follow-up"), "Review tool lost the no-replacement-card approval routing rule.");
   assert(reviewTool.description?.includes("MUST call this tool"), "Review tool no longer prevents free-form proposals when the card should render.");
   assert(reviewTool.description?.includes("Campaign-level only"), "Review tool lost the Campaign-only field boundary.");
+  assert(reviewTool.description?.includes("list_authorized_tiktok_advertiser_accounts"), "Review tool lost advertiser-account discovery routing.");
+  assert(reviewTool.description?.includes("makes the prior card Inactive"), "Review tool lost advertiser-switch replacement behavior.");
   assert(createTool.annotations?.destructiveHint === true, "Real Campaign creation must be marked destructive.");
   assert(createTool.annotations?.idempotentHint === true, "Campaign creation must declare idempotency.");
   assert(chatApprovalTool.annotations?.destructiveHint === true, "Chat approval must be marked destructive.");
@@ -221,7 +229,7 @@ try {
     console.log(JSON.stringify({
       ok: true,
       liveGate: proposedState.execution.errorCode,
-      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "single_active_proposal", "flat_oauth_gate", "oauth_error_input_preservation", "brand_negative_schema"]
+      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "advertiser_account_discovery", "resource", "single_active_proposal", "flat_oauth_gate", "oauth_error_input_preservation", "brand_negative_schema"]
     }, null, 2));
     process.exitCode = 0;
   } else {
@@ -270,7 +278,7 @@ try {
     console.log(JSON.stringify({
       ok: true,
       auth: "connected",
-      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "resource", "single_active_proposal", "flat_live_account_resolution", "proposed", "revision_cas", "outdated_version", "brand_negative_schema"]
+      checked: ["hooray_endpoint_replacement", "reporting_endpoint_isolation", "tools_list", "advertiser_account_discovery", "resource", "single_active_proposal", "flat_live_account_resolution", "proposed", "revision_cas", "outdated_version", "brand_negative_schema"]
     }, null, 2));
   }
 } finally {

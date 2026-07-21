@@ -30,6 +30,7 @@
 
 | Tool | Visibility | Purpose and routing description | Input | Output |
 | --- | --- | --- | --- | --- |
+| `list_authorized_tiktok_advertiser_accounts` | Model only | Read-only discovery for “which accounts are connected?” and account-switch requests that do not name an exact account. Returns real authorized accounts and waits for explicit user selection. | No input fields. Uses the current user's delegated TikTok authorization. | Account count plus account name, full advertiser ID, country, currency, status, and timezone. No widget. |
 | `review_smartplus_campaign` | Model + app | Required for an initial create, propose, recommend, or review request once enough information exists. Handles complete, partial, and exploratory starting states. Enforces explicit advertiser selection, explicit special-category confirmation, Campaign-only scope, and `AI suggested` provenance. Never writes to TikTok. | Campaign review fields listed in Section 5. | `campaignReviewState` plus widget resource `ui://widget/tiktok-smartplus-campaign-review-v19.html`. |
 | `revise_smartplus_campaign_review` | App only | Applies in-card edits as a new immutable proposal version. Never creates or updates a TikTok object. | `proposalId`, `expectedVersion`, and the complete revised Campaign field set. | Updated `campaignReviewState`; existing card reconciles in place. |
 | `get_smartplus_campaign_review_status` | App only | Polls current state, marks stale cards `Inactive`, and reconciles uncertain submission outcomes. Never retries creation. | `proposalId`, `expectedVersion`. | Current `campaignReviewState`. |
@@ -130,4 +131,3 @@ The model may still choose tools probabilistically, so critical safety cannot re
 - UI, revision, inactive-card, approval routing, idempotency, and TikTok error handling are implemented and tested.
 - Real creation reaches TikTok, but `Education Coaching0315` currently returns `40002: Complete payment to continue.`
 - Release completion requires one successful create plus `smart_plus_campaign_get` read-back of a real Campaign ID after advertiser billing readiness is resolved.
-
