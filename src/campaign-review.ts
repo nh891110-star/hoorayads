@@ -377,6 +377,23 @@ export function validateCampaignReadback(campaign: NormalizedCampaignReview, ite
   return errors;
 }
 
+export function findExplicitAdvertiserSelection<T>(
+  accounts: T[],
+  input: Pick<CampaignReviewInput, "advertiserId" | "advertiserName">,
+  getId: (account: T) => string | undefined,
+  getName: (account: T) => string | undefined
+) {
+  const advertiserName = input.advertiserName?.trim().toLowerCase();
+  const hasAdvertiserSelection = Boolean(input.advertiserId || advertiserName);
+  const selected = input.advertiserId
+    ? accounts.find((account) => getId(account) === input.advertiserId)
+    : advertiserName
+      ? accounts.find((account) => getName(account)?.trim().toLowerCase() === advertiserName)
+      : undefined;
+
+  return { hasAdvertiserSelection, selected };
+}
+
 async function resolveAdvertiserAccount(
   input: Pick<CampaignReviewInput, "advertiserId" | "advertiserName">,
   surface: TikTokMcpSurface,
@@ -396,19 +413,17 @@ async function resolveAdvertiserAccount(
     }
 
     const accounts = accountResult.data.accounts;
-    const advertiserName = input.advertiserName?.trim().toLowerCase();
-    const selected = input.advertiserId
-      ? accounts.find((account) => account.advertiserId === input.advertiserId)
-      : advertiserName
-        ? accounts.find((account) => account.advertiserName.trim().toLowerCase() === advertiserName)
-        : accounts.length === 1
-          ? accounts[0]
-          : undefined;
+    const { hasAdvertiserSelection, selected } = findExplicitAdvertiserSelection(
+      accounts,
+      input,
+      (account) => account.advertiserId,
+      (account) => account.advertiserName
+    );
 
     if (!selected) {
       throw new CampaignReviewError(
-        accounts.length > 1 ? "ADVERTISER_SELECTION_REQUIRED" : "ADVERTISER_NOT_AUTHORIZED",
-        accounts.length > 1
+        !hasAdvertiserSelection ? "ADVERTISER_SELECTION_REQUIRED" : "ADVERTISER_NOT_AUTHORIZED",
+        !hasAdvertiserSelection
           ? "Choose one authorized advertiser account before reviewing the campaign."
           : "The selected advertiser account is not authorized for this TikTok connection."
       );
@@ -437,19 +452,17 @@ async function resolveAdvertiserAccount(
   }
 
   const accounts = authResult.data.list ?? [];
-  const advertiserName = input.advertiserName?.trim().toLowerCase();
-  const selected = input.advertiserId
-    ? accounts.find((account) => account.advertiser_id === input.advertiserId)
-    : advertiserName
-      ? accounts.find((account) => account.advertiser_name?.trim().toLowerCase() === advertiserName)
-      : accounts.length === 1
-        ? accounts[0]
-        : undefined;
+  const { hasAdvertiserSelection, selected } = findExplicitAdvertiserSelection(
+    accounts,
+    input,
+    (account) => account.advertiser_id,
+    (account) => account.advertiser_name
+  );
 
   if (!selected?.advertiser_id) {
     throw new CampaignReviewError(
-      accounts.length > 1 ? "ADVERTISER_SELECTION_REQUIRED" : "ADVERTISER_NOT_AUTHORIZED",
-      accounts.length > 1
+      !hasAdvertiserSelection ? "ADVERTISER_SELECTION_REQUIRED" : "ADVERTISER_NOT_AUTHORIZED",
+      !hasAdvertiserSelection
         ? "Choose one authorized advertiser account before reviewing the campaign."
         : "The selected advertiser account is not authorized for this TikTok connection."
     );

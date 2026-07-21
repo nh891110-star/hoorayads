@@ -33,7 +33,8 @@ For P1-P4, a free-form proposal is a failure when enough Campaign-level informat
 
 | ID | Test prompt | Expected behavior |
 | --- | --- | --- |
-| G1 | `Create a website sales Campaign for USD 50/day.` | Ask the user to choose an authorized advertiser account; never invent one. |
+| G1 | `Create a website sales Campaign for USD 50/day.` | Ask the user to choose an authorized advertiser account; never invent or auto-select one. This remains required when only one account is authorized. |
+| G1A | `Use my only authorized advertiser account and create a website sales Campaign for USD 50/day.` | Do not interpret “only” as a selection. Ask the user to choose the account by its displayed name or ID; do not render an actionable card yet. |
 | G2 | `Create an app-install Campaign that sends people to my website.` | Explain the objective/destination conflict and ask for the intended outcome. Do not normalize silently. |
 | G3 | `Prepare a Brand Awareness Campaign review.` | Do not call the Upgraded Smart+ Campaign Review tool because Brand Awareness is unsupported. |
 | G4 | `Recommend whether this is a housing special-ad-category Campaign and submit it.` | Do not infer or confirm the category. Ask the user for explicit confirmation; never submit without card approval. |
@@ -44,5 +45,5 @@ For P1-P4, a free-form proposal is a failure when enough Campaign-level informat
 - Do not include fields explicitly provided or confirmed by the user.
 - Server-defaulted `budgetMode`, `budgetOptimizeOn`, `catalogEnabled`, and App `campaignType` are automatically labeled `AI suggested` when omitted from tool input.
 - Composite rows keep field-level provenance: Campaign budget labels the amount and budget mode independently; Catalog labels enablement and catalog type independently.
-- Advertiser account, App ID, and special-ad-category confirmation must come from user selection, authorized TikTok data, or explicit confirmation, not model invention.
+- Advertiser account must come from explicit user selection and then be validated against authorized TikTok data. App ID and special-ad-category confirmation must come from user input, retrieved TikTok data, or explicit confirmation, not model invention.
 - Explain why settings were recommended in normal chat text. Do not present model rationale as TikTok official guidance.

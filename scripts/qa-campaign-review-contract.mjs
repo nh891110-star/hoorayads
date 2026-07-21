@@ -7,6 +7,7 @@ import {
 import {
   buildSmartPlusCampaignPayload,
   createCampaignReviewStore,
+  findExplicitAdvertiserSelection,
   getCampaignReviewStoreForProposal,
   getSharedCampaignReviewStore,
   normalizeCampaignInput,
@@ -37,6 +38,32 @@ const base = {
   campaignType: "REGULAR_CAMPAIGN",
   aiSuggestedFields: ["budget"]
 };
+
+const authorizedAccounts = [
+  { advertiserId: "7481826080479870993", advertiserName: "Education Coaching0315" }
+];
+const noAdvertiserSelection = findExplicitAdvertiserSelection(
+  authorizedAccounts,
+  {},
+  (account) => account.advertiserId,
+  (account) => account.advertiserName
+);
+assert(!noAdvertiserSelection.hasAdvertiserSelection, "A missing advertiser selection was not detected.");
+assert(!noAdvertiserSelection.selected, "The server auto-selected the only authorized advertiser account.");
+const advertiserSelectedByName = findExplicitAdvertiserSelection(
+  authorizedAccounts,
+  { advertiserName: "  education coaching0315 " },
+  (account) => account.advertiserId,
+  (account) => account.advertiserName
+);
+assert(advertiserSelectedByName.selected === authorizedAccounts[0], "An explicitly selected advertiser name was not matched.");
+const advertiserSelectedById = findExplicitAdvertiserSelection(
+  authorizedAccounts,
+  { advertiserId: "7481826080479870993" },
+  (account) => account.advertiserId,
+  (account) => account.advertiserName
+);
+assert(advertiserSelectedById.selected === authorizedAccounts[0], "An explicitly selected advertiser ID was not matched.");
 
 const web = reviewSchema.parse(base);
 const webErrors = validateCampaignReview(web, { country: "US", status: "STATUS_ENABLE" });
@@ -205,6 +232,7 @@ console.log(JSON.stringify({
   ok: true,
   checked: [
     "web_conversions",
+    "explicit_advertiser_selection",
     "lead_generation",
     "app_promotion",
     "brand_negative_routing",

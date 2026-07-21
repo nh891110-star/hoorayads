@@ -14,7 +14,7 @@ This document is the contract between ChatGPT, the Campaign Review card, and Tik
 
 | Card label | Tool input | Accepted API value | Display mapping | Condition | When absent |
 | --- | --- | --- | --- | --- | --- |
-| Advertiser account | `advertiser_id` | Authorized advertiser ID string | Authorized account name plus masked ID | Always; resolved from the user's Flat MCP authorization | Block review; never invent an ID |
+| Advertiser account | `advertiser_id` | Authorized advertiser ID string | Authorized account name plus masked ID | Always; explicitly selected by the user and validated against Flat MCP authorization | Block review; never invent or auto-select an ID |
 | Campaign name | `campaign_name` | String, 1-512 characters in the Hooray contract | User/model text | Always | Block review |
 | Campaign objective | `objective_type` | `WEB_CONVERSIONS`, `LEAD_GENERATION`, `APP_PROMOTION` | Website conversions, Lead generation, App promotion | Always | Block review; never remap unsupported objectives |
 | Campaign budget | `budget` | Positive number in the advertiser account currency | Currency-formatted amount; `/day` for daily modes, `total` for total mode | Required for Dynamic daily, Daily, and Total modes | Omit only for Unlimited |
@@ -36,7 +36,7 @@ These values control review behavior but are never forwarded to TikTok:
 
 | Field | Purpose |
 | --- | --- |
-| `advertiserName` | User-readable label for the authorized advertiser selection |
+| `advertiserName` | User-readable label for the advertiser account explicitly selected by the user; the server never auto-selects an account |
 | `specialIndustriesConfirmed` | Legal/eligibility guard proving the user explicitly answered the category question; the live initial-review schema requires `true` |
 | `aiSuggestedFields` | Field-level provenance used only for the green `AI suggested` badge |
 | `proposalId`, `version` | Immutable review/versioning and stale-card protection |
@@ -66,7 +66,7 @@ The server omits `sales_destination`, `catalog_enabled`, and `catalog_type`. The
 
 1. Map user language only to an enum supported by the tool schema. If the intent is ambiguous or unsupported, ask rather than normalize silently.
 2. Preserve exact user-confirmed values. Put only model-selected values in `aiSuggestedFields`.
-3. Never infer advertiser ID, App ID, or Special ad category confirmation.
+3. Never infer or auto-select advertiser ID, even when only one account is authorized. Never infer App ID or Special ad category confirmation.
 4. Do not put a generic industry, audience, schedule, bid, attribution, placement, optimization event, pixel, or creative setting in this Campaign-level card.
 5. Before Confirm, validate all cross-field conditions. After Confirm, build the API payload from the server-owned proposal, not from editable browser state.
 6. After create, require `smart_plus_campaign_get` read-back of Campaign ID, name, objective, and `operation_status=ENABLE`. Prefer read-back values in the success card; mark API-omitted values as Proposal rather than TikTok verified.
