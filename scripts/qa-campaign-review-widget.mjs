@@ -479,7 +479,7 @@ assert(await staleNativeStatusBridgeFrame.getByRole("button", { name: "Confirm" 
 await staleNativeStatusBridgePage.close();
 
 const directHttpActionPage = await browser.newPage({ viewport: { width: 860, height: 960 } });
-await directHttpActionPage.setContent(`
+const directHttpActionHtml = `
   <!doctype html>
   <html>
     <head><style>${css}</style></head>
@@ -531,7 +531,11 @@ await directHttpActionPage.setContent(`
       <script type="module">${widgetJs}</script>
     </body>
   </html>
-`);
+`;
+await directHttpActionPage.route("https://campaign-review.test/widget", async (route) => {
+  await route.fulfill({ status: 200, contentType: "text/html", body: directHttpActionHtml });
+});
+await directHttpActionPage.goto("https://campaign-review.test/widget");
 await directHttpActionPage.getByRole("button", { name: "Edit" }).click();
 await directHttpActionPage.getByLabel("Campaign budget (USD)").fill("65");
 await directHttpActionPage.getByRole("button", { name: "Apply changes" }).click();
@@ -547,7 +551,13 @@ assert(directHttpCalls.every((call) => call.authorization === "Bearer qa-action-
 assert(directHttpCalls[0].body.action === "revise" && directHttpCalls[1].body.action === "submit", "Campaign Review sent an incorrect direct action type.");
 await directHttpActionPage.evaluate(() => window.dispatchEvent(new Event("openai:set_globals")));
 assert(await directHttpActionPage.getByText("Campaign was not created.").isVisible(), "A host remount regressed a direct submission result to Proposed.");
+await directHttpActionPage.reload();
+await directHttpActionPage.getByText("Campaign was not created.").waitFor({ timeout: 5000 });
+assert(await directHttpActionPage.getByText("$65.00/day", { exact: false }).isVisible(), "A full host reload lost the latest edited budget.");
+assert(await directHttpActionPage.getByText("Complete payment to continue.").isVisible(), "A full host reload lost the final TikTok rejection.");
+assert((await directHttpActionPage.getByRole("button", { name: "Confirm" }).count()) === 1, "The failed state must retain the disabled Confirm control.");
+assert(await directHttpActionPage.getByRole("button", { name: "Confirm" }).isDisabled(), "A full host reload re-enabled Confirm after a terminal TikTok rejection.");
 await directHttpActionPage.close();
 
 await browser.close();
-console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "stale_action_result_reconciliation", "stale_native_submit_status_bridge", "direct_http_action_bridge", "state_regression_guard", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge_metadata_fallback"] }, null, 2));
+console.log(JSON.stringify({ ok: true, checked: ["proposed", "edit", "cancel_discards_local_edits", "web_fields", "lead_fields", "app_promotion_fields", "revision", "create", "verified_receipt", "field_provenance", "stale_action_result_reconciliation", "stale_native_submit_status_bridge", "direct_http_action_bridge", "full_host_reload_state_recovery", "state_regression_guard", "readback_mismatch", "inactive", "chat_history_old_card_auto_inactive", "unsaved_edit_conflict", "single_actionable_card", "oauth_error", "mcp_apps_standard_bridge_metadata_fallback"] }, null, 2));

@@ -3,6 +3,9 @@ const APP_INFO = { name: "TikTok Campaign Review", version: "1.0.0" };
 const PROTOCOL_VERSION = "2026-01-26";
 const SUPERSESSION_CHANNEL = "tiktok-campaign-review-supersession-v1";
 const SUPERSESSION_STORAGE_PREFIX = "tiktok-campaign-review-inactive:";
+const ACTION_STORAGE_PREFIX = "tiktok-campaign-review-action-v1:";
+const STATE_STORAGE_PREFIX = "tiktok-campaign-review-state-v1:";
+const PERSISTED_ACTION_TTL_MS = 6 * 60 * 60 * 1000;
 
 let reviewState = null;
 let hostContext = {};
@@ -22,6 +25,74 @@ const supersessionChannel = typeof BroadcastChannel === "function"
 
 function supersessionKey(proposalId) {
   return `${SUPERSESSION_STORAGE_PREFIX}${proposalId}`;
+}
+
+function actionStorageKey(proposalId) {
+  return `${ACTION_STORAGE_PREFIX}${proposalId}`;
+}
+
+function stateStorageKey(proposalId) {
+  return `${STATE_STORAGE_PREFIX}${proposalId}`;
+}
+
+function readPersistedEntry(key) {
+  try {
+    const entry = JSON.parse(window.localStorage.getItem(key) || "null");
+    if (!entry || typeof entry.savedAt !== "number" || Date.now() - entry.savedAt > PERSISTED_ACTION_TTL_MS) {
+      window.localStorage.removeItem(key);
+      return null;
+    }
+    return entry.value;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedEntry(key, value) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), value }));
+  } catch {
+    // Server reconciliation remains available when sandbox storage is unavailable.
+  }
+}
+
+function readPersistedAction(proposalId) {
+  if (!proposalId) return null;
+  const action = readPersistedEntry(actionStorageKey(proposalId));
+  return action?.endpoint?.startsWith("https://") && typeof action.token === "string" && action.token
+    ? action
+    : null;
+}
+
+function persistAction(proposalId) {
+  if (!proposalId || !campaignReviewAction?.endpoint || !campaignReviewAction?.token) return;
+  writePersistedEntry(actionStorageKey(proposalId), campaignReviewAction);
+}
+
+function readPersistedState(proposalId) {
+  if (!proposalId) return null;
+  const state = readPersistedEntry(stateStorageKey(proposalId));
+  return state?.proposalId === proposalId ? state : null;
+}
+
+function persistReviewState(state) {
+  if (!state?.proposalId || !campaignReviewAction?.token || state.mode === "demo") return;
+  writePersistedEntry(stateStorageKey(state.proposalId), state);
+}
+
+function shouldRestorePersistedState(hostState, persistedState) {
+  if (!hostState || !persistedState || hostState.proposalId !== persistedState.proposalId) return false;
+  if (persistedState.version !== hostState.version) return persistedState.version > hostState.version;
+  const statusRank = {
+    proposed: 0,
+    creating: 1,
+    checking: 2,
+    error: 3,
+    outcome_unknown: 3,
+    created: 4,
+    outdated: 5
+  };
+  return (statusRank[persistedState.status] ?? -1) >= (statusRank[hostState.status] ?? -1);
 }
 
 function rememberSupersededProposal(proposalId) {
@@ -58,6 +129,7 @@ function applyLocalSupersession(proposalId) {
   editConflictNotice = unsavedEditWasSuperseded
     ? "Your unsaved edits were not applied because a newer campaign proposal became current. Review the latest proposal before editing again."
     : "";
+  persistReviewState(reviewState);
   return true;
 }
 
@@ -144,7 +216,10 @@ function captureCampaignReviewAction(value) {
     value?.mcp_tool_result?._meta?.campaignReviewAction ||
     value?.toolResult?._meta?.campaignReviewAction ||
     value?.campaignReviewAction;
-  if (next?.endpoint && next?.token) campaignReviewAction = next;
+  if (next?.endpoint && next?.token) {
+    campaignReviewAction = next;
+    persistAction(reviewState?.proposalId);
+  }
 }
 
 function readChatGptState() {
@@ -278,6 +353,7 @@ function isStateRegression(next) {
 
   if (reviewState.status === "outdated" && next.status !== "outdated") return true;
   if (reviewState.status === "created" && ["proposed", "creating", "checking"].includes(next.status)) return true;
+  if (["error", "outcome_unknown"].includes(reviewState.status) && ["proposed", "creating", "checking"].includes(next.status)) return true;
   if (["creating", "checking"].includes(reviewState.status) && next.status === "proposed") return true;
   if (reviewState.execution?.errorCode === "HOST_TOOL_CALL_FAILED" && next.status === "proposed") return true;
   return false;
@@ -297,6 +373,7 @@ function applyState(next, source = "external") {
     : "";
   reviewState = next;
   announceSupersession(next);
+  persistReviewState(next);
   editMode = false;
   editDraft = null;
   return true;
@@ -676,6 +753,7 @@ async function invoke(name, args) {
         status: "creating"
       }
     };
+    persistReviewState(reviewState);
   }
   render();
   try {
@@ -720,6 +798,7 @@ async function invoke(name, args) {
         errorMessage: error instanceof Error ? error.message : "Campaign Review action failed."
       }
     };
+    persistReviewState(reviewState);
     editMode = false;
   } finally {
     busy = false;
@@ -882,7 +961,13 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") void refreshStatus();
 });
 
-reviewState = readChatGptState() || window.__CAMPAIGN_REVIEW_PREVIEW_STATE__ || createPreviewState();
+const initialHostState = readChatGptState() || window.__CAMPAIGN_REVIEW_PREVIEW_STATE__ || createPreviewState();
+reviewState = initialHostState;
+campaignReviewAction ||= readPersistedAction(reviewState.proposalId);
+const persistedState = campaignReviewAction ? readPersistedState(reviewState.proposalId) : null;
+if (shouldRestorePersistedState(reviewState, persistedState)) reviewState = persistedState;
+persistAction(reviewState.proposalId);
+persistReviewState(reviewState);
 if (isRememberedAsSuperseded(reviewState.proposalId)) applyLocalSupersession(reviewState.proposalId);
 announceSupersession(reviewState);
 sendInitialize();
