@@ -75,6 +75,13 @@ const APP_TOOL_META = {
   "openai/toolInvocation/invoked": "Campaign Review updated."
 } as const;
 
+const APPROVAL_TOOL_META = {
+  ui: { visibility: ["model", "app"] },
+  "openai/widgetAccessible": true,
+  "openai/toolInvocation/invoking": "Creating approved Campaign...",
+  "openai/toolInvocation/invoked": "Campaign creation checked."
+} as const;
+
 const RESULT_META = {
   [RESOURCE_URI_META_KEY]: CAMPAIGN_REVIEW_WIDGET_URI,
   ui: { resourceUri: CAMPAIGN_REVIEW_WIDGET_URI },
@@ -293,10 +300,10 @@ function registerLiveTools(
     {
       title: "Create approved Smart+ Campaign",
       description:
-        "App-only destructive action that creates exactly one Active TikTok Upgraded Smart+ Campaign from the latest server-owned proposal after the user selects Confirm. It rechecks the current user's advertiser authorization, uses an idempotent request ID, and performs TikTok read-back. It never creates an Ad Group, Ad, creative, delivery, or spend.",
+        "Destructive approval action for exactly one current Campaign Review proposal. Call it only after the user explicitly approves creation either by selecting Confirm in the card or by an unambiguous chat instruction such as 'create this campaign now', 'approve and create this proposal', or 'submit this campaign'. Use the exact proposalId and version returned by the latest review state, set confirmed=true, and never infer approval from 'yes' when more than one proposal could be referenced. If the same user turn changes any Campaign setting, create a new review proposal first and wait for a separate approval; never modify and create in one step. The action creates exactly one Active TikTok Upgraded Smart+ Campaign, rechecks advertiser authorization, uses an idempotent request ID, and performs TikTok read-back. It never creates an Ad Group, Ad, creative, delivery, or spend. It returns state for the existing card to reconcile and must not render a duplicate approval card.",
       inputSchema: createSmartPlusCampaignFromReviewInput,
       outputSchema: createSmartPlusCampaignFromReviewOutput,
-      _meta: APP_TOOL_META,
+      _meta: APPROVAL_TOOL_META,
       annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true, idempotentHint: true }
     },
     async ({ proposalId, expectedVersion }) => {

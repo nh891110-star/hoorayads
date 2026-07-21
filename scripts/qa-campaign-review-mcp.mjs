@@ -59,11 +59,14 @@ try {
   const createTool = tools.tools.find((tool) => tool.name === "create_smartplus_campaign_from_review");
   assert(reviewTool && reviseTool && statusTool && createTool, "One or more Campaign Review tools are missing.");
   assert(reviewTool._meta?.ui?.resourceUri === resourceUri, "Review tool has the wrong resource URI.");
-  for (const appTool of [reviseTool, statusTool, createTool]) {
+  for (const appTool of [reviseTool, statusTool]) {
     assert(appTool._meta?.ui?.visibility?.length === 1 && appTool._meta.ui.visibility[0] === "app", `${appTool.name} must remain app-only.`);
     assert(appTool._meta?.ui?.resourceUri === resourceUri, `${appTool.name} must stay associated with the Campaign Review app resource.`);
     assert(!appTool._meta?.["openai/outputTemplate"], `${appTool.name} must not declare an output template.`);
   }
+  assert(createTool._meta?.ui?.visibility?.includes("model") && createTool._meta?.ui?.visibility?.includes("app"), "Prompt approval must expose Campaign creation to both the model and the card.");
+  assert(!createTool._meta?.ui?.resourceUri, "Prompt approval must not render a duplicate Campaign Review card.");
+  assert(!createTool._meta?.["openai/outputTemplate"], "Prompt approval must not declare an output template.");
   assert(reviewTool.description?.includes("three starting states"), "Review tool lost the BRD complete/partial/exploratory routing guidance.");
   assert(reviewTool.description?.includes("aiSuggestedFields"), "Review tool lost model-suggested field provenance guidance.");
   assert(reviewTool.description?.includes("exploratory request"), "Review tool lost the exploratory business-interview behavior.");
@@ -71,6 +74,8 @@ try {
   assert(reviewTool.description?.includes("Campaign-level only"), "Review tool lost the Campaign-only field boundary.");
   assert(createTool.annotations?.destructiveHint === true, "Real Campaign creation must be marked destructive.");
   assert(createTool.annotations?.idempotentHint === true, "Campaign creation must declare idempotency.");
+  assert(createTool.description?.includes("unambiguous chat instruction"), "Create tool lost explicit prompt-approval routing guidance.");
+  assert(createTool.description?.includes("never modify and create in one step"), "Create tool lost the review-before-write guard for prompt edits.");
   assert(statusTool.annotations?.readOnlyHint === true, "Status tool must be read-only.");
   const objectives = reviewTool.inputSchema?.properties?.objectiveType?.enum || [];
   assert(objectives.includes("WEB_CONVERSIONS") && objectives.includes("LEAD_GENERATION") && objectives.includes("APP_PROMOTION"), "Supported Smart+ objectives are incomplete.");
