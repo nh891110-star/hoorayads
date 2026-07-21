@@ -318,23 +318,17 @@ function registerLiveTools(
       description:
         "Destructive chat-approval action for exactly one current Campaign Review proposal. Call it only after an unambiguous later user instruction such as 'create this campaign now', 'approve and create this proposal', or 'submit this campaign'. Use the exact proposalId and expectedVersion returned by the latest review state, set confirmed=true, and never infer approval from 'yes' when more than one proposal could be referenced. If the same turn changes any Campaign setting, render a new review proposal first and wait for a separate approval; never modify and create in one step. This tool has no UI template: the existing Campaign Review card polls the server and transitions to the final status without rendering a duplicate card. It creates exactly one Active TikTok Upgraded Smart+ Campaign, rechecks advertiser authorization, uses an idempotent request ID, and performs TikTok read-back. It never creates an Ad Group, Ad, creative, delivery, or spend.",
       inputSchema: createSmartPlusCampaignFromReviewInput,
-      outputSchema: createSmartPlusCampaignFromReviewOutput,
       annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true, idempotentHint: true }
     },
     async ({ proposalId, expectedVersion }) => {
       const state = await createApprovedCampaign(proposalId, expectedVersion);
       return {
-        structuredContent: { campaignReviewState: state },
         content: [{
           type: "text" as const,
           text: state.status === "created"
             ? `Campaign created and verified. Campaign ID: ${state.execution?.campaignId || "Unavailable"}.`
             : `Campaign creation status: ${state.status}. ${state.execution?.errorMessage || "Do not retry without checking the current proposal status."}`
-        }],
-        _meta: {
-          experienceType: "smartplus_campaign_review_chat_approval",
-          mutationOccurred: state.status === "created"
-        }
+        }]
       };
     }
   );

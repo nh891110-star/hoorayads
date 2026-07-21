@@ -67,6 +67,7 @@ try {
   }
   assert(!chatApprovalTool._meta?.ui?.resourceUri, "Chat approval must not render a duplicate Campaign Review card.");
   assert(!chatApprovalTool._meta?.["openai/outputTemplate"], "Chat approval must not declare an output template.");
+  assert(!chatApprovalTool.outputSchema, "Chat approval must not return Campaign Review structured content that can trigger a duplicate widget.");
   assert(reviewTool.description?.includes("three starting states"), "Review tool lost the BRD complete/partial/exploratory routing guidance.");
   assert(reviewTool.description?.includes("aiSuggestedFields"), "Review tool lost model-suggested field provenance guidance.");
   assert(reviewTool.description?.includes("exploratory request"), "Review tool lost the exploratory business-interview behavior.");
